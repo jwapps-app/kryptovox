@@ -53,7 +53,7 @@ Manager *Project*):
 
 ```bash
 # directories the compose file bind-mounts
-sudo mkdir -p /volume1/docker/kryptovox/{pgdata,data} /volume1/backup/kryptovox
+sudo mkdir -p /volume1/docker/kryptovox/{pgdata,data} /volume1/Backup/kryptovox
 
 # authenticate to GHCR so private images can be pulled.
 # Create a GitHub PAT (classic) with scope: read:packages
@@ -135,7 +135,7 @@ Portainer's UI, not a `.env` file.
 
 2. **Create the host directories** (SSH or File Station):
    `/volume1/docker/kryptovox/pgdata`, `/volume1/docker/kryptovox/data`,
-   `/volume1/backup/kryptovox`.
+   `/volume1/Backup/kryptovox`.
 
 3. **Create the stack:** Portainer → **Stacks → Add stack**, name `kryptovox`.
    - **Repository method (recommended — enables one-click updates):**
@@ -195,7 +195,7 @@ and setting `IMAGE_TAG=v1.0.0` in `.env`.
 ## 7. Operations
 
 - **Backups:** the `backup` container writes nightly `pg_dump` gzips to
-  `/volume1/backup/kryptovox/` (14-day retention). Restore:
+  `/volume1/Backup/kryptovox/` (14-day retention). Restore:
   `gunzip -c kryptovox_YYYYMMDD.sql.gz | docker compose -f docker-compose.prod.yml exec -T postgres psql -U kryptovox kryptovox`
 - **Push keys:** the VAPID key is generated once into
   `/volume1/docker/kryptovox/data/vapid_private.pem` and reused across restarts
