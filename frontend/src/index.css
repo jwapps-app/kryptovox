@@ -7,10 +7,19 @@
 }
 
 html,
-body,
-#root {
+body {
   height: 100%;
   margin: 0;
+}
+
+/* Size to the visual viewport so the layout shrinks when the iOS keyboard
+   opens (set by JS in App.tsx; falls back to dynamic viewport units).
+   Top safe-area inset is padded here so every screen clears the notch. */
+#root {
+  height: var(--app-height, 100dvh);
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top);
+  overflow: hidden;
 }
 
 body {
@@ -19,8 +28,6 @@ body {
   -webkit-font-smoothing: antialiased;
   background: #ffffff;
   color: #000000;
-  /* Respect iOS safe areas in standalone PWA mode. */
-  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;
 }
 
 /* Hide scrollbars in the chat thread but keep scrolling. */
