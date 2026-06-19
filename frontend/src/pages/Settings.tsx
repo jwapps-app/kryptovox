@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { getPrefs, setPref } from "../lib/prefs";
+import { enablePush, pushPermission, pushSupported } from "../lib/push";
 import { clockTime } from "../lib/format";
 import Avatar from "../components/Avatar";
 import type { Device, User } from "../lib/types";
@@ -17,6 +18,37 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [prefs, setPrefsState] = useState(getPrefs());
+  const [pushState, setPushState] = useState(pushPermission());
+  const [pushMsg, setPushMsg] = useState<string | null>(null);
+
+  const onEnablePush = async () => {
+    setPushMsg("Requesting…");
+    const ok = await enablePush().catch(() => false);
+    setPushState(pushPermission());
+    setPushMsg(ok ? "Subscribed ✓ — now send a test." : "Could not enable (permission denied?).");
+  };
+
+  const onTestPush = async () => {
+    setPushMsg("Sending…");
+    try {
+      const r = await api<{
+        subscribed_devices: number;
+        results: { ok: boolean; error?: string }[];
+      }>("/push/test", { method: "POST" });
+      if (r.subscribed_devices === 0) {
+        setPushMsg("No subscribed devices on the server — tap Enable first (and on iOS, install to Home Screen).");
+      } else {
+        const fail = r.results.find((x) => !x.ok);
+        setPushMsg(
+          fail
+            ? `Send failed: ${fail.error}`
+            : `Sent to ${r.subscribed_devices} device(s) ✓ — check for the notification.`
+        );
+      }
+    } catch (e) {
+      setPushMsg((e as Error).message);
+    }
+  };
 
   useEffect(() => {
     api<Device[]>("/devices").then(setDevices).catch(() => {});
@@ -83,6 +115,37 @@ export default function Settings() {
               <span>Manage users</span>
               <span className="text-gray-300">›</span>
             </button>
+          </Section>
+        )}
+
+        {pushSupported() ? (
+          <Section title="Notifications">
+            <div className="mb-2 text-sm text-gray-500">
+              Permission: <span className="font-medium">{pushState}</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="rounded-xl bg-imsg-blue px-4 py-2 text-white"
+                onClick={onEnablePush}
+              >
+                Enable
+              </button>
+              <button
+                className="rounded-xl border border-gray-200 px-4 py-2"
+                onClick={onTestPush}
+              >
+                Send test
+              </button>
+            </div>
+            {pushMsg && <div className="mt-2 text-sm text-gray-600">{pushMsg}</div>}
+          </Section>
+        ) : (
+          <Section title="Notifications">
+            <div className="text-sm text-gray-500">
+              Push isn't available here. On iPhone, add the app to your Home
+              Screen and open it from there (iOS only supports push in installed
+              web apps).
+            </div>
           </Section>
         )}
 
