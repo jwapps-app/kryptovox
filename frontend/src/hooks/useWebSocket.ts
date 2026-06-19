@@ -28,12 +28,20 @@ export function useWebSocket(): void {
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       ws.onopen = () => {
         attemptRef.current = 0;
-        // Refresh server-side presence so offline-push targeting stays accurate.
+        // Heartbeat keeps presence "online" — but only while the app is
+        // foreground, so a hidden tab is treated as offline and gets pushed.
         heartbeat = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
+          if (ws.readyState === WebSocket.OPEN && !document.hidden) {
             ws.send(JSON.stringify({ type: "ping", payload: {} }));
           }
         }, 30000);
+        // Reflect current visibility immediately on connect.
+        ws.send(
+          JSON.stringify({
+            type: document.hidden ? "presence.away" : "presence.active",
+            payload: {},
+          })
+        );
       };
       ws.onmessage = (e) => {
         try {
@@ -60,8 +68,23 @@ export function useWebSocket(): void {
 
     connect();
 
+    // Tell the server when we background/foreground so push targets a hidden
+    // tab (the socket stays connected, so disconnect alone wouldn't catch it).
+    const onVisibility = () => {
+      if (activeSocket?.readyState === WebSocket.OPEN) {
+        activeSocket.send(
+          JSON.stringify({
+            type: document.hidden ? "presence.away" : "presence.active",
+            payload: {},
+          })
+        );
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
       closedRef.current = true;
+      document.removeEventListener("visibilitychange", onVisibility);
       activeSocket?.close();
       activeSocket = null;
     };

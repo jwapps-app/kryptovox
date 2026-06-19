@@ -58,8 +58,6 @@ async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
     try:
         while True:
             data = await websocket.receive_json()
-            # Any inbound frame (incl. heartbeat "ping") refreshes presence TTL.
-            await mark_online(device_id)
             await _handle_client_event(user_id, device_id, data)
     except WebSocketDisconnect:
         pass
@@ -74,18 +72,29 @@ async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
 async def _handle_client_event(
     user_id: uuid.UUID, device_id: uuid.UUID, data: dict
 ) -> None:
-    """Handle inbound client → server events (typing indicators).
+    """Handle inbound client → server events (presence + typing).
 
     Message creation goes through the REST endpoint (which then fans out),
     keeping persistence in one place. The socket carries ephemeral signals.
     """
     event_type = data.get("type")
+
+    # Presence: foreground => online (push suppressed); backgrounded/hidden =>
+    # offline (eligible for push) even though the socket stays connected.
+    if event_type in ("ping", "presence.active"):
+        await mark_online(device_id)
+        return
+    if event_type == "presence.away":
+        await mark_offline(device_id)
+        return
+
     payload = data.get("payload") or {}
     conversation_id = payload.get("conversation_id")
     if not conversation_id:
         return
 
     if event_type in (TYPING_START, TYPING_STOP):
+        await mark_online(device_id)
         async with SessionLocal() as db:
             await fanout_conversation(
                 db,

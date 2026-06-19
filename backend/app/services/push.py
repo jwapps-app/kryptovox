@@ -105,6 +105,7 @@ async def notify_offline(
         "body": "New message",
         "url": f"/chat/{conversation_id}",
     }
+    considered = online = pushed = 0
     for uid in await conversation_member_ids(db, conversation_id):
         if uid == sender_user_id:
             continue
@@ -114,6 +115,36 @@ async def notify_offline(
             )
         )
         for device in rows.scalars().all():
+            considered += 1
             if await is_online(device.id):
+                online += 1
                 continue
             await _send(device.push_subscription, payload, device, db)
+            pushed += 1
+    log.info(
+        "push fanout conv=%s: %d subscribed device(s), %d online (skipped), %d pushed",
+        conversation_id,
+        considered,
+        online,
+        pushed,
+    )
+
+
+async def send_test_to_user(db: AsyncSession, user_id: uuid.UUID) -> dict:
+    """Push a test notification to all of the user's subscribed devices,
+    ignoring presence. Returns per-device success/error for diagnostics."""
+    rows = await db.execute(
+        select(Device).where(
+            Device.user_id == user_id, Device.push_subscription.isnot(None)
+        )
+    )
+    devices = list(rows.scalars().all())
+    payload = {"title": "Kryptovox", "body": "Test notification ✅", "url": "/"}
+    results = []
+    for d in devices:
+        try:
+            await asyncio.to_thread(_send_sync, d.push_subscription, payload)
+            results.append({"device": str(d.id), "ok": True})
+        except Exception as exc:  # noqa: BLE001
+            results.append({"device": str(d.id), "ok": False, "error": str(exc)[:300]})
+    return {"subscribed_devices": len(devices), "results": results}
