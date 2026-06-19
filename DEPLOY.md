@@ -158,11 +158,20 @@ Portainer's UI, not a `.env` file.
    | `SECRET_KEY` | *(64-char hex — `python3 -c "import secrets;print(secrets.token_hex(32))"`)* |
    | `ALLOWED_ORIGINS` | `https://chat.yourdomain.com` |
    | `VAPID_EMAIL` | `mailto:you@yourdomain.com` |
-   | `CLOUDFLARE_TUNNEL_TOKEN` | *(from §2)* |
+   | `WEB_PORT` | `8095` *(host port nginx is published on — any free port)* |
 
-5. **Deploy the stack.** The backend runs migrations on start. Then set up the
-   Cloudflare Tunnel public hostname (§2) → `HTTP nginx:80`, and open
-   `https://chat.yourdomain.com`. First registered account = admin.
+5. **Deploy the stack.** The backend runs migrations on start. nginx is now
+   reachable on the NAS at `http://<NAS-IP>:<WEB_PORT>`.
+
+6. **Point your existing Cloudflare Tunnel** at it (Zero Trust → your tunnel →
+   Public Hostnames → Add):
+   - Subdomain `kryptovox` · Domain `yourdomain.com`
+   - **Type: HTTP** · **URL: `<NAS-IP>:<WEB_PORT>`** (e.g. `192.168.1.42:8095`)
+
+   No bundled `cloudflared` is in this stack — it reuses the tunnel you already
+   run for your other services. Cloudflare serves the site over HTTPS at the
+   edge (required for Web Crypto / PWA). Open `https://chat.yourdomain.com` —
+   first registered account = admin.
 
 **Updating in Portainer:** Repository stacks → *Pull and redeploy* (or GitOps
 auto-update). Web-editor stacks → *Update the stack* with **Re-pull image**
