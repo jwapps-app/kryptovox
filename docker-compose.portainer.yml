@@ -7,7 +7,11 @@
 #
 # Pulls prebuilt images from GHCR (private) — add ghcr.io as a Registry in
 # Portainer first (Registries → Add → Custom: ghcr.io, user + read:packages PAT).
-# The NAS never builds anything. TLS + public access come from Cloudflare Tunnel.
+# The NAS never builds anything.
+#
+# Ingress: nginx is published on <NAS-IP>:${WEB_PORT}. Point your existing
+# Cloudflare Tunnel public hostname at HTTP -> <NAS-IP>:${WEB_PORT}. Cloudflare
+# terminates TLS, so the public site is https:// (required for Web Crypto/PWA).
 
 x-logging: &default-logging
   driver: json-file
@@ -78,23 +82,11 @@ services:
     mem_limit: 64m
     depends_on:
       - backend
-    # Cloudflare Tunnel reaches nginx by service name on the stack network.
-    # If you'd rather front it with Synology's reverse proxy instead of the
-    # tunnel, uncomment the port and drop the cloudflared service below:
-    # ports:
-    #   - "8080:80"
-    expose:
-      - "80"
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    logging: *default-logging
-    command: tunnel run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      - nginx
+    # Published on the NAS so your existing Cloudflare Tunnel (or Synology
+    # reverse proxy) can reach it at http://<NAS-IP>:${WEB_PORT}. Pick any free
+    # host port. Cloudflare still serves the site over HTTPS at the edge.
+    ports:
+      - "${WEB_PORT:-8095}:80"
 
   # Nightly pg_dump into /volume1/backup/kryptovox, keeping the last 14 days.
   backup:
@@ -136,6 +128,6 @@ services:
 #   SECRET_KEY              <64-char random hex>
 #   ALLOWED_ORIGINS         https://chat.yourdomain.com
 #   VAPID_EMAIL             mailto:you@yourdomain.com
-#   CLOUDFLARE_TUNNEL_TOKEN <token from Cloudflare Zero Trust>
+#   WEB_PORT                8095         (host port nginx is published on)
 #   BACKEND_WORKERS         4            (optional)
 # ===========================================================================
