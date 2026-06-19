@@ -1,0 +1,77 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
+import fs from "node:fs";
+import path from "node:path";
+
+// Local HTTPS via mkcert. Generate with:
+//   mkcert -install
+//   mkcert -cert-file frontend/certs/cert.pem -key-file frontend/certs/key.pem \
+//          localhost 127.0.0.1 <your-mac-LAN-IP>
+// HTTPS (and thus Web Crypto + service workers) then works from your phone too.
+const certDir = path.resolve(__dirname, "certs");
+const certPath = path.join(certDir, "cert.pem");
+const keyPath = path.join(certDir, "key.pem");
+const wantsHttps = process.env.VITE_DEV_HTTPS === "true";
+const httpsAvailable = wantsHttps && fs.existsSync(certPath) && fs.existsSync(keyPath);
+
+// In docker-compose the backend is reachable as `backend`; bare-metal it's localhost.
+const proxyTarget = process.env.VITE_PROXY_TARGET || "http://localhost:8000";
+
+export default defineConfig({
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: ["favicon.svg", "apple-touch-icon.png"],
+      manifest: {
+        name: "Kryptovox",
+        short_name: "Kryptovox",
+        description: "End-to-end encrypted messaging",
+        theme_color: "#007AFF",
+        background_color: "#FFFFFF",
+        display: "standalone",
+        start_url: "/",
+        icons: [
+          { src: "icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "icon-512.png", sizes: "512x512", type: "image/png" },
+          {
+            src: "icon-512-maskable.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        navigateFallbackDenylist: [/^\/api/],
+        // Pull in custom push + notificationclick handlers.
+        importScripts: ["push-sw.js"],
+      },
+      // Register the SW in dev too so push can be tested in the dev stack.
+      devOptions: {
+        enabled: true,
+        type: "module",
+        navigateFallbackDenylist: [/^\/api/],
+      },
+    }),
+  ],
+  server: {
+    host: true,
+    port: 5173,
+    // macOS Docker bind mounts don't deliver native FS events, so Vite's
+    // watcher misses edits and serves stale transforms. Poll instead.
+    watch: { usePolling: true, interval: 300 },
+    https: httpsAvailable
+      ? { cert: fs.readFileSync(certPath), key: fs.readFileSync(keyPath) }
+      : undefined,
+    proxy: {
+      "/api": {
+        target: proxyTarget,
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+  },
+});

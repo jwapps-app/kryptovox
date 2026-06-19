@@ -1,0 +1,135 @@
+# Production stack for Synology DSM 7 — no host ports exposed except via
+# Cloudflare Tunnel. nginx serves the built PWA and proxies /api + /ws to the
+# backend. Bring your own .env (see .env.example).
+
+# Log rotation: cap Docker json-file logs so a NAS volume can't fill up.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - /volume1/docker/kryptovox/pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    # NAS pulls this prebuilt image from GHCR (set IMAGE_PREFIX/IMAGE_TAG in .env).
+    # The build: block lets you still `docker compose build` locally if desired.
+    image: ${IMAGE_PREFIX:-ghcr.io/CHANGEME/kryptovox}-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ./backend
+    restart: unless-stopped
+    logging: *default-logging
+    command: >
+      sh -c "alembic upgrade head &&
+             gunicorn app.main:app -k uvicorn.workers.UvicornWorker
+             -w ${BACKEND_WORKERS:-4} -b 0.0.0.0:8000 --forwarded-allow-ips='*'"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-90}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@example.com}
+      # Persist the auto-generated VAPID key so push subscriptions survive restarts.
+      VAPID_KEY_PATH: /data/vapid_private.pem
+    volumes:
+      - /volume1/docker/kryptovox/data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  nginx:
+    image: ${IMAGE_PREFIX:-ghcr.io/CHANGEME/kryptovox}-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    depends_on:
+      - backend
+    # No host ports — Cloudflare Tunnel connects to kryptovox_nginx:80 internally.
+    expose:
+      - "80"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    logging: *default-logging
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - nginx
+
+  # Nightly pg_dump into /volume1/backup/kryptovox, keeping the last 14 days.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /volume1/backup/kryptovox:/backup
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+          ts=$$(date +%Y%m%d_%H%M%S)
+          pg_dump -h postgres -U "$${POSTGRES_USER}" "$${POSTGRES_DB}" \
+            | gzip > "/backup/kryptovox_$${ts}.sql.gz" \
+            && echo "backup written: kryptovox_$${ts}.sql.gz" \
+            || echo "backup FAILED at $${ts}"
+          # Prune dumps older than 14 days.
+          find /backup -name 'kryptovox_*.sql.gz' -mtime +14 -delete
+          sleep 86400
+        done
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
