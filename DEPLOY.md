@@ -121,7 +121,54 @@ Administration → Manage users).
 > On older DSM the command is `docker-compose` (hyphen) instead of
 > `docker compose`.
 
-## 6. Updating
+## 5b. Deploy with Portainer (instead of §3–§5 CLI)
+
+Use **`docker-compose.portainer.yml`** — it's image-only (no build), uses
+`mem_limit`, and derives `DATABASE_URL`/`REDIS_URL` for you. Env vars are set in
+Portainer's UI, not a `.env` file.
+
+1. **Add the GHCR registry** so Portainer can pull the private images:
+   Portainer → **Registries → Add registry → Custom registry**
+   - Name: `GHCR`  ·  URL: `ghcr.io`
+   - Authentication ON · Username: `jworthington83` · Password: a GitHub PAT
+     (classic) with **`read:packages`** (and access to the `jwapps-app` org).
+
+2. **Create the host directories** (SSH or File Station):
+   `/volume1/docker/kryptovox/pgdata`, `/volume1/docker/kryptovox/data`,
+   `/volume1/backup/kryptovox`.
+
+3. **Create the stack:** Portainer → **Stacks → Add stack**, name `kryptovox`.
+   - **Repository method (recommended — enables one-click updates):**
+     Build method = *Repository*. Repository URL
+     `https://github.com/jwapps-app/kryptovox`, reference `refs/heads/main`,
+     Compose path `docker-compose.portainer.yml`. Turn on **Authentication**
+     and give a PAT with `repo` read (the repo is private). Optionally enable
+     **GitOps updates** (polling) to auto-redeploy on push.
+   - **Or Web editor:** paste the contents of `docker-compose.portainer.yml`.
+
+4. **Environment variables** (in the stack's *Environment variables* panel):
+
+   | Name | Value |
+   |---|---|
+   | `IMAGE_PREFIX` | `ghcr.io/jwapps-app/kryptovox` |
+   | `IMAGE_TAG` | `latest` |
+   | `POSTGRES_USER` | `kryptovox` |
+   | `POSTGRES_PASSWORD` | *(long random)* |
+   | `POSTGRES_DB` | `kryptovox` |
+   | `SECRET_KEY` | *(64-char hex — `python3 -c "import secrets;print(secrets.token_hex(32))"`)* |
+   | `ALLOWED_ORIGINS` | `https://chat.yourdomain.com` |
+   | `VAPID_EMAIL` | `mailto:you@yourdomain.com` |
+   | `CLOUDFLARE_TUNNEL_TOKEN` | *(from §2)* |
+
+5. **Deploy the stack.** The backend runs migrations on start. Then set up the
+   Cloudflare Tunnel public hostname (§2) → `HTTP nginx:80`, and open
+   `https://chat.yourdomain.com`. First registered account = admin.
+
+**Updating in Portainer:** Repository stacks → *Pull and redeploy* (or GitOps
+auto-update). Web-editor stacks → *Update the stack* with **Re-pull image**
+enabled. Either way, push code → CI publishes `:latest` → Portainer re-pulls.
+
+## 6. Updating (CLI)
 
 ```bash
 # locally
