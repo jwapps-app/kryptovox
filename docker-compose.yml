@@ -1,0 +1,73 @@
+# Dev stack — hot reload, runs entirely on your Mac.
+# Frontend (Vite) serves HTTPS via mkcert certs in ./frontend/certs and
+# proxies /api + /ws to the backend, so the browser sees a single secure origin
+# (required for Web Crypto + service workers, even when testing from your phone
+# over the Mac's LAN IP).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kryptovox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kryptovox}
+      POSTGRES_DB: ${POSTGRES_DB:-kryptovox}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kryptovox}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://kryptovox:kryptovox@postgres:5432/kryptovox}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me-0000000000000000000000000000000000000000000000000000}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-90}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://localhost:5173}
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    command: npm run dev -- --host 0.0.0.0
+    environment:
+      # Same-origin: frontend proxies /api and /ws to backend, so no absolute URLs needed.
+      VITE_DEV_HTTPS: "true"
+      VITE_PROXY_TARGET: "http://backend:8000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
