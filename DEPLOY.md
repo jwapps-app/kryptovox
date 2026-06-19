@@ -6,7 +6,7 @@ anything. TLS + public access come from a Cloudflare Tunnel, so **no NAS ports
 are exposed to the internet and no port-forwarding is needed.**
 
 ```
- you ──push──▶ GitHub ──Actions──▶ GHCR (ghcr.io/<you>/kryptovox-*)
+ you ──push──▶ GitHub ──Actions──▶ GHCR (ghcr.io/jwapps-app/kryptovox-*)
                                         │ pull
  Synology NAS ◀──────────────────────────┘
    postgres · redis · backend · nginx · cloudflared · backup
@@ -20,13 +20,13 @@ are exposed to the internet and no port-forwarding is needed.**
 
 ```bash
 # from the project root (already a git repo)
-git remote add origin git@github.com:<you>/kryptovox.git
-git push -u origin main
+git remote add origin git@github.com:jwapps-app/kryptovox.git
+git push -u origin main   # CI publishes under the jwapps-app org
 ```
 
 On push, **Actions → Build & publish images** runs and pushes:
-- `ghcr.io/<you>/kryptovox-backend:latest`
-- `ghcr.io/<you>/kryptovox-frontend:latest`
+- `ghcr.io/jwapps-app/kryptovox-backend:latest`
+- `ghcr.io/jwapps-app/kryptovox-frontend:latest`
 
 (plus `:sha-<short>` and `:vX.Y.Z` for git tags). Watch it under the repo's
 **Actions** tab. First run takes a few minutes; later runs use build cache.
@@ -57,7 +57,7 @@ sudo mkdir -p /volume1/docker/kryptovox/{pgdata,data} /volume1/backup/kryptovox
 
 # authenticate to GHCR so private images can be pulled.
 # Create a GitHub PAT (classic) with scope: read:packages
-echo <YOUR_PAT> | docker login ghcr.io -u <you> --password-stdin
+echo <YOUR_PAT> | docker login ghcr.io -u jworthington83 --password-stdin
 ```
 
 Put `docker-compose.prod.yml` and a filled-in `.env` in
@@ -65,7 +65,7 @@ Put `docker-compose.prod.yml` and a filled-in `.env` in
 
 ```bash
 cd /volume1/docker/kryptovox
-git clone https://github.com/<you>/kryptovox.git app
+git clone https://github.com/jwapps-app/kryptovox.git app
 cd app
 cp .env.example .env   # then edit .env (next section)
 ```
@@ -74,7 +74,7 @@ cp .env.example .env   # then edit .env (next section)
 
 ```env
 # Images
-IMAGE_PREFIX=ghcr.io/<you>/kryptovox      # lowercase!
+IMAGE_PREFIX=ghcr.io/jwapps-app/kryptovox      # lowercase!
 IMAGE_TAG=latest
 
 # Postgres
