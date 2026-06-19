@@ -5,7 +5,7 @@ import { useAuth } from "../store/auth";
 import { conversationTitle, userLabel } from "../lib/format";
 import { safetyNumber } from "../lib/safety";
 import Avatar from "../components/Avatar";
-import type { Conversation, Device, User } from "../lib/types";
+import type { Conversation, User } from "../lib/types";
 
 export default function ChatInfo() {
   const { id = "" } = useParams();
@@ -24,17 +24,13 @@ export default function ChatInfo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Compute the safety number from every member device's public key.
+  // Compute the safety number from every member's identity public key.
   useEffect(() => {
     if (!conv) return;
-    (async () => {
-      const keys: string[] = [];
-      for (const m of conv.members) {
-        const devs = await api<Device[]>(`/users/${m.id}/devices`);
-        keys.push(...devs.map((d) => d.public_key));
-      }
-      setSafety(await safetyNumber(keys));
-    })().catch(() => {});
+    const keys = conv.members
+      .map((m) => m.identity_public_key)
+      .filter((k): k is string => !!k);
+    safetyNumber(keys).then(setSafety).catch(() => {});
   }, [conv]);
 
   if (!conv) return null;

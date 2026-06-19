@@ -1,17 +1,27 @@
 import { create } from "zustand";
 import { api, setAccessToken, setOnAuthLost } from "../lib/api";
-import { getOrCreateIdentity, loadIdentity } from "../crypto/identity";
-import type { StoredIdentity } from "../crypto/identity";
+import {
+  createIdentity,
+  loadIdentity,
+  recoverIdentity,
+} from "../crypto/identity";
+import type { EncryptedKeyBlob, Identity } from "../crypto/identity";
 import type { TokenResponse, User } from "../lib/types";
 
 type Status = "loading" | "authed" | "anon";
+
+interface IdentityResponse {
+  identity_public_key: string | null;
+  encrypted_private_key: EncryptedKeyBlob | null;
+}
 
 interface AuthState {
   status: Status;
   user: User | null;
   deviceId: string | null;
-  identity: StoredIdentity | null;
+  identity: Identity | null;
   error: string | null;
+  needsReauth: boolean; // valid session but no local key — must re-enter password
   bootstrap: () => Promise<void>;
   register: (
     username: string,
@@ -23,23 +33,53 @@ interface AuthState {
   logout: () => Promise<void>;
 }
 
+// Recover the user's shared identity, or establish it on first sign-in.
+async function ensureIdentity(password: string): Promise<Identity> {
+  const remote = await api<IdentityResponse>("/users/me/identity");
+  if (remote.identity_public_key && remote.encrypted_private_key) {
+    return recoverIdentity(remote.identity_public_key, remote.encrypted_private_key, password);
+  }
+  // No identity yet — create one and publish it (server keeps the first writer).
+  const { identity, blob } = await createIdentity(password);
+  const saved = await api<IdentityResponse>("/users/me/identity", {
+    method: "PUT",
+    body: JSON.stringify({
+      identity_public_key: identity.publicKeyB64,
+      encrypted_private_key: blob,
+    }),
+  });
+  if (
+    saved.identity_public_key &&
+    saved.encrypted_private_key &&
+    saved.identity_public_key !== identity.publicKeyB64
+  ) {
+    // Another device won the race — adopt the server's identity.
+    return recoverIdentity(saved.identity_public_key, saved.encrypted_private_key, password);
+  }
+  return identity;
+}
+
 export const useAuth = create<AuthState>((set, get) => ({
   status: "loading",
   user: null,
   deviceId: null,
   identity: null,
   error: null,
+  needsReauth: false,
 
   bootstrap: async () => {
-    setOnAuthLost(() => set({ status: "anon", user: null, deviceId: null }));
+    setOnAuthLost(() =>
+      set({ status: "anon", user: null, deviceId: null, needsReauth: false })
+    );
     const identity = await loadIdentity();
-    if (!identity) {
-      set({ status: "anon" });
-      return;
-    }
     try {
       const tok = await api<TokenResponse>("/auth/refresh", { method: "POST" });
       setAccessToken(tok.access_token);
+      if (!identity) {
+        // Session is valid but this device has no key — require a password login.
+        set({ status: "anon", needsReauth: true });
+        return;
+      }
       set({
         status: "authed",
         user: tok.user,
@@ -53,8 +93,8 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   register: async (username, password, displayName, deviceName) => {
     set({ error: null });
-    const identity = await getOrCreateIdentity();
     try {
+      const { identity, blob } = await createIdentity(password);
       const tok = await api<TokenResponse>("/auth/register", {
         method: "POST",
         body: JSON.stringify({
@@ -62,11 +102,18 @@ export const useAuth = create<AuthState>((set, get) => ({
           password,
           display_name: displayName || null,
           device_name: deviceName || null,
-          public_key: identity.publicKeyB64,
+          identity_public_key: identity.publicKeyB64,
+          encrypted_private_key: blob,
         }),
       });
       setAccessToken(tok.access_token);
-      set({ status: "authed", user: tok.user, deviceId: tok.device_id, identity });
+      set({
+        status: "authed",
+        user: tok.user,
+        deviceId: tok.device_id,
+        identity,
+        needsReauth: false,
+      });
     } catch (e) {
       set({ error: (e as Error).message });
       throw e;
@@ -75,7 +122,6 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   login: async (username, password, deviceName) => {
     set({ error: null });
-    const identity = await getOrCreateIdentity();
     try {
       const tok = await api<TokenResponse>("/auth/login", {
         method: "POST",
@@ -83,11 +129,17 @@ export const useAuth = create<AuthState>((set, get) => ({
           username,
           password,
           device_name: deviceName || null,
-          public_key: identity.publicKeyB64,
         }),
       });
       setAccessToken(tok.access_token);
-      set({ status: "authed", user: tok.user, deviceId: tok.device_id, identity });
+      const identity = await ensureIdentity(password);
+      set({
+        status: "authed",
+        user: { ...tok.user, identity_public_key: identity.publicKeyB64 },
+        deviceId: tok.device_id,
+        identity,
+        needsReauth: false,
+      });
     } catch (e) {
       set({ error: (e as Error).message });
       throw e;
@@ -101,7 +153,12 @@ export const useAuth = create<AuthState>((set, get) => ({
       /* ignore */
     }
     setAccessToken(null);
-    // Keep the device identity in IndexedDB so the same device row is reused.
-    set({ status: "anon", user: null, deviceId: null, identity: get().identity });
+    set({
+      status: "anon",
+      user: null,
+      deviceId: null,
+      identity: get().identity,
+      needsReauth: false,
+    });
   },
 }));

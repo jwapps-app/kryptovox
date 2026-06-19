@@ -18,8 +18,10 @@ class Device(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     device_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    # base64url-encoded X25519 public key (raw 32 bytes). Private key never leaves the client.
-    public_key: Mapped[str] = mapped_column(String, nullable=False)
+    # Legacy per-device public key. Messaging now uses the per-user identity
+    # key (users.identity_public_key), so this is kept only for back-compat and
+    # may mirror the user's identity public key.
+    public_key: Mapped[str | None] = mapped_column(String, nullable=True)
     push_subscription: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

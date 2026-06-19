@@ -1,38 +1,37 @@
-// Device public-key lookup + cache. Used to gather recipients when sending
-// and to find a sender's public key when decrypting.
+// User identity public-key lookup + cache. Used to gather recipients when
+// sending and to find a sender's public key when decrypting.
 
 import { api } from "./api";
-import type { Device } from "./types";
+import type { User } from "./types";
 import type { RecipientKey } from "../crypto/messaging";
 
-// deviceId -> publicKeyB64
-const deviceKeyCache = new Map<string, string>();
+// userId -> identity_public_key (base64url)
+const keyCache = new Map<string, string>();
 
-async function fetchUserDevices(userId: string): Promise<Device[]> {
-  const devices = await api<Device[]>(`/users/${userId}/devices`);
-  for (const d of devices) deviceKeyCache.set(d.id, d.public_key);
-  return devices;
+/** Seed the cache from any UserOut objects we already have (conversation
+ *  members, search results) to avoid extra round-trips. */
+export function cacheUserKeys(users: User[]): void {
+  for (const u of users) {
+    if (u.identity_public_key) keyCache.set(u.id, u.identity_public_key);
+  }
 }
 
-/** Every device of every given user — the recipient set for a message. */
+export async function getUserPublicKey(userId: string): Promise<string | null> {
+  const cached = keyCache.get(userId);
+  if (cached) return cached;
+  const user = await api<User>(`/users/${userId}`);
+  if (user.identity_public_key) keyCache.set(userId, user.identity_public_key);
+  return user.identity_public_key ?? null;
+}
+
+/** One recipient entry per user (their identity key). Users who haven't
+ *  established an identity yet are skipped (they can't receive until they
+ *  sign in once). */
 export async function gatherRecipients(userIds: string[]): Promise<RecipientKey[]> {
   const recipients: RecipientKey[] = [];
   for (const uid of userIds) {
-    const devices = await fetchUserDevices(uid);
-    for (const d of devices) {
-      recipients.push({ deviceId: d.id, publicKeyB64: d.public_key });
-    }
+    const pub = await getUserPublicKey(uid);
+    if (pub) recipients.push({ userId: uid, publicKeyB64: pub });
   }
   return recipients;
-}
-
-/** Public key for a specific device, fetching the owner's devices if needed. */
-export async function getDevicePublicKey(
-  userId: string,
-  deviceId: string
-): Promise<string | null> {
-  const cached = deviceKeyCache.get(deviceId);
-  if (cached) return cached;
-  await fetchUserDevices(userId);
-  return deviceKeyCache.get(deviceId) ?? null;
 }
