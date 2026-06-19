@@ -52,10 +52,7 @@ services:
       context: ./backend
     restart: unless-stopped
     logging: *default-logging
-    command: >
-      sh -c "alembic upgrade head &&
-             gunicorn app.main:app -k uvicorn.workers.UvicornWorker
-             -w ${BACKEND_WORKERS:-4} -b 0.0.0.0:8000 --forwarded-allow-ips='*'"
+    command: sh -c "alembic upgrade head && gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w ${BACKEND_WORKERS:-4} -b 0.0.0.0:8000 --forwarded-allow-ips='*'"
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}

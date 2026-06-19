@@ -53,10 +53,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 512m
-    command: >
-      sh -c "alembic upgrade head &&
-             gunicorn app.main:app -k uvicorn.workers.UvicornWorker
-             -w ${BACKEND_WORKERS:-4} -b 0.0.0.0:8000 --forwarded-allow-ips='*'"
+    command: sh -c "alembic upgrade head && gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w ${BACKEND_WORKERS:-4} -b 0.0.0.0:8000 --forwarded-allow-ips='*'"
     environment:
       # DATABASE_URL/REDIS_URL are derived here so you don't have to type them.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
