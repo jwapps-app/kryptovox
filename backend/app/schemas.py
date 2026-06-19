@@ -5,13 +5,23 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------- Auth ----------
+class EncryptedKeyBlob(BaseModel):
+    # Password-wrapped private key: AES-GCM(ciphertext) under PBKDF2(salt, iter).
+    model_config = ConfigDict(extra="forbid")
+    salt: str
+    iv: str
+    ciphertext: str
+    iterations: int = Field(default=200_000, ge=10_000, le=2_000_000)
+
+
 class RegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str = Field(min_length=3, max_length=32)
     password: str = Field(min_length=8, max_length=128)
     display_name: str | None = Field(default=None, max_length=64)
     device_name: str | None = Field(default=None, max_length=64)
-    public_key: str = Field(min_length=16, max_length=128)  # base64url X25519
+    identity_public_key: str = Field(min_length=16, max_length=128)  # base64url X25519
+    encrypted_private_key: EncryptedKeyBlob
 
 
 class LoginRequest(BaseModel):
@@ -19,7 +29,17 @@ class LoginRequest(BaseModel):
     username: str
     password: str
     device_name: str | None = Field(default=None, max_length=64)
-    public_key: str = Field(min_length=16, max_length=128)
+
+
+class IdentityOut(BaseModel):
+    identity_public_key: str | None = None
+    encrypted_private_key: EncryptedKeyBlob | None = None
+
+
+class IdentitySet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    identity_public_key: str = Field(min_length=16, max_length=128)
+    encrypted_private_key: EncryptedKeyBlob
 
 
 class TokenResponse(BaseModel):
@@ -38,6 +58,8 @@ class UserOut(BaseModel):
     display_name: str | None = None
     avatar_url: str | None = None
     is_admin: bool = False
+    # Public identity key for E2EE wrapping (null until the user establishes it).
+    identity_public_key: str | None = None
 
 
 class SetupStatus(BaseModel):

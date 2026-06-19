@@ -101,6 +101,8 @@ async def register(
         display_name=body.display_name or body.username,
         password_hash=hash_password(body.password),
         is_admin=True,  # first user bootstraps as admin
+        identity_public_key=body.identity_public_key,
+        encrypted_private_key=body.encrypted_private_key.model_dump(),
     )
     db.add(user)
     await db.flush()
@@ -108,7 +110,7 @@ async def register(
     device = Device(
         user_id=user.id,
         device_name=body.device_name,
-        public_key=body.public_key,
+        public_key=body.identity_public_key,
     )
     db.add(device)
     await db.flush()
@@ -128,20 +130,15 @@ async def login(
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
-    # A login from a given public key reuses that device row if present, else creates one.
-    device = await db.scalar(
-        select(Device).where(
-            Device.user_id == user.id, Device.public_key == body.public_key
-        )
+    # Each login establishes a fresh device row (browser). The client recovers
+    # the shared identity key separately via GET/PUT /users/me/identity.
+    device = Device(
+        user_id=user.id,
+        device_name=body.device_name,
+        public_key=user.identity_public_key,
     )
-    if device is None:
-        device = Device(
-            user_id=user.id,
-            device_name=body.device_name,
-            public_key=body.public_key,
-        )
-        db.add(device)
-        await db.flush()
+    db.add(device)
+    await db.flush()
 
     return await _issue_tokens(db, response, user, device)
 

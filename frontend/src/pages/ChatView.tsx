@@ -6,6 +6,7 @@ import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { conversationTitle, dayLabel } from "../lib/format";
 import { getPrefs } from "../lib/prefs";
+import { cacheUserKeys } from "../lib/keys";
 import Avatar from "../components/Avatar";
 import MessageBubble from "../components/MessageBubble";
 import TypingIndicator from "../components/TypingIndicator";
@@ -42,7 +43,12 @@ export default function ChatView() {
 
   useEffect(() => {
     void loadMessages(id);
-    api<Conversation>(`/conversations/${id}`).then(setConv).catch(() => navigate("/"));
+    api<Conversation>(`/conversations/${id}`)
+      .then((c) => {
+        cacheUserKeys(c.members);
+        setConv(c);
+      })
+      .catch(() => navigate("/"));
   }, [id, loadMessages, navigate]);
 
   // Stick to bottom when message count grows.

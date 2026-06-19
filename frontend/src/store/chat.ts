@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
-import { gatherRecipients, getDevicePublicKey } from "../lib/keys";
+import { cacheUserKeys, gatherRecipients, getUserPublicKey } from "../lib/keys";
 import { decryptMessage, encryptMessage } from "../crypto/messaging";
 import { useAuth } from "./auth";
 import type { Conversation, Message, MessagePage, WsEvent } from "../lib/types";
@@ -35,12 +35,12 @@ interface ChatState {
 
 async function decryptForMe(msg: Message): Promise<string> {
   if (msg.deleted_at) return "";
-  const { identity, deviceId } = useAuth.getState();
-  if (!identity || !deviceId) return "🔒";
-  const wrapped = msg.encrypted_keys[deviceId];
-  if (!wrapped) return "[no key for this device]";
-  if (!msg.sender_id || !msg.sender_device_id) return "[unknown sender]";
-  const senderPub = await getDevicePublicKey(msg.sender_id, msg.sender_device_id);
+  const { identity, user } = useAuth.getState();
+  if (!identity || !user) return "🔒";
+  const wrapped = msg.encrypted_keys[user.id];
+  if (!wrapped) return "[not encrypted for you]";
+  if (!msg.sender_id) return "[unknown sender]";
+  const senderPub = await getUserPublicKey(msg.sender_id);
   if (!senderPub) return "[unknown sender key]";
   try {
     return await decryptMessage(
@@ -65,6 +65,8 @@ export const useChat = create<ChatState>((set, get) => ({
 
   loadConversations: async () => {
     const conversations = await api<Conversation[]>("/conversations");
+    // Seed identity-key cache from members to avoid extra lookups.
+    for (const c of conversations) cacheUserKeys(c.members);
     // Decrypt last-message previews.
     const texts: Record<string, string> = {};
     await Promise.all(

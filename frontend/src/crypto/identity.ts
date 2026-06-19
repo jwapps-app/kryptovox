@@ -1,34 +1,44 @@
-// Device identity: an X25519 key pair generated at registration.
-// The private key NEVER leaves the device — it lives in IndexedDB as a
-// non-extractable CryptoKey. The public key (base64url raw) is uploaded.
+// Per-user identity: one X25519 key pair, shared across all of a user's
+// devices so every device can read the same history.
+//
+// The private key is generated extractable, then exported (PKCS#8) and
+// encrypted with a key derived from the user's password (PBKDF2). That
+// ciphertext blob is stored server-side; a new device fetches it and unwraps
+// locally. The server never sees the plaintext private key.
 
-import { bytesToBase64url } from "./base64";
+import { base64urlToBytes, bytesToBase64url, utf8Encode } from "./base64";
 
 const DB_NAME = "kryptovox";
 const STORE = "identity";
-const KEY_ID = "device-keypair";
+const KEY_ID = "user-identity";
+const PBKDF2_ITERATIONS = 200_000;
 
-export interface StoredIdentity {
-  privateKey: CryptoKey; // non-extractable X25519 private key
+export interface Identity {
+  privateKey: CryptoKey;
   publicKey: CryptoKey;
   publicKeyB64: string;
+}
+
+export interface EncryptedKeyBlob {
+  salt: string; // base64url
+  iv: string; // base64url
+  ciphertext: string; // base64url
+  iterations: number;
 }
 
 function assertSecureContext(): void {
   if (typeof crypto === "undefined" || !crypto.subtle) {
     throw new Error(
-      "Web Crypto unavailable. Open the app over https:// or http://localhost — " +
-        "plain http:// on a LAN IP is not a secure context."
+      "Web Crypto unavailable. Open the app over https:// or http://localhost."
     );
   }
 }
 
+// ---------- IndexedDB (local copy of the identity) ----------
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore(STORE);
-    };
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -38,8 +48,7 @@ function idbGet<T>(key: string): Promise<T | undefined> {
   return openDb().then(
     (db) =>
       new Promise<T | undefined>((resolve, reject) => {
-        const tx = db.transaction(STORE, "readonly");
-        const req = tx.objectStore(STORE).get(key);
+        const req = db.transaction(STORE, "readonly").objectStore(STORE).get(key);
         req.onsuccess = () => resolve(req.result as T | undefined);
         req.onerror = () => reject(req.error);
       })
@@ -58,43 +67,13 @@ function idbPut(key: string, value: unknown): Promise<void> {
   );
 }
 
-export async function generateIdentityKeyPair(): Promise<StoredIdentity> {
+export async function loadIdentity(): Promise<Identity | null> {
   assertSecureContext();
-  // Private key is non-extractable; public key is extractable so we can upload it.
-  const pair = (await crypto.subtle.generateKey(
-    { name: "X25519" },
-    false,
-    ["deriveBits"]
-  )) as CryptoKeyPair;
-  const rawPub = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
-  const identity: StoredIdentity = {
-    privateKey: pair.privateKey,
-    publicKey: pair.publicKey,
-    publicKeyB64: bytesToBase64url(rawPub),
-  };
-  // CryptoKey objects are structured-cloneable, so they persist in IndexedDB
-  // without ever being serialized to raw bytes.
-  await idbPut(KEY_ID, {
-    privateKey: identity.privateKey,
-    publicKey: identity.publicKey,
-    publicKeyB64: identity.publicKeyB64,
-  });
-  return identity;
+  return (await idbGet<Identity>(KEY_ID)) ?? null;
 }
 
-export async function loadIdentity(): Promise<StoredIdentity | null> {
-  assertSecureContext();
-  const stored = await idbGet<{
-    privateKey: CryptoKey;
-    publicKey: CryptoKey;
-    publicKeyB64: string;
-  }>(KEY_ID);
-  if (!stored) return null;
-  return stored;
-}
-
-export async function getOrCreateIdentity(): Promise<StoredIdentity> {
-  return (await loadIdentity()) ?? (await generateIdentityKeyPair());
+async function storeIdentity(identity: Identity): Promise<void> {
+  await idbPut(KEY_ID, identity);
 }
 
 export async function clearIdentity(): Promise<void> {
@@ -105,4 +84,102 @@ export async function clearIdentity(): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+// ---------- key derivation / wrapping ----------
+async function deriveWrapKey(
+  password: string,
+  salt: Uint8Array<ArrayBuffer>,
+  iterations: number
+): Promise<CryptoKey> {
+  const base = await crypto.subtle.importKey(
+    "raw",
+    utf8Encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+export async function wrapPrivateKey(
+  privateKey: CryptoKey,
+  password: string
+): Promise<EncryptedKeyBlob> {
+  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", privateKey));
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveWrapKey(password, salt, PBKDF2_ITERATIONS);
+  const ct = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, pkcs8)
+  );
+  return {
+    salt: bytesToBase64url(salt),
+    iv: bytesToBase64url(iv),
+    ciphertext: bytesToBase64url(ct),
+    iterations: PBKDF2_ITERATIONS,
+  };
+}
+
+async function unwrapPrivateKey(
+  blob: EncryptedKeyBlob,
+  password: string
+): Promise<CryptoKey> {
+  const salt = base64urlToBytes(blob.salt);
+  const iv = base64urlToBytes(blob.iv);
+  const ct = base64urlToBytes(blob.ciphertext);
+  const key = await deriveWrapKey(password, salt, blob.iterations);
+  const pkcs8 = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  return crypto.subtle.importKey("pkcs8", pkcs8, { name: "X25519" }, true, [
+    "deriveBits",
+  ]);
+}
+
+// ---------- high-level flows ----------
+
+/** Generate a brand-new identity and persist it locally. Returns the identity
+ *  plus the password-wrapped blob to upload to the server. */
+export async function createIdentity(
+  password: string
+): Promise<{ identity: Identity; blob: EncryptedKeyBlob }> {
+  assertSecureContext();
+  const pair = (await crypto.subtle.generateKey({ name: "X25519" }, true, [
+    "deriveBits",
+  ])) as CryptoKeyPair;
+  const rawPub = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
+  const identity: Identity = {
+    privateKey: pair.privateKey,
+    publicKey: pair.publicKey,
+    publicKeyB64: bytesToBase64url(rawPub),
+  };
+  const blob = await wrapPrivateKey(pair.privateKey, password);
+  await storeIdentity(identity);
+  return { identity, blob };
+}
+
+/** Recover an identity from the server's wrapped blob using the password, and
+ *  persist it locally. */
+export async function recoverIdentity(
+  publicKeyB64: string,
+  blob: EncryptedKeyBlob,
+  password: string
+): Promise<Identity> {
+  assertSecureContext();
+  const privateKey = await unwrapPrivateKey(blob, password);
+  const publicKey = await crypto.subtle.importKey(
+    "raw",
+    base64urlToBytes(publicKeyB64),
+    { name: "X25519" },
+    true,
+    []
+  );
+  const identity: Identity = { privateKey, publicKey, publicKeyB64 };
+  await storeIdentity(identity);
+  return identity;
 }
