@@ -47,7 +47,7 @@ services:
   backend:
     # NAS pulls this prebuilt image from GHCR (set IMAGE_PREFIX/IMAGE_TAG in .env).
     # The build: block lets you still `docker compose build` locally if desired.
-    image: ${IMAGE_PREFIX:-ghcr.io/CHANGEME/kryptovox}-backend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/kryptovox}-backend:${IMAGE_TAG:-latest}
     build:
       context: ./backend
     restart: unless-stopped
@@ -79,7 +79,7 @@ services:
         condition: service_healthy
 
   nginx:
-    image: ${IMAGE_PREFIX:-ghcr.io/CHANGEME/kryptovox}-frontend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/kryptovox}-frontend:${IMAGE_TAG:-latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
