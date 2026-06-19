@@ -1,0 +1,141 @@
+# Kryptovox — Portainer stack (Synology / standalone Docker).
+#
+# Deploy via Portainer → Stacks → Add stack. Use the "Repository" method
+# (this repo, compose path: docker-compose.portainer.yml) or paste this into the
+# web editor. Set the environment variables listed at the bottom in Portainer's
+# "Environment variables" section — there is no .env file in a Portainer stack.
+#
+# Pulls prebuilt images from GHCR (private) — add ghcr.io as a Registry in
+# Portainer first (Registries → Add → Custom: ghcr.io, user + read:packages PAT).
+# The NAS never builds anything. TLS + public access come from Cloudflare Tunnel.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - /volume1/docker/kryptovox/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: ${IMAGE_PREFIX}-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 512m
+    command: >
+      sh -c "alembic upgrade head &&
+             gunicorn app.main:app -k uvicorn.workers.UvicornWorker
+             -w ${BACKEND_WORKERS:-4} -b 0.0.0.0:8000 --forwarded-allow-ips='*'"
+    environment:
+      # DATABASE_URL/REDIS_URL are derived here so you don't have to type them.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-90}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@example.com}
+      VAPID_KEY_PATH: /data/vapid_private.pem
+    volumes:
+      - /volume1/docker/kryptovox/data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  nginx:
+    image: ${IMAGE_PREFIX}-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 64m
+    depends_on:
+      - backend
+    # Cloudflare Tunnel reaches nginx by service name on the stack network.
+    # If you'd rather front it with Synology's reverse proxy instead of the
+    # tunnel, uncomment the port and drop the cloudflared service below:
+    # ports:
+    #   - "8080:80"
+    expose:
+      - "80"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    logging: *default-logging
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - nginx
+
+  # Nightly pg_dump into /volume1/backup/kryptovox, keeping the last 14 days.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /volume1/backup/kryptovox:/backup
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+          ts=$$(date +%Y%m%d_%H%M%S)
+          pg_dump -h postgres -U "$${POSTGRES_USER}" "$${POSTGRES_DB}" \
+            | gzip > "/backup/kryptovox_$${ts}.sql.gz" \
+            && echo "backup written: kryptovox_$${ts}.sql.gz" \
+            || echo "backup FAILED at $${ts}"
+          find /backup -name 'kryptovox_*.sql.gz' -mtime +14 -delete
+          sleep 86400
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# ===========================================================================
+# Set these in Portainer → Stack → Environment variables:
+#
+#   IMAGE_PREFIX             ghcr.io/jwapps-app/kryptovox
+#   IMAGE_TAG               latest
+#   POSTGRES_USER           kryptovox
+#   POSTGRES_PASSWORD       <long random password>
+#   POSTGRES_DB             kryptovox
+#   SECRET_KEY              <64-char random hex>
+#   ALLOWED_ORIGINS         https://chat.yourdomain.com
+#   VAPID_EMAIL             mailto:you@yourdomain.com
+#   CLOUDFLARE_TUNNEL_TOKEN <token from Cloudflare Zero Trust>
+#   BACKEND_WORKERS         4            (optional)
+# ===========================================================================
