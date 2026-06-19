@@ -18,6 +18,25 @@ export default function App() {
     void bootstrap();
   }, [bootstrap]);
 
+  // Track the visual viewport so the layout (and the input bar) shrink to sit
+  // above the iOS keyboard instead of behind it.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const apply = () => {
+      const h = vv ? vv.height : window.innerHeight;
+      document.documentElement.style.setProperty("--app-height", `${h}px`);
+    };
+    apply();
+    vv?.addEventListener("resize", apply);
+    vv?.addEventListener("scroll", apply);
+    window.addEventListener("resize", apply);
+    return () => {
+      vv?.removeEventListener("resize", apply);
+      vv?.removeEventListener("scroll", apply);
+      window.removeEventListener("resize", apply);
+    };
+  }, []);
+
   useWebSocket();
 
   if (status === "loading") {
