@@ -88,7 +88,7 @@ services:
     ports:
       - "${WEB_PORT:-8095}:80"
 
-  # Nightly pg_dump into /volume1/backup/kryptovox, keeping the last 14 days.
+  # Nightly pg_dump into /volume1/Backup/kryptovox, keeping the last 14 days.
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -99,7 +99,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       PGPASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - /volume1/backup/kryptovox:/backup
+      - /volume1/Backup/kryptovox:/backup
     entrypoint:
       - sh
       - -c
