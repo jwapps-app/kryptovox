@@ -1,0 +1,224 @@
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { api } from "../lib/api";
+import { useAuth } from "../store/auth";
+import { conversationTitle, userLabel } from "../lib/format";
+import { safetyNumber } from "../lib/safety";
+import Avatar from "../components/Avatar";
+import type { Conversation, Device, User } from "../lib/types";
+
+export default function ChatInfo() {
+  const { id = "" } = useParams();
+  const navigate = useNavigate();
+  const user = useAuth((s) => s.user)!;
+
+  const [conv, setConv] = useState<Conversation | null>(null);
+  const [safety, setSafety] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const load = () =>
+    api<Conversation>(`/conversations/${id}`).then(setConv).catch(() => navigate("/"));
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // Compute the safety number from every member device's public key.
+  useEffect(() => {
+    if (!conv) return;
+    (async () => {
+      const keys: string[] = [];
+      for (const m of conv.members) {
+        const devs = await api<Device[]>(`/users/${m.id}/devices`);
+        keys.push(...devs.map((d) => d.public_key));
+      }
+      setSafety(await safetyNumber(keys));
+    })().catch(() => {});
+  }, [conv]);
+
+  if (!conv) return null;
+  const isGroup = conv.type === "group";
+  const isAdmin = conv.my_role === "admin";
+  const title = conversationTitle(conv, user.id);
+
+  const rename = async () => {
+    const name = prompt("Group name", conv.name ?? "");
+    if (!name) return;
+    await api(`/conversations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+    void load();
+  };
+
+  const removeMember = async (uid: string) => {
+    if (!confirm("Remove this member?")) return;
+    await api(`/conversations/${id}/members/${uid}`, { method: "DELETE" });
+    void load();
+  };
+
+  const leave = async () => {
+    if (!confirm("Leave this group?")) return;
+    await api(`/conversations/${id}/leave`, { method: "POST" });
+    navigate("/");
+  };
+
+  return (
+    <div className="mx-auto flex h-full max-w-2xl flex-col">
+      <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
+        <button className="text-2xl text-imsg-blue" onClick={() => navigate(`/chat/${id}`)}>
+          ‹
+        </button>
+        <span className="font-semibold">{isGroup ? "Group Info" : "Contact Info"}</span>
+        {isGroup && isAdmin && (
+          <button className="ml-auto text-sm text-imsg-blue" onClick={rename}>
+            Rename
+          </button>
+        )}
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="mb-6 flex flex-col items-center">
+          <Avatar name={title} size={72} />
+          <div className="mt-2 text-lg font-semibold">{title}</div>
+        </div>
+
+        <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">
+          {isGroup ? `${conv.members.length} members` : "Members"}
+        </h2>
+        <div className="rounded-2xl bg-white p-2 shadow-sm">
+          {conv.members.map((m: User) => (
+            <div
+              key={m.id}
+              className="flex items-center gap-3 border-b border-gray-50 px-2 py-2 last:border-0"
+            >
+              <Avatar name={userLabel(m)} size={36} />
+              <div className="flex-1">
+                <div className="text-[15px]">
+                  {userLabel(m)}
+                  {m.id === user.id && <span className="text-gray-400"> (You)</span>}
+                </div>
+                <div className="text-xs text-gray-400">@{m.username}</div>
+              </div>
+              {isGroup && isAdmin && m.id !== user.id && (
+                <button
+                  className="text-sm text-red-500"
+                  onClick={() => removeMember(m.id)}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {isGroup && isAdmin && (
+          <button
+            className="mt-3 w-full rounded-xl border border-gray-200 py-2 text-imsg-blue"
+            onClick={() => setAddOpen(true)}
+          >
+            + Add member
+          </button>
+        )}
+
+        {/* Safety number — compare out-of-band to verify no key was swapped. */}
+        <h2 className="mb-2 mt-6 text-xs font-semibold uppercase text-gray-400">
+          Safety number
+        </h2>
+        <div className="rounded-2xl bg-white p-4 font-mono text-sm tracking-wide shadow-sm">
+          {safety ?? "…"}
+        </div>
+        <p className="mt-2 text-xs text-gray-400">
+          If this matches on both devices, your conversation keys are verified.
+        </p>
+
+        {isGroup && (
+          <button
+            className="mt-6 w-full rounded-xl border border-gray-200 py-3 text-red-500"
+            onClick={leave}
+          >
+            Leave group
+          </button>
+        )}
+      </div>
+
+      {addOpen && (
+        <AddMemberSheet
+          conversationId={id}
+          existing={conv.members.map((m) => m.id)}
+          onClose={() => setAddOpen(false)}
+          onAdded={() => {
+            setAddOpen(false);
+            void load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddMemberSheet({
+  conversationId,
+  existing,
+  onClose,
+  onAdded,
+}: {
+  conversationId: string;
+  existing: string[];
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<User[]>([]);
+
+  useEffect(() => {
+    if (!q.trim()) return setResults([]);
+    const t = setTimeout(async () => {
+      const users = await api<User[]>(`/users/search?q=${encodeURIComponent(q.trim())}`);
+      setResults(users.filter((u) => !existing.includes(u.id)));
+    }, 200);
+    return () => clearTimeout(t);
+  }, [q, existing]);
+
+  const add = async (uid: string) => {
+    await api(`/conversations/${conversationId}/members?user_id=${uid}`, {
+      method: "POST",
+    });
+    onAdded();
+  };
+
+  return (
+    <div className="fixed inset-0 z-20 flex flex-col bg-white">
+      <header className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
+        <button className="text-imsg-blue" onClick={onClose}>
+          Cancel
+        </button>
+        <span className="font-semibold">Add member</span>
+      </header>
+      <div className="px-4 py-3">
+        <input
+          autoFocus
+          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[17px] outline-none"
+          placeholder="Search by username"
+          autoCapitalize="none"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </div>
+      <ul className="flex-1 overflow-y-auto">
+        {results.map((u) => (
+          <li key={u.id}>
+            <button
+              className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-gray-50"
+              onClick={() => add(u.id)}
+            >
+              <Avatar name={userLabel(u)} size={36} />
+              <span>{userLabel(u)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

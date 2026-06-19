@@ -1,0 +1,20 @@
+# Versions bumped past pip-audit findings (Phase 8 hardening):
+#   fastapi 0.115 -> patched starlette (CVE-2024-47874 multipart DoS, etc.)
+#   python-jose 3.4.0 -> PYSEC-2024-232/233
+#   python-multipart 0.0.20 -> CVE-2024-53981 + later DoS fixes
+fastapi==0.116.1
+uvicorn[standard]==0.32.1
+gunicorn==23.0.0
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+redis==5.2.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
+PyJWT==2.13.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.31
+email-validator==2.2.0
+pywebpush==2.0.0
+slowapi==0.1.9
