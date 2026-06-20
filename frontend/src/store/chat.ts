@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
 import { cacheUserKeys, gatherRecipients, getUserPublicKey } from "../lib/keys";
+import { syncBadge } from "../lib/badge";
 import { decryptMessage, encryptMessage } from "../crypto/messaging";
 import { useAuth } from "./auth";
 import type { Conversation, Message, MessagePage, WsEvent } from "../lib/types";
@@ -75,6 +76,7 @@ export const useChat = create<ChatState>((set, get) => ({
       })
     );
     set((s) => ({ conversations, textByMessage: { ...s.textByMessage, ...texts } }));
+    syncBadge(conversations);
   },
 
   loadMessages: async (conversationId) => {
@@ -196,6 +198,7 @@ export const useChat = create<ChatState>((set, get) => ({
           c.id === conversationId ? { ...c, unread_count: 0 } : c
         ),
       }));
+      syncBadge(get().conversations);
     } catch {
       /* best-effort */
     }
