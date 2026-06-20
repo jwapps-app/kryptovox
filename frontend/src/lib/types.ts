@@ -37,6 +37,17 @@ export interface Reaction {
   user_id: string;
 }
 
+export interface ImageMedia {
+  id: string;
+  iv: string;
+  thumb: string;
+  thumb_iv: string;
+  w: number;
+  h: number;
+  mime: string;
+  size: number;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -46,6 +57,7 @@ export interface Message {
   iv: string;
   encrypted_keys: Record<string, string>;
   type: string;
+  media: ImageMedia | null;
   reply_to_id: string | null;
   edited_at: string | null;
   deleted_at: string | null;

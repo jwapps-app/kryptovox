@@ -16,7 +16,7 @@ import {
 } from "./base64";
 
 const HKDF_INFO = utf8Encode("kryptovox-msg-key-wrap-v1");
-const WRAP_IV_LEN = 12;
+export const WRAP_IV_LEN = 12;
 
 export interface RecipientKey {
   userId: string;
@@ -29,11 +29,11 @@ export interface EncryptedMessage {
   encrypted_keys: Record<string, string>; // userId -> base64url(wrapIv || wrapped)
 }
 
-function importPublicKey(b64: string): Promise<CryptoKey> {
+export function importPublicKey(b64: string): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", base64urlToBytes(b64), { name: "X25519" }, false, []);
 }
 
-async function deriveWrapKey(
+export async function deriveWrapKey(
   privateKey: CryptoKey,
   peerPublicKey: CryptoKey
 ): Promise<CryptoKey> {

@@ -99,7 +99,9 @@ export default function ConversationList() {
         {conversations.map((c) => {
           const title = conversationTitle(c, user.id);
           const preview = c.last_message
-            ? textByMessage[c.last_message.id] ?? "…"
+            ? c.last_message.type === "image"
+              ? "📷 Photo"
+              : textByMessage[c.last_message.id] ?? "…"
             : "No messages yet";
           return (
             <li key={c.id}>

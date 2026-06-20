@@ -15,6 +15,8 @@ interface Props {
   onReact: (messageId: string, emoji: string) => void;
   onReply: (message: Message) => void;
   onUnsend: (id: string) => void;
+  thumbUrl?: string;
+  onOpenImage?: (message: Message) => void;
 }
 
 export default function MessageBubble({
@@ -28,6 +30,8 @@ export default function MessageBubble({
   onReact,
   onReply,
   onUnsend,
+  thumbUrl,
+  onOpenImage,
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -90,18 +94,44 @@ export default function MessageBubble({
         </div>
       )}
 
-      <div
-        onMouseDown={keepKeyboard}
-        onClick={() => setOpen((v) => !v)}
-        className="max-w-[75%] cursor-default whitespace-pre-wrap break-words px-3 py-2 text-[17px] leading-snug"
-        style={{
-          background: isMine ? "#007AFF" : "#E9E9EB",
-          color: isMine ? "#ffffff" : "#000000",
-          borderRadius: radius,
-        }}
-      >
-        {text || "…"}
-      </div>
+      {message.type === "image" && message.media ? (
+        <button
+          onMouseDown={keepKeyboard}
+          onClick={() => onOpenImage?.(message)}
+          className="block overflow-hidden bg-gray-100"
+          style={{ width: "min(72%, 250px)", borderRadius: radius }}
+          aria-label="Open photo"
+        >
+          {thumbUrl ? (
+            <img
+              src={thumbUrl}
+              alt="Photo"
+              className="block w-full"
+              style={{ aspectRatio: `${message.media.w} / ${message.media.h}` }}
+            />
+          ) : (
+            <div
+              className="flex items-center justify-center text-sm text-gray-400"
+              style={{ aspectRatio: `${message.media.w} / ${message.media.h}` }}
+            >
+              Loading…
+            </div>
+          )}
+        </button>
+      ) : (
+        <div
+          onMouseDown={keepKeyboard}
+          onClick={() => setOpen((v) => !v)}
+          className="max-w-[75%] cursor-default whitespace-pre-wrap break-words px-3 py-2 text-[17px] leading-snug"
+          style={{
+            background: isMine ? "#007AFF" : "#E9E9EB",
+            color: isMine ? "#ffffff" : "#000000",
+            borderRadius: radius,
+          }}
+        >
+          {text || "…"}
+        </div>
+      )}
 
       {/* Aggregated reaction pills */}
       {counts.size > 0 && (

@@ -161,13 +161,26 @@ class ConversationOut(BaseModel):
 
 
 # ---------- Messages ----------
+class MediaRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(max_length=64)
+    iv: str
+    thumb: str  # base64url encrypted thumbnail
+    thumb_iv: str
+    w: int = Field(ge=1, le=20000)
+    h: int = Field(ge=1, le=20000)
+    mime: str = Field(max_length=64)
+    size: int = Field(ge=0)
+
+
 class MessageCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ciphertext: str
-    iv: str
+    ciphertext: str = ""
+    iv: str = ""
     encrypted_keys: dict[str, str]  # device_id -> base64url wrapped key
     type: str = Field(default="text", pattern="^(text|image|reaction|system)$")
     reply_to_id: uuid.UUID | None = None
+    media: MediaRef | None = None
 
 
 class ReactionOut(BaseModel):
@@ -191,6 +204,7 @@ class MessageOut(BaseModel):
     iv: str
     encrypted_keys: dict[str, str]
     type: str
+    media: dict | None = None
     reply_to_id: uuid.UUID | None
     edited_at: datetime | None
     deleted_at: datetime | None

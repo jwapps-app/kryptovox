@@ -16,6 +16,7 @@ from app.schemas import (
     ReactionCreate,
     ReactionOut,
 )
+from app.services import media_store
 from app.services.fanout import fanout_conversation
 from app.services.push import notify_offline
 from app.ws.events import (
@@ -112,6 +113,7 @@ async def send_message(
         iv=body.iv,
         encrypted_keys=body.encrypted_keys,
         type=body.type,
+        media=body.media.model_dump() if body.media else None,
         reply_to_id=body.reply_to_id,
     )
     db.add(msg)
@@ -145,6 +147,10 @@ async def unsend_message(
     msg.deleted_at = datetime.now(UTC)
     msg.ciphertext = ""
     msg.encrypted_keys = {}
+    # Drop the encrypted image blob + inline thumbnail on unsend.
+    if msg.media:
+        media_store.delete(msg.media.get("id", ""))
+        msg.media = None
     await db.flush()
 
     out = MessageOut.model_validate(msg)
