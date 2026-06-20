@@ -3,6 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { getPrefs, setPref } from "../lib/prefs";
+import {
+  disablePush,
+  enablePush,
+  getPushState,
+  isIOS,
+  isStandalone,
+  sendTestPush,
+  type PushState,
+} from "../lib/push";
 import { clockTime } from "../lib/format";
 import Avatar from "../components/Avatar";
 import type { Device, User } from "../lib/types";
@@ -17,10 +26,43 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [prefs, setPrefsState] = useState(getPrefs());
+  const [push, setPush] = useState<PushState | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState<string | null>(null);
 
   useEffect(() => {
     api<Device[]>("/devices").then(setDevices).catch(() => {});
+    getPushState().then(setPush).catch(() => {});
   }, []);
+
+  const togglePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      if (push?.subscribed) await disablePush();
+      else await enablePush();
+      setPush(await getPushState());
+    } catch (e) {
+      setPushMsg(e instanceof Error ? e.message : "Couldn't change notifications");
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const testPush = async () => {
+    setPushMsg(null);
+    try {
+      const r = await sendTestPush();
+      setPushMsg(
+        r.sent > 0
+          ? `Sent to ${r.sent} device${r.sent === 1 ? "" : "s"} — check your banner.`
+          : "No devices received it. Try toggling notifications off and on."
+      );
+    } catch (e) {
+      setPushMsg(e instanceof Error ? e.message : "Test failed");
+    }
+  };
 
   const saveName = async () => {
     const updated = await api<User>("/users/me", {
@@ -97,6 +139,40 @@ export default function Settings() {
             on={prefs.typingIndicators}
             onClick={() => toggle("typingIndicators")}
           />
+        </Section>
+
+        <Section title="Notifications">
+          {push && !push.supported && (
+            <p className="text-sm text-gray-500">
+              {isIOS() && !isStandalone()
+                ? "Add Kryptovox to your Home Screen, then open it from there to turn on notifications."
+                : "Notifications aren’t supported in this browser."}
+            </p>
+          )}
+          {push?.supported && (
+            <>
+              <Toggle
+                label="Push notifications"
+                on={push.subscribed}
+                onClick={() => void togglePush()}
+              />
+              {push.permission === "denied" && !push.subscribed && (
+                <p className="mt-1 text-xs text-gray-400">
+                  Notifications are blocked — enable them for Kryptovox in your
+                  device settings, then toggle this on.
+                </p>
+              )}
+              {push.subscribed && (
+                <button
+                  className="mt-2 text-sm text-imsg-blue"
+                  onClick={() => void testPush()}
+                >
+                  Send test notification
+                </button>
+              )}
+            </>
+          )}
+          {pushMsg && <p className="mt-2 text-xs text-gray-500">{pushMsg}</p>}
         </Section>
 
         <Section title="Linked devices">

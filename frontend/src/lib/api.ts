@@ -1,6 +1,7 @@
-// Thin fetch wrapper. Access token lives in memory only (never localStorage);
-// the refresh token is an httpOnly cookie the browser sends automatically.
-// On a 401 we transparently attempt one refresh + retry.
+// Thin fetch wrapper. The access token lives in memory only; the refresh token
+// is persisted in localStorage (see lib/session.ts) so installed PWAs survive a
+// force-close, and is sent in the /auth/refresh request body. On a 401 we
+// transparently attempt one refresh + retry.
 
 import type { TokenResponse } from "./types";
 import { getRefreshToken, setRefreshToken } from "./session";
