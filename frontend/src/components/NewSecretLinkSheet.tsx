@@ -61,9 +61,13 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
   const canShare = typeof navigator.share === "function";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
+    <div
+      className="fixed left-0 right-0 top-0 z-50 flex items-end bg-black/40"
+      style={{ height: "var(--vh, 100dvh)" }}
+      onClick={onClose}
+    >
       <div
-        className="w-full rounded-t-2xl bg-white p-4"
+        className="max-h-full w-full overflow-y-auto rounded-t-2xl bg-white p-4"
         style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
         onClick={(e) => e.stopPropagation()}
       >
