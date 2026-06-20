@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -11,6 +12,7 @@ from app.config import settings
 from app.ratelimit import limiter
 from app.redis_client import redis
 from app.routers import admin, auth, conversations, devices, messages, push, users
+from app.services.retention import retention_loop
 from app.ws.endpoint import router as ws_router
 from app.ws.hub import hub
 
@@ -26,7 +28,9 @@ async def lifespan(app: FastAPI):
         log.info("Connected to Redis")
     except Exception as exc:  # noqa: BLE001
         log.warning("Redis ping failed: %s", exc)
+    sweeper = asyncio.create_task(retention_loop())
     yield
+    sweeper.cancel()
     await hub.stop()
     await redis.aclose()
 

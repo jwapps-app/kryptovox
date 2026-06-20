@@ -39,6 +39,10 @@ class Settings(BaseSettings):
                 )
         return self
 
+    # Default message retention (days) seeded onto NEW conversations. 0 = keep
+    # forever. Changing this does not touch existing conversations.
+    default_retention_days: int = 0
+
     # CORS — comma-separated list of allowed origins
     allowed_origins: str = "https://localhost:5173"
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Conversation, ConversationMember, Message, User
@@ -12,6 +13,7 @@ from app.schemas import (
     ConversationOut,
     ConversationUpdate,
     MessageOut,
+    RetentionUpdate,
     UserOut,
 )
 from app.services.fanout import fanout_conversation
@@ -78,6 +80,7 @@ async def _to_out(
         my_role=member.role,
         last_message=MessageOut.model_validate(last) if last else None,
         unread_count=await _unread_count(db, member, user.id),
+        retention_days=conv.retention_days,
     )
 
 
@@ -112,6 +115,7 @@ async def create_conversation(
         type=body.type,
         name=body.name if body.type == "group" else None,
         created_by=current.id,
+        retention_days=settings.default_retention_days,
     )
     db.add(conv)
     await db.flush()
@@ -229,6 +233,29 @@ async def rename_conversation(
     if member.role != "admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin only")
     conv.name = body.name
+    await db.flush()
+    await fanout_conversation(
+        db,
+        conversation_id,
+        envelope(CONVERSATION_UPDATED, {"conversation_id": str(conversation_id)}),
+    )
+    return await _to_out(db, conv, member, current)
+
+
+@router.patch("/{conversation_id}/retention", response_model=ConversationOut)
+async def set_retention(
+    conversation_id: uuid.UUID,
+    body: RetentionUpdate,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationOut:
+    # Retention is a shared property of the conversation, so any member may set
+    # it (like disappearing-message settings in other messengers).
+    member = await _ensure_member(db, conversation_id, current.id)
+    conv = await db.get(Conversation, conversation_id)
+    if conv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
+    conv.retention_days = body.retention_days
     await db.flush()
     await fanout_conversation(
         db,

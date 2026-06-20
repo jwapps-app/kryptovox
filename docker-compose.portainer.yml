@@ -62,6 +62,8 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-90}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      # Default message retention (days) for NEW conversations; 0 = keep forever.
+      DEFAULT_RETENTION_DAYS: ${DEFAULT_RETENTION_DAYS:-0}
       VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@example.com}
       VAPID_KEY_PATH: /data/vapid_private.pem
     volumes:
@@ -98,6 +100,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_DB: ${POSTGRES_DB}
       PGPASSWORD: ${POSTGRES_PASSWORD}
+      # Set this <= your shortest message retention so deleted messages actually
+      # age out of backups too (otherwise they linger here after deletion).
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
     volumes:
       - /volume1/Backup/kryptovox:/backup
     entrypoint:
@@ -110,7 +115,7 @@ services:
             | gzip > "/backup/kryptovox_$${ts}.sql.gz" \
             && echo "backup written: kryptovox_$${ts}.sql.gz" \
             || echo "backup FAILED at $${ts}"
-          find /backup -name 'kryptovox_*.sql.gz' -mtime +14 -delete
+          find /backup -name 'kryptovox_*.sql.gz' -mtime +$${BACKUP_RETENTION_DAYS} -delete
           sleep 86400
         done
     depends_on:
@@ -133,4 +138,6 @@ volumes:
 #   VAPID_EMAIL             mailto:you@yourdomain.com
 #   WEB_PORT                8095         (host port nginx is published on)
 #   BACKEND_WORKERS         4            (optional)
+#   DEFAULT_RETENTION_DAYS  0            (optional; 0 = keep messages forever)
+#   BACKUP_RETENTION_DAYS   14           (optional; keep <= retention for true deletion)
 # ===========================================================================
