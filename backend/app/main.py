@@ -17,6 +17,8 @@ from app.routers import (
     config,
     conversations,
     devices,
+    guest,
+    links,
     media,
     messages,
     push,
@@ -78,6 +80,8 @@ api.include_router(messages.router)
 api.include_router(push.router)
 api.include_router(media.router)
 api.include_router(config.router)
+api.include_router(links.router)
+api.include_router(guest.router)
 api.include_router(ws_router)  # WS /api/ws
 
 app.include_router(api)

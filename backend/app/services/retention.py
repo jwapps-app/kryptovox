@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
-from app.models import Conversation, Message
+from app.models import Conversation, GuestThread, Message
 from app.services import media_store
 from app.services.app_settings import get_default_retention_days
 
@@ -57,6 +57,13 @@ async def sweep_once(db: AsyncSession) -> int:
             )
         )
         removed += result.rowcount or 0
+    # Expired secret-link threads (messages cascade).
+    expired = await db.execute(
+        delete(GuestThread).where(
+            GuestThread.expires_at.isnot(None), GuestThread.expires_at < now
+        )
+    )
+    removed += expired.rowcount or 0
     if removed:
         await db.commit()
     return removed
