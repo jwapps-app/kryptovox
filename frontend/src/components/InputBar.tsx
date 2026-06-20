@@ -78,6 +78,11 @@ export default function InputBar({
       <textarea
         ref={taRef}
         rows={1}
+        autoCapitalize="sentences"
+        autoCorrect="on"
+        spellCheck={true}
+        enterKeyHint="send"
+        inputMode="text"
         className="no-scrollbar max-h-[120px] flex-1 resize-none rounded-2xl border border-gray-200 px-4 py-2 text-[17px] outline-none focus:border-imsg-blue"
         placeholder="Message"
         value={text}
