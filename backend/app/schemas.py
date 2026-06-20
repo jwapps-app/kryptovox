@@ -44,10 +44,18 @@ class IdentitySet(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    # Long-lived refresh token; the client persists this (survives PWA
+    # force-close, unlike the cookie) and sends it back to /auth/refresh.
+    refresh_token: str
     token_type: str = "bearer"
     expires_in: int
     user: "UserOut"
     device_id: uuid.UUID
+
+
+class RefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    refresh_token: str | None = None
 
 
 # ---------- Users / Devices ----------
