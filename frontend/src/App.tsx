@@ -25,6 +25,12 @@ export default function App() {
   // up), and re-measures on a short warmup poll to self-heal stale heights.
   useEffect(() => {
     const rootStyle = document.documentElement.style;
+    // TEMP debug readout (top-left) — shows live viewport metrics on the phone.
+    const dbg = document.createElement("div");
+    dbg.id = "vpdebug";
+    dbg.style.cssText =
+      "position:fixed;top:0;left:0;z-index:99999;background:rgba(0,0,0,.75);color:#0f0;font:10px monospace;padding:2px 5px;pointer-events:none;white-space:nowrap";
+    document.body.appendChild(dbg);
     const isTyping = () => {
       const ae = document.activeElement as HTMLElement | null;
       return (
@@ -48,6 +54,14 @@ export default function App() {
       if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
       const se = document.scrollingElement;
       if (se && se.scrollTop) se.scrollTop = 0;
+      const vv = window.visualViewport;
+      const standalone =
+        (window.navigator as { standalone?: boolean }).standalone ||
+        window.matchMedia("(display-mode: standalone)").matches;
+      dbg.textContent =
+        `vh:${rootStyle.getPropertyValue("--vh")} in:${window.innerHeight} ` +
+        `vv:${vv ? Math.round(vv.height) : "-"} off:${vv ? Math.round(vv.offsetTop) : "-"} ` +
+        `typ:${isTyping() ? "Y" : "N"} sa:${standalone ? "PWA" : "tab"}`;
     };
     let warmup: ReturnType<typeof setInterval> | undefined;
     const rearm = () => {
@@ -93,6 +107,7 @@ export default function App() {
     document.addEventListener("focusin", onFocusIn);
 
     return () => {
+      dbg.remove();
       if (warmup) clearInterval(warmup);
       winEvents.forEach((e) => window.removeEventListener(e, pinViewport));
       window.removeEventListener("pageshow", rearm);
