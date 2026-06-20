@@ -61,7 +61,21 @@ export default function Login() {
           res("idb-blocked");
         }
       });
-      setDiag(`token: ${tok ? tok.length + " chars" : "NONE"} · key: ${keyCount}`);
+      let refreshInfo = "refresh: -";
+      try {
+        const r = await fetch("/api/auth/refresh", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: tok }),
+        });
+        refreshInfo = `refresh: ${r.status}`;
+      } catch (e) {
+        refreshInfo = `refresh: ERR ${(e as Error).message.slice(0, 30)}`;
+      }
+      setDiag(
+        `token: ${tok ? tok.length : "NONE"} · key: ${keyCount} · ${refreshInfo}`
+      );
     })();
   }, []);
 
