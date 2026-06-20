@@ -3,7 +3,7 @@ import Avatar from "./Avatar";
 import { conversationTitle, relativeTime } from "../lib/format";
 import type { Conversation } from "../lib/types";
 
-const REVEAL = 84; // px of red "Delete" exposed by a full swipe
+const REVEAL = 84; // px of action exposed by a full swipe
 
 interface Props {
   conversation: Conversation;
@@ -11,22 +11,26 @@ interface Props {
   preview: string;
   onOpen: () => void;
   onDelete: () => void;
+  onMarkUnread: () => void;
 }
 
-// A conversation list row. On touch, swipe left to reveal Delete; on devices
-// with a mouse (no swipe), a trash button appears on hover (CSS-gated).
+// A conversation list row. On touch: swipe left → Delete, swipe right → Unread.
+// On devices with a mouse (no swipe), the same actions appear on hover.
 export default function ConversationRow({
   conversation: c,
   currentUserId,
   preview,
   onOpen,
   onDelete,
+  onMarkUnread,
 }: Props) {
   const title = conversationTitle(c, currentUserId);
   const [dx, setDx] = useState(0);
   const startX = useRef(0);
   const startDx = useRef(0);
   const moved = useRef(false);
+
+  const close = () => setDx(0);
 
   const onTouchStart = (e: React.TouchEvent) => {
     startX.current = e.touches[0].clientX;
@@ -36,26 +40,41 @@ export default function ConversationRow({
   const onTouchMove = (e: React.TouchEvent) => {
     const delta = e.touches[0].clientX - startX.current;
     if (Math.abs(delta) > 8) moved.current = true;
-    setDx(Math.max(-REVEAL, Math.min(0, startDx.current + delta)));
+    setDx(Math.max(-REVEAL, Math.min(REVEAL, startDx.current + delta)));
   };
-  const onTouchEnd = () => setDx(dx < -REVEAL / 2 ? -REVEAL : 0);
+  const onTouchEnd = () => {
+    if (dx < -REVEAL / 2) setDx(-REVEAL);
+    else if (dx > REVEAL / 2) setDx(REVEAL);
+    else setDx(0);
+  };
 
   const onClickRow = () => {
     if (moved.current) {
       moved.current = false;
       return; // it was a swipe, not a tap
     }
-    if (dx < 0) {
-      setDx(0); // tapping an open row closes it
+    if (dx !== 0) {
+      close(); // tapping an open row closes it
       return;
     }
     onOpen();
   };
 
-  const snapped = dx === 0 || dx === -REVEAL;
+  const snapped = dx === 0 || dx === -REVEAL || dx === REVEAL;
 
   return (
     <li className="kv-row relative overflow-hidden">
+      <button
+        onClick={() => {
+          onMarkUnread();
+          close();
+        }}
+        aria-label="Mark unread"
+        className="absolute inset-y-0 left-0 flex items-center justify-center bg-imsg-blue text-sm font-medium text-white"
+        style={{ width: REVEAL }}
+      >
+        Unread
+      </button>
       <button
         onClick={onDelete}
         aria-label="Delete conversation"
@@ -102,27 +121,38 @@ export default function ConversationRow({
           </div>
         </button>
 
-        <button
-          onClick={() => {
-            if (confirm("Delete this conversation?")) onDelete();
-          }}
-          aria-label="Delete conversation"
-          className="kv-row-trash absolute right-3 top-1/2 h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-gray-100 text-red-500 hover:bg-gray-200"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+        <div className="kv-row-actions absolute right-2 top-1/2 -translate-y-1/2 items-center gap-1">
+          <button
+            onClick={onMarkUnread}
+            aria-label="Mark unread"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-imsg-blue hover:bg-gray-200"
           >
-            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-          </svg>
-        </button>
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="6" fill="currentColor" />
+            </svg>
+          </button>
+          <button
+            onClick={() => {
+              if (confirm("Delete this conversation?")) onDelete();
+            }}
+            aria-label="Delete conversation"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-red-500 hover:bg-gray-200"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+            </svg>
+          </button>
+        </div>
       </div>
     </li>
   );

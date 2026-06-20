@@ -19,6 +19,12 @@ async def conversation_member_ids(
     return list(rows.scalars().all())
 
 
+async def fanout_user(user_id: uuid.UUID, envelope: dict[str, Any]) -> None:
+    """Publish an event to a single user's channel — i.e. all of THEIR devices.
+    Used to sync per-user state (read/unread) across a user's own devices."""
+    await hub.publish_user(str(user_id), envelope)
+
+
 async def fanout_conversation(
     db: AsyncSession,
     conversation_id: uuid.UUID,

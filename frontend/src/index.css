@@ -56,11 +56,11 @@ html.kb-open .kv-input-bar {
 
 /* Conversation-row delete: swipe reveals it on touch; on mouse devices a trash
    button shows on hover instead (swipe doesn't map to a mouse). */
-.kv-row-trash {
+.kv-row-actions {
   display: none;
 }
 @media (hover: hover) and (pointer: fine) {
-  .kv-row:hover .kv-row-trash {
+  .kv-row:hover .kv-row-actions {
     display: flex;
   }
 }
