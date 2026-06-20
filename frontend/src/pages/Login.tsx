@@ -22,7 +22,6 @@ export default function Login() {
   const [displayName, setDisplayName] = useState("");
   const [deviceName, setDeviceName] = useState(defaultDeviceName());
   const [busy, setBusy] = useState(false);
-  const [diag, setDiag] = useState("checking storage…");
 
   const login = useAuth((s) => s.login);
   const register = useAuth((s) => s.register);
@@ -32,51 +31,6 @@ export default function Login() {
     api<{ needs_setup: boolean }>("/auth/setup-status")
       .then((s) => setNeedsSetup(s.needs_setup))
       .catch(() => setNeedsSetup(false));
-  }, []);
-
-  // Diagnostic: what survived in storage? Helps debug "logged out on reopen".
-  useEffect(() => {
-    (async () => {
-      const tok = (() => {
-        try {
-          return localStorage.getItem("kv_rt");
-        } catch {
-          return null;
-        }
-      })();
-      const keyCount = await new Promise<string | number>((res) => {
-        try {
-          const o = indexedDB.open("kryptovox");
-          o.onsuccess = () => {
-            try {
-              const t = o.result.transaction("identity", "readonly").objectStore("identity").count();
-              t.onsuccess = () => res(t.result);
-              t.onerror = () => res("err");
-            } catch {
-              res("nostore");
-            }
-          };
-          o.onerror = () => res("dberr");
-        } catch {
-          res("idb-blocked");
-        }
-      });
-      let refreshInfo = "refresh: -";
-      try {
-        const r = await fetch("/api/auth/refresh", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: tok }),
-        });
-        refreshInfo = `refresh: ${r.status}`;
-      } catch (e) {
-        refreshInfo = `refresh: ERR ${(e as Error).message.slice(0, 30)}`;
-      }
-      setDiag(
-        `token: ${tok ? tok.length : "NONE"} · key: ${keyCount} · ${refreshInfo}`
-      );
-    })();
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -156,7 +110,6 @@ export default function Login() {
             Registration is by invitation. Ask an admin to create your account.
           </p>
         )}
-        <p className="mt-3 text-center font-mono text-[11px] text-gray-400">{diag}</p>
       </form>
     </div>
   );
