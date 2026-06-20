@@ -67,7 +67,7 @@ export interface Conversation {
   my_role: string;
   last_message: Message | null;
   unread_count: number;
-  retention_days: number; // 0 = keep forever
+  retention_days: number | null; // null = inherit global default, 0 = forever
 }
 
 // WebSocket envelope

@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Conversation, ConversationMember, Message, User
@@ -111,11 +110,12 @@ async def create_conversation(
             member = await _ensure_member(db, existing.id, current.id)
             return await _to_out(db, existing, member, current)
 
+    # retention_days left NULL → the conversation inherits the live global
+    # default until someone sets an explicit per-conversation override.
     conv = Conversation(
         type=body.type,
         name=body.name if body.type == "group" else None,
         created_by=current.id,
-        retention_days=settings.default_retention_days,
     )
     db.add(conv)
     await db.flush()

@@ -1,3 +1,4 @@
+from app.models.app_setting import AppSetting
 from app.models.auth_token import AuthToken
 from app.models.conversation import Conversation, ConversationMember
 from app.models.device import Device
@@ -13,4 +14,5 @@ __all__ = [
     "Message",
     "MessageReceipt",
     "MessageReaction",
+    "AppSetting",
 ]
