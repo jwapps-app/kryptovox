@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { decryptWithKey, encryptWithKey, importThreadKey } from "../crypto/guest";
+import { useViewportHeight } from "../hooks/useViewportHeight";
 import { clockTime } from "../lib/format";
 import type { PublicThread } from "../lib/types";
 
@@ -22,6 +23,8 @@ export default function GuestView() {
   const [sending, setSending] = useState(false);
   const keyRef = useRef<CryptoKey | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useViewportHeight();
 
   const load = useCallback(async () => {
     if (!keyRef.current) return;
@@ -70,6 +73,17 @@ export default function GuestView() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [msgs.length]);
+
+  // Keep the latest message visible when the keyboard shrinks the view.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const send = async () => {
     const value = text.trim();
