@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { api } from "../lib/api";
@@ -51,13 +51,25 @@ export default function ChatView() {
       .catch(() => navigate("/"));
   }, [id, loadMessages, navigate]);
 
-  // Stick to bottom when message count grows.
+  // Whether the user is parked at the bottom (so new content should follow).
+  const stickToBottom = useRef(true);
+  const totalSize = virtualizer.getTotalSize();
+
+  // New conversation → start pinned to the latest message.
   useEffect(() => {
-    if (messages.length > 0) {
-      virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length]);
+    stickToBottom.current = true;
+  }, [id]);
+
+  // Keep the view pinned to the bottom as messages arrive and as row heights
+  // settle from their estimates. We set scrollTop directly instead of using
+  // virtualizer.scrollToIndex({ align: "end" }) — that helper retries across
+  // frames to "land" the index, which fights dynamic measurement and makes the
+  // list vibrate. A direct scrollTop is a one-shot and converges cleanly.
+  useLayoutEffect(() => {
+    if (!stickToBottom.current) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [totalSize, messages.length, id]);
 
   // Mark the newest non-own message read (unless read receipts are disabled).
   useEffect(() => {
@@ -91,7 +103,10 @@ export default function ChatView() {
 
   const onScroll = () => {
     const el = scrollRef.current;
-    if (el && el.scrollTop < 60 && messages.length > 0) {
+    if (!el) return;
+    // Only auto-follow new content while the user is at the bottom.
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (el.scrollTop < 60 && messages.length > 0) {
       const anchorId = messages[0].id;
       void loadOlder(id).then(() => {
         const idx = useChat
