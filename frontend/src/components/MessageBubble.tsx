@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { clockTime } from "../lib/format";
 import type { Message } from "../lib/types";
 
@@ -30,6 +30,19 @@ export default function MessageBubble({
   onUnsend,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss the tapback popup when tapping anywhere outside this bubble.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
 
   if (message.deleted_at) {
     return (
@@ -52,6 +65,7 @@ export default function MessageBubble({
 
   return (
     <div
+      ref={rootRef}
       className={`flex flex-col px-3 ${isMine ? "items-end" : "items-start"} ${
         isLastInGroup ? "mb-3" : "mb-1"
       }`}
