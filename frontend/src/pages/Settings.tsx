@@ -33,17 +33,18 @@ export default function Settings() {
     try {
       const r = await api<{
         subscribed_devices: number;
+        sent: number;
+        pruned: number;
         results: { ok: boolean; error?: string }[];
       }>("/push/test", { method: "POST" });
       if (r.subscribed_devices === 0) {
-        setPushMsg("No subscribed devices on the server — tap Enable first (and on iOS, install to Home Screen).");
+        setPushMsg("No subscribed devices — tap Enable first.");
+      } else if (r.sent > 0) {
+        const extra = r.pruned ? ` (cleaned up ${r.pruned} expired)` : "";
+        setPushMsg(`Delivered to ${r.sent} device(s) ✓${extra}`);
       } else {
         const fail = r.results.find((x) => !x.ok);
-        setPushMsg(
-          fail
-            ? `Send failed: ${fail.error}`
-            : `Sent to ${r.subscribed_devices} device(s) ✓ — check for the notification.`
-        );
+        setPushMsg(`Send failed: ${fail?.error ?? "unknown"}`);
       }
     } catch (e) {
       setPushMsg((e as Error).message);

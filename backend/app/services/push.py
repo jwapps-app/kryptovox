@@ -146,6 +146,7 @@ async def send_test_to_user(db: AsyncSession, user_id: uuid.UUID) -> dict:
     payload = {"title": "Kryptovox", "body": "Test notification ✅", "url": "/"}
     results = []
     seen_endpoints: set[str] = set()
+    sent = pruned = 0
     for d in devices:
         endpoint = (d.push_subscription or {}).get("endpoint")
         if endpoint and endpoint in seen_endpoints:
@@ -154,7 +155,23 @@ async def send_test_to_user(db: AsyncSession, user_id: uuid.UUID) -> dict:
             seen_endpoints.add(endpoint)
         try:
             await asyncio.to_thread(_send_sync, d.push_subscription, payload)
+            sent += 1
             results.append({"device": str(d.id), "ok": True})
+        except WebPushException as exc:
+            status = getattr(exc.response, "status_code", None)
+            if status in (404, 410):
+                d.push_subscription = None  # expired — prune it
+                pruned += 1
+                results.append({"device": str(d.id), "ok": False, "error": "expired (removed)"})
+            else:
+                results.append({"device": str(d.id), "ok": False, "error": str(exc)[:300]})
         except Exception as exc:  # noqa: BLE001
             results.append({"device": str(d.id), "ok": False, "error": str(exc)[:300]})
-    return {"subscribed_devices": len(devices), "results": results}
+    if pruned:
+        await db.commit()
+    return {
+        "subscribed_devices": len(devices),
+        "sent": sent,
+        "pruned": pruned,
+        "results": results,
+    }
