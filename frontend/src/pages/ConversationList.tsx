@@ -6,7 +6,6 @@ import { conversationTitle, relativeTime } from "../lib/format";
 import Avatar from "../components/Avatar";
 import NewMessageSheet from "../components/NewMessageSheet";
 import NewGroupSheet from "../components/NewGroupSheet";
-import { enablePush, pushPermission, pushSupported } from "../lib/push";
 
 export default function ConversationList() {
   const user = useAuth((s) => s.user)!;
@@ -17,18 +16,10 @@ export default function ConversationList() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showPushBanner, setShowPushBanner] = useState(
-    pushSupported() && pushPermission() === "default"
-  );
 
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
-
-  const onEnablePush = async () => {
-    await enablePush().catch(() => {});
-    setShowPushBanner(false);
-  };
 
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
@@ -71,23 +62,6 @@ export default function ConversationList() {
           </div>
         )}
       </header>
-
-      {showPushBanner && (
-        <div className="flex items-center justify-between gap-2 bg-blue-50 px-4 py-2 text-sm">
-          <span className="text-gray-600">Get notified of new messages</span>
-          <div className="flex items-center gap-2">
-            <button
-              className="rounded-full bg-imsg-blue px-3 py-1 text-white"
-              onClick={onEnablePush}
-            >
-              Enable
-            </button>
-            <button className="text-gray-400" onClick={() => setShowPushBanner(false)}>
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
 
       <ul className="flex-1 overflow-y-auto">
         {conversations.length === 0 && (
