@@ -78,19 +78,19 @@ self.addEventListener("notificationclick", (event) => {
   const url = (event.notification.data && event.notification.data.url) || "/";
   event.waitUntil(
     (async () => {
+      // Always stash the target: iOS resumes the already-loaded PWA without
+      // delivering this worker's postMessage, so the app reads the stash when it
+      // becomes visible. postMessage + openWindow below are fast-paths on top.
+      await savePendingNav(url);
       const clients = await self.clients.matchAll({
         type: "window",
         includeUncontrolled: true,
       });
-      // App already open: focus it and tell it where to go (in-app router nav,
-      // no reload). This is the reliable path on iOS.
       if (clients.length) {
         await clients[0].focus();
         clients[0].postMessage({ type: "kv-navigate", url: url });
         return;
       }
-      // Cold start: stash the target, then open the app.
-      await savePendingNav(url);
       if (self.clients.openWindow) await self.clients.openWindow(url);
     })()
   );
