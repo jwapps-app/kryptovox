@@ -9,6 +9,8 @@ import ChatView from "./pages/ChatView";
 import ChatInfo from "./pages/ChatInfo";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
+import SecretLinks from "./pages/SecretLinks";
+import SecretLinkThread from "./pages/SecretLinkThread";
 import CommandPalette from "./components/CommandPalette";
 
 export default function App() {
@@ -178,6 +180,8 @@ export default function App() {
         <Route path="/chat/:id/info" element={<ChatInfo />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/links" element={<SecretLinks />} />
+        <Route path="/links/:id" element={<SecretLinkThread />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

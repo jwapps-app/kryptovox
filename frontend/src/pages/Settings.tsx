@@ -115,6 +115,16 @@ export default function Settings() {
           </div>
         </Section>
 
+        <Section title="Secret links">
+          <button
+            className="flex w-full items-center justify-between py-1 text-left text-[15px] text-imsg-blue"
+            onClick={() => navigate("/links")}
+          >
+            <span>Send an encrypted message to anyone</span>
+            <span className="text-gray-300">›</span>
+          </button>
+        </Section>
+
         {user.is_admin && (
           <Section title="Administration">
             <button

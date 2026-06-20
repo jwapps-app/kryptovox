@@ -70,6 +70,39 @@ export interface MessagePage {
   next_cursor: string | null;
 }
 
+// Secret-link guest threads
+export interface GuestMessage {
+  id: string;
+  sender: "host" | "guest";
+  ciphertext: string;
+  iv: string;
+  created_at: string;
+}
+
+export interface GuestThreadSummary {
+  id: string;
+  created_at: string;
+  last_message_at: string;
+  expires_at: string | null;
+  wrapped_key: string;
+  last: GuestMessage | null;
+}
+
+export interface GuestThreadDetail {
+  id: string;
+  created_at: string;
+  expires_at: string | null;
+  wrapped_key: string;
+  messages: GuestMessage[];
+}
+
+export interface PublicThread {
+  id: string;
+  created_at: string;
+  expires_at: string | null;
+  messages: GuestMessage[];
+}
+
 export interface Conversation {
   id: string;
   type: "direct" | "group";
