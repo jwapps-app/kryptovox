@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
-import { conversationTitle, relativeTime } from "../lib/format";
-import Avatar from "../components/Avatar";
+import ConversationRow from "../components/ConversationRow";
 import NewMessageSheet from "../components/NewMessageSheet";
 import NewGroupSheet from "../components/NewGroupSheet";
 
@@ -12,6 +11,7 @@ export default function ConversationList() {
   const conversations = useChat((s) => s.conversations);
   const textByMessage = useChat((s) => s.textByMessage);
   const loadConversations = useChat((s) => s.loadConversations);
+  const leaveConversation = useChat((s) => s.leaveConversation);
   const navigate = useNavigate();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
@@ -97,41 +97,20 @@ export default function ConversationList() {
           </li>
         )}
         {conversations.map((c) => {
-          const title = conversationTitle(c, user.id);
           const preview = c.last_message
             ? c.last_message.type === "image"
               ? "📷 Photo"
               : textByMessage[c.last_message.id] ?? "…"
             : "No messages yet";
           return (
-            <li key={c.id}>
-              <button
-                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-gray-50"
-                onClick={() => navigate(`/chat/${c.id}`)}
-              >
-                <Avatar name={title} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between">
-                    <span className="truncate font-medium">{title}</span>
-                    {c.last_message && (
-                      <span className="ml-2 shrink-0 text-xs text-gray-400">
-                        {relativeTime(c.last_message.created_at)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="truncate text-sm text-gray-500">
-                      {c.last_message?.deleted_at ? "Message unsent" : preview}
-                    </span>
-                    {c.unread_count > 0 && (
-                      <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-imsg-blue px-1.5 text-xs text-white">
-                        {c.unread_count}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </button>
-            </li>
+            <ConversationRow
+              key={c.id}
+              conversation={c}
+              currentUserId={user.id}
+              preview={preview}
+              onOpen={() => navigate(`/chat/${c.id}`)}
+              onDelete={() => void leaveConversation(c.id)}
+            />
           );
         })}
       </ul>
