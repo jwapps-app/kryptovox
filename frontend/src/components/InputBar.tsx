@@ -41,7 +41,10 @@ export default function InputBar({
     if (!value || sending) return;
     setSending(true);
     setText("");
-    if (taRef.current) taRef.current.style.height = "auto";
+    if (taRef.current) {
+      taRef.current.style.height = "auto";
+      taRef.current.focus(); // keep the keyboard up after sending
+    }
     sendTyping(conversationId, false);
     try {
       await onSend(value);
@@ -86,6 +89,9 @@ export default function InputBar({
         onKeyDown={onKeyDown}
       />
       <button
+        // Don't let the button steal focus from the textarea — otherwise iOS
+        // dismisses the keyboard on every send.
+        onMouseDown={(e) => e.preventDefault()}
         onClick={() => void submit()}
         disabled={!hasText || sending}
         aria-label="Send"
