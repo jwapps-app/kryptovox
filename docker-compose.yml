@@ -37,6 +37,7 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
+      ENVIRONMENT: development
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://kryptovox:kryptovox@postgres:5432/kryptovox}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me-0000000000000000000000000000000000000000000000000000}

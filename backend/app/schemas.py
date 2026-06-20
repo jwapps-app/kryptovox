@@ -118,7 +118,7 @@ class ConversationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: str = Field(pattern="^(direct|group)$")
     name: str | None = Field(default=None, max_length=64)
-    member_ids: list[uuid.UUID] = Field(min_length=1)
+    member_ids: list[uuid.UUID] = Field(min_length=1, max_length=256)
 
 
 class ConversationUpdate(BaseModel):
