@@ -182,12 +182,15 @@ async def refresh(
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
 
-    # Keep the SAME refresh token (no rotation) and slide its expiry. Rotation
-    # broke installed PWAs: the rotated cookie often isn't persisted before the
-    # app closes, so the next launch presented a revoked token and got bounced
-    # to the login screen. A stable long-lived token (revocable on logout)
-    # avoids that while still being hashed-at-rest and server-revocable.
-    record.expires_at = refresh_token_expiry()
+    # Keep the SAME refresh token (no rotation). Rotation broke installed PWAs:
+    # the rotated cookie often isn't persisted before the app closes, so the next
+    # launch presented a revoked token and got bounced to the login screen. A
+    # stable token (hashed-at-rest, server-revocable) avoids that.
+    #
+    # We deliberately do NOT slide the expiry: the token keeps its original
+    # issuance-time expiry, so a leaked token is valid for at most
+    # REFRESH_TOKEN_EXPIRE_DAYS from login (not indefinitely renewable). Active
+    # users simply re-login when it lapses.
     _set_refresh_cookie(response, token)
     return TokenResponse(
         access_token=create_access_token(user.id, device.id),
@@ -203,10 +206,15 @@ async def logout(
     response: Response,
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
+    body: RefreshRequest | None = None,
     kv_refresh: str | None = Cookie(default=None),
 ) -> Response:
-    if kv_refresh:
-        token_hash = hash_refresh_token(kv_refresh)
+    # Revoke whichever token the client presents — body (localStorage) or cookie.
+    # Clients that authenticate via the body token have no cookie, so revoking
+    # only the cookie would leave their DB token live.
+    presented = (body.refresh_token if body else None) or kv_refresh
+    if presented:
+        token_hash = hash_refresh_token(presented)
         record = await db.scalar(
             select(AuthToken).where(AuthToken.refresh_token_hash == token_hash)
         )

@@ -107,8 +107,12 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     logging: *default-logging
+    # Only the Postgres credentials — not the whole .env (which holds SECRET_KEY
+    # and the Cloudflare tunnel token the backup job has no need for).
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - /volume1/Backup/kryptovox:/backup
     entrypoint:
@@ -125,8 +129,6 @@ services:
           find /backup -name 'kryptovox_*.sql.gz' -mtime +14 -delete
           sleep 86400
         done
-    env_file:
-      - .env
     depends_on:
       postgres:
         condition: service_healthy
