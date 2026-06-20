@@ -1,36 +1,3 @@
-// Diagnostic: non-consuming read of the service worker's click log, to confirm
-// whether notificationclick fired at all.
-export async function peekClickLog(): Promise<{ url: string; ts: number }[]> {
-  return new Promise((resolve) => {
-    let open: IDBOpenDBRequest;
-    try {
-      open = indexedDB.open("kryptovox-push", 1);
-    } catch {
-      resolve([]);
-      return;
-    }
-    open.onupgradeneeded = () => open.result.createObjectStore("nav");
-    open.onsuccess = () => {
-      const db = open.result;
-      let res: { url: string; ts: number }[] = [];
-      const tx = db.transaction("nav", "readonly");
-      const get = tx.objectStore("nav").get("clicklog");
-      get.onsuccess = () => {
-        if (Array.isArray(get.result)) res = get.result;
-      };
-      tx.oncomplete = () => {
-        db.close();
-        resolve(res);
-      };
-      tx.onerror = () => {
-        db.close();
-        resolve([]);
-      };
-    };
-    open.onerror = () => resolve([]);
-  });
-}
-
 function takeKey(key: string, maxAgeMs: number): Promise<string | null> {
   return new Promise((resolve) => {
     let open: IDBOpenDBRequest;
