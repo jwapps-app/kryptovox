@@ -44,6 +44,35 @@ self.addEventListener("push", (event) => {
   );
 });
 
+// Stash a pending deep-link target so a cold-started app (iOS launches the PWA
+// at its start screen and ignores the notification URL) can pick it up on load.
+function savePendingNav(url) {
+  return new Promise((resolve) => {
+    let open;
+    try {
+      open = indexedDB.open("kryptovox-push", 1);
+    } catch (_) {
+      resolve();
+      return;
+    }
+    open.onupgradeneeded = () => open.result.createObjectStore("nav");
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction("nav", "readwrite");
+      tx.objectStore("nav").put({ url: url, ts: Date.now() }, "pending");
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    };
+    open.onerror = () => resolve();
+  });
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || "/";
@@ -53,19 +82,15 @@ self.addEventListener("notificationclick", (event) => {
         type: "window",
         includeUncontrolled: true,
       });
-      for (const client of clients) {
-        if ("focus" in client) {
-          await client.focus();
-          if ("navigate" in client) {
-            try {
-              await client.navigate(url);
-            } catch (_) {
-              /* cross-origin or not allowed — focus is enough */
-            }
-          }
-          return;
-        }
+      // App already open: focus it and tell it where to go (in-app router nav,
+      // no reload). This is the reliable path on iOS.
+      if (clients.length) {
+        await clients[0].focus();
+        clients[0].postMessage({ type: "kv-navigate", url: url });
+        return;
       }
+      // Cold start: stash the target, then open the app.
+      await savePendingNav(url);
       if (self.clients.openWindow) await self.clients.openWindow(url);
     })()
   );
