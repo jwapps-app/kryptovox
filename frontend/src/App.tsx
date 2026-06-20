@@ -43,11 +43,19 @@ export default function App() {
       const inner = window.innerHeight;
       const full = vv ? Math.max(inner, vv.height) : inner;
       let h = full;
+      let kbOpen = false;
       if (isTyping() && vv) {
         const kb = Math.max(0, full - vv.height - vv.offsetTop);
-        if (kb > 120) h = vv.height; // sit above the on-screen keyboard
+        if (kb > 120) {
+          h = vv.height; // sit above the on-screen keyboard
+          kbOpen = true;
+        }
       }
       rootStyle.setProperty("--vh", `${Math.round(h)}px`);
+      // While the keyboard is up there's no home indicator to clear, so the
+      // input's bottom safe-area padding must collapse — otherwise it floats
+      // ~34px above the keyboard (the gap).
+      document.documentElement.classList.toggle("kb-open", kbOpen);
     };
     const pinViewport = () => {
       setViewportHeight();
