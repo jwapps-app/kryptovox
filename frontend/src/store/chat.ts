@@ -17,6 +17,7 @@ interface ChatState {
   typingByConv: Record<string, string[]>; // userIds currently typing
   // conversationId -> userId -> messageId they last read
   readByConv: Record<string, Record<string, string>>;
+  guestReplyTick: number; // bumped when a secret-link guest replies
   loadConversations: () => Promise<void>;
   leaveConversation: (conversationId: string) => Promise<void>;
   loadMessages: (conversationId: string) => Promise<void>;
@@ -87,6 +88,7 @@ export const useChat = create<ChatState>((set, get) => ({
   cursorByConv: {},
   typingByConv: {},
   readByConv: {},
+  guestReplyTick: 0,
 
   loadConversations: async () => {
     const conversations = await api<Conversation[]>("/conversations");
@@ -397,6 +399,10 @@ export const useChat = create<ChatState>((set, get) => ({
       }
       case "conversation.updated": {
         get().loadConversations();
+        break;
+      }
+      case "guest.reply": {
+        set((s) => ({ guestReplyTick: s.guestReplyTick + 1 }));
         break;
       }
     }

@@ -85,6 +85,15 @@ export default function ConversationList() {
             >
               New Group
             </button>
+            <button
+              className="block w-full border-t border-gray-100 px-4 py-2 text-left hover:bg-gray-50"
+              onClick={() => {
+                setMenuOpen(false);
+                navigate("/links");
+              }}
+            >
+              New Secret Link
+            </button>
           </div>
         )}
       </header>

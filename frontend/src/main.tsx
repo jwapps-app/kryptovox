@@ -1,7 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import App from "./App";
+import GuestView from "./pages/GuestView";
 import "./index.css";
 
 // Ask the browser not to evict our storage (IndexedDB holds the identity key,
@@ -13,7 +14,12 @@ if (navigator.storage?.persist) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      {/* The public secret-link page renders standalone — no auth, no app
+          bootstrap/websocket. Everything else is the full app. */}
+      <Routes>
+        <Route path="/g/:id" element={<GuestView />} />
+        <Route path="*" element={<App />} />
+      </Routes>
     </BrowserRouter>
   </React.StrictMode>
 );
