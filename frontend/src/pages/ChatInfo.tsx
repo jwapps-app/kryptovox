@@ -7,13 +7,20 @@ import { safetyNumber } from "../lib/safety";
 import Avatar from "../components/Avatar";
 import type { Conversation, User } from "../lib/types";
 
-const RETENTION_OPTIONS = [
+const RETENTION_OPTIONS: { days: number | null; label: string }[] = [
+  { days: null, label: "Use default" },
   { days: 0, label: "Forever" },
   { days: 7, label: "7 days" },
   { days: 30, label: "30 days" },
   { days: 90, label: "90 days" },
   { days: 365, label: "1 year" },
 ];
+
+function retentionLabel(days: number): string {
+  if (days <= 0) return "Forever";
+  if (days === 365) return "1 year";
+  return `${days} days`;
+}
 
 export default function ChatInfo() {
   const { id = "" } = useParams();
@@ -23,12 +30,16 @@ export default function ChatInfo() {
   const [conv, setConv] = useState<Conversation | null>(null);
   const [safety, setSafety] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [defaultRetention, setDefaultRetention] = useState(0);
 
   const load = () =>
     api<Conversation>(`/conversations/${id}`).then(setConv).catch(() => navigate("/"));
 
   useEffect(() => {
     void load();
+    api<{ default_retention_days: number }>("/config")
+      .then((c) => setDefaultRetention(c.default_retention_days))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -68,7 +79,7 @@ export default function ChatInfo() {
     navigate("/");
   };
 
-  const setRetention = async (days: number) => {
+  const setRetention = async (days: number | null) => {
     const updated = await api<Conversation>(`/conversations/${id}/retention`, {
       method: "PATCH",
       body: JSON.stringify({ retention_days: days }),
@@ -152,12 +163,20 @@ export default function ChatInfo() {
         <div className="rounded-2xl bg-white p-2 shadow-sm">
           {RETENTION_OPTIONS.map((opt) => (
             <button
-              key={opt.days}
+              key={opt.days ?? "default"}
               onClick={() => void setRetention(opt.days)}
               className="flex w-full items-center justify-between border-b border-gray-50 px-2 py-2 text-left text-[15px] last:border-0"
             >
-              <span>{opt.label}</span>
-              {conv.retention_days === opt.days && (
+              <span>
+                {opt.label}
+                {opt.days === null && (
+                  <span className="text-gray-400">
+                    {" "}
+                    ({retentionLabel(defaultRetention)})
+                  </span>
+                )}
+              </span>
+              {(conv.retention_days ?? null) === opt.days && (
                 <span className="text-imsg-blue">✓</span>
               )}
             </button>
@@ -165,7 +184,8 @@ export default function ChatInfo() {
         </div>
         <p className="mt-2 text-xs text-gray-400">
           Messages older than this are permanently deleted from the server, for
-          everyone in this conversation.
+          everyone in this conversation. “Use default” follows the server-wide
+          setting.
         </p>
 
         {isGroup && (

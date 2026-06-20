@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
 from app.models import Conversation, Message
+from app.services.app_settings import get_default_retention_days
 
 log = logging.getLogger("kryptovox.retention")
 
@@ -22,15 +23,20 @@ _LOCK_KEY = 0x4B56_5254  # "KVRT" — arbitrary, stable advisory-lock id
 
 
 async def sweep_once(db: AsyncSession) -> int:
-    """Delete expired messages across all conversations. Returns rows removed."""
+    """Delete expired messages across all conversations. Returns rows removed.
+
+    Effective retention = the conversation's override, or the live global default
+    when the override is NULL (inherit). 0 means keep forever."""
+    default_days = await get_default_retention_days(db)
     rows = await db.execute(
-        select(Conversation.id, Conversation.retention_days).where(
-            Conversation.retention_days > 0
-        )
+        select(Conversation.id, Conversation.retention_days)
     )
     now = datetime.now(UTC)
     removed = 0
-    for conv_id, days in rows.all():
+    for conv_id, override in rows.all():
+        days = override if override is not None else default_days
+        if days <= 0:
+            continue
         cutoff = now - timedelta(days=days)
         result = await db.execute(
             delete(Message).where(

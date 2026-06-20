@@ -128,8 +128,17 @@ class ConversationUpdate(BaseModel):
 
 class RetentionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # 0 = keep forever; otherwise delete messages older than this many days.
-    retention_days: int = Field(ge=0, le=3650)
+    # null = inherit the global default; 0 = keep forever; N = delete older than N days.
+    retention_days: int | None = Field(default=None, ge=0, le=3650)
+
+
+class AppConfigOut(BaseModel):
+    default_retention_days: int
+
+
+class AppConfigUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    default_retention_days: int = Field(ge=0, le=3650)
 
 
 class ConversationMemberOut(BaseModel):
@@ -148,7 +157,7 @@ class ConversationOut(BaseModel):
     my_role: str = "member"
     last_message: "MessageOut | None" = None
     unread_count: int = 0
-    retention_days: int = 0
+    retention_days: int | None = None  # null = inherit the global default
 
 
 # ---------- Messages ----------

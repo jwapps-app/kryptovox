@@ -11,7 +11,16 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.config import settings
 from app.ratelimit import limiter
 from app.redis_client import redis
-from app.routers import admin, auth, conversations, devices, messages, push, users
+from app.routers import (
+    admin,
+    auth,
+    config,
+    conversations,
+    devices,
+    messages,
+    push,
+    users,
+)
 from app.services.retention import retention_loop
 from app.ws.endpoint import router as ws_router
 from app.ws.hub import hub
@@ -66,6 +75,7 @@ api.include_router(devices.router)
 api.include_router(conversations.router)
 api.include_router(messages.router)
 api.include_router(push.router)
+api.include_router(config.router)
 api.include_router(ws_router)  # WS /api/ws
 
 app.include_router(api)
