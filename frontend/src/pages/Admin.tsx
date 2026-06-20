@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import Avatar from "../components/Avatar";
+import BackButton from "../components/BackButton";
 import type { AdminUser } from "../lib/types";
 
 export default function Admin() {
@@ -89,9 +90,7 @@ export default function Admin() {
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
-        <button className="text-2xl text-imsg-blue" onClick={() => navigate("/settings")}>
-          ‹
-        </button>
+        <BackButton onClick={() => navigate("/settings")} />
         <span className="font-semibold">Admin · Users</span>
       </header>
 
