@@ -66,14 +66,10 @@ export async function enablePush(): Promise<EnableResult> {
     const existing = await reg.pushManager.getSubscription();
     const sub =
       existing ??
-      (await withTimeout(
-        reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(public_key),
-        }),
-        8000,
-        "Subscribe"
-      ));
+      (await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(public_key),
+      }));
 
     await api("/push/subscribe", { method: "POST", body: JSON.stringify(sub.toJSON()) });
     return { ok: true };
