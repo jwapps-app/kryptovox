@@ -38,6 +38,7 @@ export default function ChatView() {
   // small and native scrolling is smooth.
   const stickToBottom = useRef(true);
   const loadingOlder = useRef(false);
+  const scrollRaf = useRef<number | null>(null);
 
   useEffect(() => {
     void loadMessages(id);
@@ -104,25 +105,31 @@ export default function ChatView() {
     return readByOther ? "read" : "delivered";
   };
 
+  // Coalesce scroll work to one frame so the layout reads (scrollHeight) don't
+  // force a synchronous reflow on every scroll event.
   const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // Only auto-follow new content while the user is at the bottom.
-    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    // Load older history near the top, keeping the viewport anchored so the
-    // content doesn't jump when older messages prepend.
-    if (el.scrollTop < 60 && messages.length > 0 && !loadingOlder.current) {
-      loadingOlder.current = true;
-      const prevHeight = el.scrollHeight;
-      const prevTop = el.scrollTop;
-      void loadOlder(id).then(() => {
-        requestAnimationFrame(() => {
-          const el2 = scrollRef.current;
-          if (el2) el2.scrollTop = el2.scrollHeight - prevHeight + prevTop;
-          loadingOlder.current = false;
+    if (scrollRaf.current != null) return;
+    scrollRaf.current = requestAnimationFrame(() => {
+      scrollRaf.current = null;
+      const el = scrollRef.current;
+      if (!el) return;
+      // Only auto-follow new content while the user is at the bottom.
+      stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      // Load older history near the top, keeping the viewport anchored so the
+      // content doesn't jump when older messages prepend.
+      if (el.scrollTop < 60 && messages.length > 0 && !loadingOlder.current) {
+        loadingOlder.current = true;
+        const prevHeight = el.scrollHeight;
+        const prevTop = el.scrollTop;
+        void loadOlder(id).then(() => {
+          requestAnimationFrame(() => {
+            const el2 = scrollRef.current;
+            if (el2) el2.scrollTop = el2.scrollHeight - prevHeight + prevTop;
+            loadingOlder.current = false;
+          });
         });
-      });
-    }
+      }
+    });
   };
 
   let prevDay = "";
@@ -148,7 +155,7 @@ export default function ChatView() {
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="no-scrollbar flex-1 overflow-y-auto py-3"
+        className="no-scrollbar kv-scroll flex-1 overflow-y-auto py-3"
       >
         {messages.length === 0 ? (
           <div className="mt-10 text-center text-gray-400">

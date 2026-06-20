@@ -54,6 +54,15 @@ html.kb-open .kv-input-bar {
   scrollbar-width: none;
 }
 
+/* Smooth momentum scrolling on iOS. The app body is position:fixed, so without
+   these an inner scroll area chains its overscroll into the fixed body and
+   stutters. `contain` stops the chain; `-webkit-overflow-scrolling: touch`
+   keeps the scroll on the compositor for fluid momentum. */
+.kv-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
 @keyframes typing-bounce {
   0%,
   60%,
