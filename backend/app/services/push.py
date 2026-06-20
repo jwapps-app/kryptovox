@@ -162,6 +162,26 @@ async def notify_offline(
     )
 
 
+async def notify_user(db: AsyncSession, user_id: uuid.UUID, payload: dict) -> None:
+    """Push a payload to a user's offline, subscribed devices (used for secret-
+    link replies, which aren't tied to a conversation)."""
+    rows = await db.execute(
+        select(Device).where(
+            Device.user_id == user_id, Device.push_subscription.isnot(None)
+        )
+    )
+    seen_endpoints: set[str] = set()
+    for device in rows.scalars().all():
+        if await is_online(device.id):
+            continue
+        endpoint = (device.push_subscription or {}).get("endpoint")
+        if endpoint and endpoint in seen_endpoints:
+            continue
+        if endpoint:
+            seen_endpoints.add(endpoint)
+        await _send(device.push_subscription, payload, device, db)
+
+
 async def send_test_to_user(db: AsyncSession, user_id: uuid.UUID) -> dict:
     """Push a test notification to all of the user's subscribed devices,
     ignoring presence. Returns per-device success/error for diagnostics."""
