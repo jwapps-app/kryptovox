@@ -102,6 +102,7 @@ async def notify_offline(
         "url": f"/chat/{conversation_id}",
     }
     considered = online = pushed = 0
+    seen_endpoints: set[str] = set()
     for uid in await conversation_member_ids(db, conversation_id):
         if uid == sender_user_id:
             continue
@@ -115,6 +116,13 @@ async def notify_offline(
             if await is_online(device.id):
                 online += 1
                 continue
+            # Re-logins create multiple device rows that may share one browser
+            # push endpoint — dedupe so the user gets a single banner.
+            endpoint = (device.push_subscription or {}).get("endpoint")
+            if endpoint and endpoint in seen_endpoints:
+                continue
+            if endpoint:
+                seen_endpoints.add(endpoint)
             await _send(device.push_subscription, payload, device, db)
             pushed += 1
     log.info(
@@ -137,7 +145,13 @@ async def send_test_to_user(db: AsyncSession, user_id: uuid.UUID) -> dict:
     devices = list(rows.scalars().all())
     payload = {"title": "Kryptovox", "body": "Test notification ✅", "url": "/"}
     results = []
+    seen_endpoints: set[str] = set()
     for d in devices:
+        endpoint = (d.push_subscription or {}).get("endpoint")
+        if endpoint and endpoint in seen_endpoints:
+            continue
+        if endpoint:
+            seen_endpoints.add(endpoint)
         try:
             await asyncio.to_thread(_send_sync, d.push_subscription, payload)
             results.append({"device": str(d.id), "ok": True})

@@ -62,7 +62,16 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     let detail = res.statusText;
     try {
       const body = await res.json();
-      detail = body.detail ?? detail;
+      // FastAPI errors: detail is a string, or a list of validation objects.
+      if (typeof body.detail === "string") {
+        detail = body.detail;
+      } else if (Array.isArray(body.detail)) {
+        detail = body.detail
+          .map((d: { msg?: string }) => d?.msg ?? JSON.stringify(d))
+          .join("; ");
+      } else if (body.detail != null) {
+        detail = JSON.stringify(body.detail);
+      }
     } catch {
       /* non-JSON error */
     }
