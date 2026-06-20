@@ -18,7 +18,15 @@ const httpsAvailable = wantsHttps && fs.existsSync(certPath) && fs.existsSync(ke
 // In docker-compose the backend is reachable as `backend`; bare-metal it's localhost.
 const proxyTarget = process.env.VITE_PROXY_TARGET || "http://localhost:8000";
 
+// Build marker shown in Settings so we can tell fresh code from stale cache.
+const buildId =
+  process.env.GITHUB_SHA?.slice(0, 7) ||
+  new Date().toISOString().slice(0, 16).replace("T", " ");
+
 export default defineConfig({
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId),
+  },
   plugins: [
     react(),
     VitePWA({
@@ -44,9 +52,12 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
-        navigateFallbackDenylist: [/^\/api/],
-        // Pull in custom push + notificationclick handlers.
+        // Do NOT precache or serve the app shell from the SW — that's what kept
+        // serving stale builds. The SW exists only to receive push; the app
+        // itself always loads fresh from the network.
+        globPatterns: [],
+        navigateFallback: null,
+        cleanupOutdatedCaches: true,
         importScripts: ["push-sw.js"],
       },
       // Register the SW in dev too so push can be tested in the dev stack.
