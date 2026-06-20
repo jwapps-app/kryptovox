@@ -3,6 +3,7 @@
 // On a 401 we transparently attempt one refresh + retry.
 
 import type { TokenResponse } from "./types";
+import { getRefreshToken, setRefreshToken } from "./session";
 
 let accessToken: string | null = null;
 let onAuthLost: (() => void) | null = null;
@@ -25,14 +26,17 @@ class ApiError extends Error {
   }
 }
 
-async function refreshToken(): Promise<boolean> {
+export async function refreshToken(): Promise<boolean> {
   const res = await fetch("/api/auth/refresh", {
     method: "POST",
     credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: getRefreshToken() }),
   });
   if (!res.ok) return false;
   const data = (await res.json()) as TokenResponse;
   accessToken = data.access_token;
+  if (data.refresh_token) setRefreshToken(data.refresh_token);
   return true;
 }
 
