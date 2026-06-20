@@ -52,6 +52,16 @@ export default function MessageBubble({
     );
   }
 
+  // When the keyboard is up (an input is focused), tapping a message to react
+  // would steal focus and dismiss it. Cancel the focus-steal in that case only,
+  // so desktop text selection is unaffected when nothing is focused.
+  const keepKeyboard = (e: React.MouseEvent) => {
+    const ae = document.activeElement as HTMLElement | null;
+    if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) {
+      e.preventDefault();
+    }
+  };
+
   const radius = isMine ? "18px 18px 4px 18px" : "18px 18px 18px 4px";
 
   // Aggregate reactions by emoji.
@@ -81,6 +91,7 @@ export default function MessageBubble({
       )}
 
       <div
+        onMouseDown={keepKeyboard}
         onClick={() => setOpen((v) => !v)}
         className="max-w-[75%] cursor-default whitespace-pre-wrap break-words px-3 py-2 text-[17px] leading-snug"
         style={{
@@ -94,7 +105,10 @@ export default function MessageBubble({
 
       {/* Aggregated reaction pills */}
       {counts.size > 0 && (
-        <div className={`mt-0.5 flex gap-1 ${isMine ? "flex-row-reverse" : ""}`}>
+        <div
+          onMouseDown={keepKeyboard}
+          className={`mt-0.5 flex gap-1 ${isMine ? "flex-row-reverse" : ""}`}
+        >
           {[...counts.entries()].map(([emoji, { count, mine }]) => (
             <button
               key={emoji}
@@ -112,7 +126,10 @@ export default function MessageBubble({
 
       {/* Action row on tap */}
       {open && (
-        <div className="mt-1 flex items-center gap-1 rounded-full bg-white px-2 py-1 shadow">
+        <div
+          onMouseDown={keepKeyboard}
+          className="mt-1 flex items-center gap-1 rounded-full bg-white px-2 py-1 shadow"
+        >
           {TAPBACKS.map((emoji) => (
             <button
               key={emoji}
