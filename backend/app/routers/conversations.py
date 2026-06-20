@@ -89,6 +89,14 @@ async def create_conversation(
 ) -> ConversationOut:
     member_ids = {current.id, *body.member_ids}
 
+    # Reject unknown user ids so a caller can't seed a conversation with bogus
+    # (or guessed) ids. Other-user membership is intentional (you start chats),
+    # but every id must resolve to a real user.
+    found = await db.execute(select(User.id).where(User.id.in_(member_ids)))
+    known = set(found.scalars().all())
+    if known != member_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown member id(s)")
+
     if body.type == "direct":
         if len(member_ids) != 2:
             raise HTTPException(
@@ -189,6 +197,9 @@ async def add_member(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a group conversation")
     if member.role != "admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin only")
+
+    if await db.get(User, user_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
 
     existing = await db.get(ConversationMember, (conversation_id, user_id))
     if existing is None:

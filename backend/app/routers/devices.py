@@ -21,17 +21,6 @@ async def list_my_devices(
     return list(rows.scalars().all())
 
 
-@router.get("/users/{user_id}/devices", response_model=list[DeviceOut])
-async def get_recipient_devices(
-    user_id: uuid.UUID,
-    current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[Device]:
-    """Public keys for a recipient's devices — needed to wrap message keys."""
-    rows = await db.execute(select(Device).where(Device.user_id == user_id))
-    return list(rows.scalars().all())
-
-
 @router.delete("/devices/{device_id}", status_code=204)
 async def revoke_device(
     device_id: uuid.UUID,

@@ -1,10 +1,17 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEV_ENVS = {"dev", "development", "local", "test"}
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # "production" (default) enforces a strong SECRET_KEY at startup. Set
+    # ENVIRONMENT=development in the dev compose to allow the placeholder key.
+    environment: str = "production"
 
     # Core infra
     database_url: str = "postgresql+asyncpg://kryptovox:kryptovox@postgres:5432/kryptovox"
@@ -15,6 +22,22 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 90
+
+    @model_validator(mode="after")
+    def _require_strong_secret(self) -> "Settings":
+        if self.environment.lower() not in _DEV_ENVS:
+            weak = (
+                len(self.secret_key) < 32
+                or "change-me" in self.secret_key
+                or "dev-secret" in self.secret_key
+            )
+            if weak:
+                raise ValueError(
+                    "SECRET_KEY must be a strong 32+ char value in production "
+                    "(ENVIRONMENT is not dev). Generate one with: "
+                    "python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+        return self
 
     # CORS — comma-separated list of allowed origins
     allowed_origins: str = "https://localhost:5173"

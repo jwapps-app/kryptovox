@@ -11,7 +11,11 @@ import { base64urlToBytes, bytesToBase64url, utf8Encode } from "./base64";
 const DB_NAME = "kryptovox";
 const STORE = "identity";
 const KEY_ID = "user-identity";
-const PBKDF2_ITERATIONS = 200_000;
+// OWASP-recommended work factor for PBKDF2-HMAC-SHA256. The server holds the
+// password-wrapped blob, so this directly sets the cost of an offline brute
+// force against it. The iteration count is stored in each blob and read back on
+// unwrap, so existing blobs keep working and this can be raised again later.
+const PBKDF2_ITERATIONS = 600_000;
 
 export interface Identity {
   privateKey: CryptoKey;
