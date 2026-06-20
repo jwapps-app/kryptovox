@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useAuth } from "./store/auth";
 import { useWebSocket } from "./hooks/useWebSocket";
-import { peekClickLog, takePendingNav } from "./lib/pendingNav";
+import { peekClickLog, takePendingNav, takeRecentPush } from "./lib/pendingNav";
 import Login from "./pages/Login";
 import ConversationList from "./pages/ConversationList";
 import ChatView from "./pages/ChatView";
@@ -68,19 +68,23 @@ export default function App() {
 
   useEffect(() => {
     // Read the stashed deep-link target whenever the app becomes visible.
-    const check = () => {
+    const check = async () => {
       if (document.visibilityState !== "visible") return;
       const st = useAuth.getState().status;
-      void peekClickLog().then((cl) => {
-        const last = cl[cl.length - 1];
-        const age = last ? Math.round((Date.now() - last.ts) / 1000) : -1;
-        dbg(`vis st=${st} clicks=${cl.length} last=${last ? last.url + " " + age + "s" : "-"}`);
-      });
+      const cl = await peekClickLog();
+      const last = cl[cl.length - 1];
+      const age = last ? Math.round((Date.now() - last.ts) / 1000) : -1;
+      dbg(`vis st=${st} clicks=${cl.length} last=${last ? last.url + " " + age + "s" : "-"}`);
       if (st !== "authed") return;
-      void takePendingNav().then((url) => {
-        dbg(`pend=${url || "none"}`);
-        if (url) navigate(url);
-      });
+      const pend = await takePendingNav();
+      if (pend) {
+        dbg(`pend ${pend}`);
+        navigate(pend);
+        return;
+      }
+      const recent = await takeRecentPush();
+      dbg(`recentPush=${recent || "none"}`);
+      if (recent) navigate(recent);
     };
     check();
     document.addEventListener("visibilitychange", check);

@@ -9,6 +9,33 @@
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
+function stashLastPush(url) {
+  return new Promise((resolve) => {
+    let open;
+    try {
+      open = indexedDB.open("kryptovox-push", 1);
+    } catch (_) {
+      resolve();
+      return;
+    }
+    open.onupgradeneeded = () => open.result.createObjectStore("nav");
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction("nav", "readwrite");
+      tx.objectStore("nav").put({ url: url, ts: Date.now() }, "lastpush");
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    };
+    open.onerror = () => resolve();
+  });
+}
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {
@@ -40,6 +67,15 @@ self.addEventListener("push", (event) => {
         }
       }
       await Promise.all(tasks.map((p) => p && p.catch(() => {})));
+      // iOS doesn't fire notificationclick on a background resume, so stash the
+      // target here (the push DOES run). Only when the app isn't actively in
+      // use — otherwise opening the app for another reason could mis-navigate.
+      const wins = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      const active = wins.some((c) => c.focused || c.visibilityState === "visible");
+      if (!active) await stashLastPush(url);
     })()
   );
 });
