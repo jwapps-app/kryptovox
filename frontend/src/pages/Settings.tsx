@@ -23,9 +23,9 @@ export default function Settings() {
 
   const onEnablePush = async () => {
     setPushMsg("Requesting…");
-    const ok = await enablePush().catch(() => false);
+    const r = await enablePush();
     setPushState(pushPermission());
-    setPushMsg(ok ? "Subscribed ✓ — now send a test." : "Could not enable (permission denied?).");
+    setPushMsg(r.ok ? "Subscribed ✓ — now send a test." : `Couldn't enable: ${r.error}`);
   };
 
   const onTestPush = async () => {
