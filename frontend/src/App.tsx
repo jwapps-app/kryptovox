@@ -24,7 +24,10 @@ export default function App() {
     const vv = window.visualViewport;
     const apply = () => {
       const h = vv ? vv.height : window.innerHeight;
-      document.documentElement.style.setProperty("--app-height", `${h}px`);
+      const top = vv ? vv.offsetTop : 0;
+      const style = document.documentElement.style;
+      style.setProperty("--app-height", `${h}px`);
+      style.setProperty("--app-top", `${top}px`);
     };
     apply();
     vv?.addEventListener("resize", apply);

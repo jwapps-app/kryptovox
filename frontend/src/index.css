@@ -10,13 +10,20 @@ html,
 body {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
-/* Size to the visual viewport so the layout shrinks when the iOS keyboard
-   opens (set by JS in App.tsx; falls back to dynamic viewport units).
+/* Pin the app to the *visual* viewport: its height AND its scroll offset are
+   driven by JS (App.tsx) from window.visualViewport, so when the iOS keyboard
+   opens the whole UI tracks the visible area instead of sliding out of view.
    Top safe-area inset is padded here so every screen clears the notch. */
 #root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
   height: var(--app-height, 100dvh);
+  transform: translateY(var(--app-top, 0px));
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top);
   overflow: hidden;
