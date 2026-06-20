@@ -60,19 +60,15 @@ def application_server_key() -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def _vapid_private_pem() -> str:
-    return _private_key().private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    ).decode()
-
-
 def _send_sync(subscription: dict, payload: dict) -> None:
+    # IMPORTANT: pass the PEM *file path*, not the PEM string. pywebpush treats a
+    # non-path string as a base64url RAW key (Vapid.from_raw) and fails to parse
+    # a PEM ("ASN.1 parsing error"). A path routes through Vapid.from_file.
+    _private_key()  # ensure the PEM file exists at vapid_key_path
     webpush(
         subscription_info=subscription,
         data=json.dumps(payload),
-        vapid_private_key=_vapid_private_pem(),
+        vapid_private_key=settings.vapid_key_path,
         vapid_claims={"sub": settings.vapid_email},
     )
 
