@@ -16,8 +16,12 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . .
 
 # Drop root: run the app as an unprivileged user so a container RCE doesn't
-# start out as root inside the container.
-RUN useradd --create-home --uid 10001 app && chown -R app:app /app
+# start out as root inside the container. /data holds the persisted VAPID key;
+# creating it owned by `app` means a fresh named volume mounted there inherits
+# that ownership, so the non-root process can write to it.
+RUN useradd --create-home --uid 10001 app \
+    && mkdir -p /data \
+    && chown -R app:app /app /data
 USER app
 
 EXPOSE 8000

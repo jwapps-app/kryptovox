@@ -65,7 +65,10 @@ services:
       VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@example.com}
       VAPID_KEY_PATH: /data/vapid_private.pem
     volumes:
-      - /volume1/docker/kryptovox/data:/data
+      # Named volume (not a /volume1 bind mount): it inherits the image's `app`
+      # ownership, so the non-root backend can write the VAPID key. Persists the
+      # key across redeploys so push subscriptions keep working.
+      - kryptovox-vapid:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,6 +116,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+volumes:
+  kryptovox-vapid:
 
 # ===========================================================================
 # Set these in Portainer → Stack → Environment variables:

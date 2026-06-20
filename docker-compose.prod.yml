@@ -64,7 +64,9 @@ services:
       # Persist the auto-generated VAPID key so push subscriptions survive restarts.
       VAPID_KEY_PATH: /data/vapid_private.pem
     volumes:
-      - /volume1/docker/kryptovox/data:/data
+      # Named volume (not a bind mount): inherits the image's `app` ownership so
+      # the non-root backend can write the VAPID key.
+      - kryptovox-vapid:/data
     deploy:
       resources:
         limits:
@@ -132,3 +134,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+volumes:
+  kryptovox-vapid:
