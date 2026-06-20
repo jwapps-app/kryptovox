@@ -18,19 +18,29 @@ self.addEventListener("push", (event) => {
   }
   const title = data.title || "Kryptovox";
   const url = data.url || "/";
-  // Update the app-icon badge count (Badging API) even though the app is closed.
-  if (typeof data.badge === "number" && self.navigator.setAppBadge) {
-    if (data.badge > 0) self.navigator.setAppBadge(data.badge).catch(() => {});
-    else if (self.navigator.clearAppBadge) self.navigator.clearAppBadge().catch(() => {});
-  }
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || "New message",
-      icon: "/icon-192.png",
-      badge: "/icon-192.png", // monochrome status-bar glyph, not the count
-      data: { url },
-      tag: url, // collapse repeats from the same conversation into one banner
-    })
+    (async () => {
+      const tasks = [
+        self.registration.showNotification(title, {
+          body: data.body || "New message",
+          icon: "/icon-192.png",
+          badge: "/icon-192.png", // monochrome status-bar glyph, not the count
+          data: { url },
+          tag: url, // collapse repeats from the same conversation into one banner
+        }),
+      ];
+      // Update the app-icon badge count (Badging API). This MUST be awaited
+      // inside waitUntil — when the app is force-closed the worker is killed the
+      // moment waitUntil settles, so a fire-and-forget call never lands.
+      if (typeof data.badge === "number") {
+        if (data.badge > 0 && self.navigator.setAppBadge) {
+          tasks.push(self.navigator.setAppBadge(data.badge));
+        } else if (self.navigator.clearAppBadge) {
+          tasks.push(self.navigator.clearAppBadge());
+        }
+      }
+      await Promise.all(tasks.map((p) => p && p.catch(() => {})));
+    })()
   );
 });
 
