@@ -63,7 +63,7 @@ export default function ConversationList() {
         )}
       </header>
 
-      <ul className="flex-1 overflow-y-auto">
+      <ul className="kv-scroll flex-1 overflow-y-auto">
         {conversations.length === 0 && (
           <li className="px-4 py-10 text-center text-gray-400">
             No conversations yet.
