@@ -217,5 +217,59 @@ class MessagePage(BaseModel):
     next_cursor: str | None = None
 
 
+# ---------- Secret-link guest threads ----------
+_CIPHER_MAX = 500_000  # generous cap for an encrypted text message
+
+
+class GuestThreadCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    wrapped_key: str = Field(max_length=512)  # K wrapped under the creator's key
+    expires_in_days: int | None = Field(default=7, ge=0, le=365)
+    ciphertext: str = Field(max_length=_CIPHER_MAX)  # the first message
+    iv: str = Field(max_length=64)
+
+
+class GuestMessageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ciphertext: str = Field(max_length=_CIPHER_MAX)
+    iv: str = Field(max_length=64)
+
+
+class GuestMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    sender: str
+    ciphertext: str
+    iv: str
+    created_at: datetime
+
+
+class GuestThreadOut(BaseModel):
+    """Creator-side list item."""
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    created_at: datetime
+    last_message_at: datetime
+    expires_at: datetime | None
+    wrapped_key: str
+    last: GuestMessageOut | None = None
+
+
+class GuestThreadDetail(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    expires_at: datetime | None
+    wrapped_key: str
+    messages: list[GuestMessageOut]
+
+
+class PublicThreadOut(BaseModel):
+    """Guest-side view — no wrapped_key (the guest has K from the link)."""
+    id: uuid.UUID
+    created_at: datetime
+    expires_at: datetime | None
+    messages: list[GuestMessageOut]
+
+
 TokenResponse.model_rebuild()
 ConversationOut.model_rebuild()

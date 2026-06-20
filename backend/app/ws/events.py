@@ -17,6 +17,7 @@ TYPING_STOP = "typing.stop"
 CONVERSATION_UPDATED = "conversation.updated"
 REACTION_ADD = "reaction.add"
 REACTION_REMOVE = "reaction.remove"
+GUEST_REPLY = "guest.reply"
 
 
 def conv_channel(conversation_id: str) -> str:
