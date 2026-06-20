@@ -12,6 +12,7 @@ from app.models import AuthToken, Device, User
 from app.ratelimit import limiter
 from app.schemas import (
     LoginRequest,
+    RefreshRequest,
     RegisterRequest,
     SetupStatus,
     TokenResponse,
@@ -38,7 +39,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         value=token,
         httponly=True,
         secure=True,
-        samesite="strict",
+        samesite="lax",  # lax is more reliable than strict on PWA cold launches
         path=COOKIE_PATH,
         max_age=settings.refresh_token_expire_days * 24 * 3600,
     )
@@ -59,6 +60,7 @@ async def _issue_tokens(
     _set_refresh_cookie(response, refresh)
     return TokenResponse(
         access_token=create_access_token(user.id, device.id),
+        refresh_token=refresh,
         expires_in=settings.access_token_expire_minutes * 60,
         user=UserOut.model_validate(user),
         device_id=device.id,
@@ -149,17 +151,22 @@ async def refresh(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
+    body: RefreshRequest | None = None,
     kv_refresh: str | None = Cookie(default=None),
 ) -> TokenResponse:
-    # CSRF defense-in-depth: the refresh cookie is SameSite=Strict, but if a
-    # cross-origin request still arrives with an Origin header, reject it.
+    # CSRF defense-in-depth: if a cross-origin request arrives with an Origin
+    # header, reject it (the cookie path is also SameSite=Lax).
     origin = request.headers.get("origin")
     if origin and origin not in settings.cors_origins:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Bad origin")
-    if not kv_refresh:
+
+    # Prefer the token from the request body (client-persisted, survives PWA
+    # force-close); fall back to the cookie.
+    token = (body.refresh_token if body else None) or kv_refresh
+    if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "No refresh token")
 
-    token_hash = hash_refresh_token(kv_refresh)
+    token_hash = hash_refresh_token(token)
     record = await db.scalar(
         select(AuthToken).where(AuthToken.refresh_token_hash == token_hash)
     )
@@ -184,9 +191,10 @@ async def refresh(
     # to the login screen. A stable long-lived token (revocable on logout)
     # avoids that while still being hashed-at-rest and server-revocable.
     record.expires_at = refresh_token_expiry()
-    _set_refresh_cookie(response, kv_refresh)
+    _set_refresh_cookie(response, token)
     return TokenResponse(
         access_token=create_access_token(user.id, device.id),
+        refresh_token=token,
         expires_in=settings.access_token_expire_minutes * 60,
         user=UserOut.model_validate(user),
         device_id=device.id,

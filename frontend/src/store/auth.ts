@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, setAccessToken, setOnAuthLost } from "../lib/api";
+import { getRefreshToken, setRefreshToken } from "../lib/session";
 import {
   createIdentity,
   loadIdentity,
@@ -73,8 +74,12 @@ export const useAuth = create<AuthState>((set, get) => ({
     );
     const identity = await loadIdentity();
     try {
-      const tok = await api<TokenResponse>("/auth/refresh", { method: "POST" });
+      const tok = await api<TokenResponse>("/auth/refresh", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: getRefreshToken() }),
+      });
       setAccessToken(tok.access_token);
+      setRefreshToken(tok.refresh_token);
       if (!identity) {
         // Session is valid but this device has no key — require a password login.
         set({ status: "anon", needsReauth: true });
@@ -107,6 +112,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         }),
       });
       setAccessToken(tok.access_token);
+      setRefreshToken(tok.refresh_token);
       set({
         status: "authed",
         user: tok.user,
@@ -132,6 +138,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         }),
       });
       setAccessToken(tok.access_token);
+      setRefreshToken(tok.refresh_token);
       const identity = await ensureIdentity(password);
       set({
         status: "authed",
@@ -153,6 +160,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       /* ignore */
     }
     setAccessToken(null);
+    setRefreshToken(null);
     set({
       status: "anon",
       user: null,
