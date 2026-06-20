@@ -100,6 +100,14 @@ python3 -c "import secrets; print('SECRET_KEY =', secrets.token_hex(32))"
 python3 -c "import secrets; print('PG_PASSWORD=', secrets.token_urlsafe(24))"
 ```
 
+> **`SECRET_KEY` must be strong.** In production the backend **refuses to start**
+> if `SECRET_KEY` is shorter than 32 characters or contains a placeholder like
+> `change-me`/`dev-secret` (it signs your login tokens — a guessable key lets
+> anyone forge an admin session). Use a full 64-char random hex as above. On the
+> NAS without Python: `openssl rand -hex 32`. Rotating it later is safe — no
+> messages or accounts are lost (those depend on your password, not this key),
+> and clients stay logged in via their refresh token.
+
 ## 5. Deploy
 
 ```bash
