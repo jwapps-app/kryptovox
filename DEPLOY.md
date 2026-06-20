@@ -173,7 +173,7 @@ Portainer's UI, not a `.env` file.
 
 6. **Point your existing Cloudflare Tunnel** at it (Zero Trust → your tunnel →
    Public Hostnames → Add):
-   - Subdomain `kryptovox` · Domain `yourdomain.com`
+   - Subdomain `chat` · Domain `yourdomain.com`
    - **Type: HTTP** · **URL: `<NAS-IP>:<WEB_PORT>`** (e.g. `192.168.1.42:8095`)
 
    No bundled `cloudflared` is in this stack — it reuses the tunnel you already
