@@ -95,17 +95,7 @@ function savePendingNav(url) {
     open.onsuccess = () => {
       const db = open.result;
       const tx = db.transaction("nav", "readwrite");
-      const store = tx.objectStore("nav");
-      store.put({ url: url, ts: Date.now() }, "pending");
-      // Diagnostic: keep a non-consuming log of clicks so the app can confirm
-      // notificationclick fired even if it can't act on it.
-      const getLog = store.get("clicklog");
-      getLog.onsuccess = () => {
-        const log = Array.isArray(getLog.result) ? getLog.result : [];
-        log.push({ url: url, ts: Date.now() });
-        while (log.length > 6) log.shift();
-        store.put(log, "clicklog");
-      };
+      tx.objectStore("nav").put({ url: url, ts: Date.now() }, "pending");
       tx.oncomplete = () => {
         db.close();
         resolve();

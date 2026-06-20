@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useAuth } from "./store/auth";
 import { useWebSocket } from "./hooks/useWebSocket";
-import { peekClickLog, takePendingNav, takeRecentPush } from "./lib/pendingNav";
+import { takePendingNav, takeRecentPush } from "./lib/pendingNav";
 import Login from "./pages/Login";
 import ConversationList from "./pages/ConversationList";
 import ChatView from "./pages/ChatView";
@@ -16,77 +16,38 @@ export default function App() {
   const bootstrap = useAuth((s) => s.bootstrap);
   const navigate = useNavigate();
 
-  // TEMP diagnostic log for push deep-linking; persisted so it survives a resume.
-  const [navlog, setNavlog] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("kv_navlog") || "[]");
-    } catch {
-      return [];
-    }
-  });
-  const dbg = useCallback((line: string) => {
-    setNavlog((prev) => {
-      const t = new Date().toTimeString().slice(0, 8);
-      const next = [`${t} ${line}`, ...prev].slice(0, 7);
-      try {
-        localStorage.setItem("kv_navlog", JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    const el = document.createElement("div");
-    el.id = "kv-navdbg";
-    el.style.cssText =
-      "position:fixed;top:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,.82);color:#0f0;font:9px monospace;padding:2px 5px;white-space:pre-wrap;pointer-events:none";
-    document.body.appendChild(el);
-    return () => el.remove();
-  }, []);
-  useEffect(() => {
-    const el = document.getElementById("kv-navdbg");
-    if (el) el.textContent = `sw:${navigator.serviceWorker?.controller ? "Y" : "N"}\n` + navlog.join("\n");
-  }, [navlog]);
-
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
 
-  // Deep-link from a tapped push notification (fast path while app is open).
+  // Deep-link from a tapped push notification (fast path while the app is open).
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.data?.type === "kv-navigate" && typeof e.data.url === "string") {
-        dbg(`swmsg ${e.data.url}`);
         navigate(e.data.url);
       }
     };
     navigator.serviceWorker?.addEventListener("message", onMsg);
     return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
-  }, [navigate, dbg]);
+  }, [navigate]);
 
   useEffect(() => {
-    // Read the stashed deep-link target whenever the app becomes visible.
+    // On every become-visible, route to the target the SW stashed: `pending`
+    // from a cold-launch notificationclick, or `lastpush` from the push event
+    // (covers the iOS background-resume case where notificationclick doesn't
+    // fire). Both clear themselves, so each fires once.
     const check = async () => {
       if (document.visibilityState !== "visible") return;
-      const st = useAuth.getState().status;
-      const cl = await peekClickLog();
-      const last = cl[cl.length - 1];
-      const age = last ? Math.round((Date.now() - last.ts) / 1000) : -1;
-      dbg(`vis st=${st} clicks=${cl.length} last=${last ? last.url + " " + age + "s" : "-"}`);
-      if (st !== "authed") return;
+      if (useAuth.getState().status !== "authed") return;
       const pend = await takePendingNav();
       if (pend) {
-        dbg(`pend ${pend}`);
         navigate(pend);
         return;
       }
       const recent = await takeRecentPush();
-      dbg(`recentPush=${recent || "none"}`);
       if (recent) navigate(recent);
     };
-    check();
+    void check();
     document.addEventListener("visibilitychange", check);
     window.addEventListener("focus", check);
     window.addEventListener("pageshow", check);
@@ -95,7 +56,7 @@ export default function App() {
       window.removeEventListener("focus", check);
       window.removeEventListener("pageshow", check);
     };
-  }, [status, navigate, dbg]);
+  }, [status, navigate]);
 
   // iOS keyboard handling, ported from the sibling Colloqui app. Sets --vh to
   // the real paintable height (max of innerHeight/visualViewport to dodge stale
