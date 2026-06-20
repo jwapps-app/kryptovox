@@ -25,12 +25,6 @@ export default function App() {
   // up), and re-measures on a short warmup poll to self-heal stale heights.
   useEffect(() => {
     const rootStyle = document.documentElement.style;
-    // TEMP debug readout (top-left) — shows live viewport metrics on the phone.
-    const dbg = document.createElement("div");
-    dbg.id = "vpdebug";
-    dbg.style.cssText =
-      "position:fixed;top:0;left:0;z-index:99999;background:rgba(0,0,0,.75);color:#0f0;font:10px monospace;padding:2px 5px;pointer-events:none;white-space:nowrap";
-    document.body.appendChild(dbg);
     const isTyping = () => {
       const ae = document.activeElement as HTMLElement | null;
       return (
@@ -62,14 +56,6 @@ export default function App() {
       if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
       const se = document.scrollingElement;
       if (se && se.scrollTop) se.scrollTop = 0;
-      const vv = window.visualViewport;
-      const kbCls = document.documentElement.classList.contains("kb-open") ? "1" : "0";
-      const ib = document.getElementById("kv-inputbar");
-      const ibBot = ib ? Math.round(ib.getBoundingClientRect().bottom) : -1;
-      dbg.textContent =
-        `vh:${rootStyle.getPropertyValue("--vh")} vv:${vv ? Math.round(vv.height) : "-"} ` +
-        `kb:${kbCls} inBot:${ibBot} bodyH:${document.body.clientHeight} ` +
-        `typ:${isTyping() ? "Y" : "N"}`;
     };
     let warmup: ReturnType<typeof setInterval> | undefined;
     const rearm = () => {
@@ -115,7 +101,6 @@ export default function App() {
     document.addEventListener("focusin", onFocusIn);
 
     return () => {
-      dbg.remove();
       if (warmup) clearInterval(warmup);
       winEvents.forEach((e) => window.removeEventListener(e, pinViewport));
       window.removeEventListener("pageshow", rearm);
