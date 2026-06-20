@@ -196,6 +196,10 @@ export default function Settings() {
         >
           Sign out
         </button>
+
+        <div className="mt-4 text-center text-xs text-gray-300">
+          Build {__BUILD_ID__}
+        </div>
       </div>
     </div>
   );
