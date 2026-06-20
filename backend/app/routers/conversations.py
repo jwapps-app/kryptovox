@@ -62,7 +62,11 @@ async def _unread_count(
     )
     if after is not None:
         stmt = stmt.where(Message.created_at > after)
-    return int(await db.scalar(stmt) or 0)
+    count = int(await db.scalar(stmt) or 0)
+    # Manually marked unread shows as 1 when nothing newer is actually unread.
+    if member.marked_unread and count == 0:
+        return 1
+    return count
 
 
 async def _to_out(

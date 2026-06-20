@@ -108,7 +108,10 @@ async def _unread_total(db: AsyncSession, user_id: uuid.UUID) -> int:
         )
         if after is not None:
             stmt = stmt.where(Message.created_at > after)
-        total += int(await db.scalar(stmt) or 0)
+        count = int(await db.scalar(stmt) or 0)
+        if member.marked_unread and count == 0:
+            count = 1
+        total += count
     return total
 
 

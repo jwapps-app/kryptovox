@@ -17,9 +17,10 @@ from app.schemas import (
     ReactionOut,
 )
 from app.services import media_store
-from app.services.fanout import fanout_conversation
+from app.services.fanout import fanout_conversation, fanout_user
 from app.services.push import notify_offline
 from app.ws.events import (
+    CONVERSATION_UPDATED,
     MESSAGE_DELETE,
     MESSAGE_NEW,
     REACTION_ADD,
@@ -177,6 +178,7 @@ async def mark_read(
 ) -> None:
     member = await _require_member(db, conversation_id, identity.user.id)
     member.last_read_message_id = message_id
+    member.marked_unread = False
 
     now = datetime.now(UTC)
     stmt = (
@@ -207,6 +209,27 @@ async def mark_read(
             },
         ),
         exclude_user_id=identity.user.id,
+    )
+    # Sync this user's other devices so their unread/badge clears too.
+    await fanout_user(
+        identity.user.id,
+        envelope(CONVERSATION_UPDATED, {"conversation_id": str(conversation_id)}),
+    )
+
+
+@router.post("/conversations/{conversation_id}/unread", status_code=204)
+async def mark_unread(
+    conversation_id: uuid.UUID,
+    identity: CurrentIdentity = Depends(get_current_identity),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    member = await _require_member(db, conversation_id, identity.user.id)
+    member.marked_unread = True
+    await db.commit()
+    # Sync this user's other devices so their unread/badge updates too.
+    await fanout_user(
+        identity.user.id,
+        envelope(CONVERSATION_UPDATED, {"conversation_id": str(conversation_id)}),
     )
 
 
