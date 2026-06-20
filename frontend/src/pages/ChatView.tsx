@@ -7,6 +7,7 @@ import { conversationTitle, dayLabel } from "../lib/format";
 import { getPrefs } from "../lib/prefs";
 import { cacheUserKeys } from "../lib/keys";
 import Avatar from "../components/Avatar";
+import BackButton from "../components/BackButton";
 import MessageBubble from "../components/MessageBubble";
 import TypingIndicator from "../components/TypingIndicator";
 import InputBar from "../components/InputBar";
@@ -138,9 +139,7 @@ export default function ChatView() {
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
-        <button className="text-2xl text-imsg-blue" onClick={() => navigate("/")}>
-          ‹
-        </button>
+        <BackButton onClick={() => navigate("/")} />
         {conv && <Avatar name={title} size={32} />}
         <span className="font-semibold">{title}</span>
         <button
