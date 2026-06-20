@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
@@ -33,13 +32,12 @@ export default function ChatView() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const virtualizer = useVirtualizer({
-    count: messages.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 60,
-    overscan: 10,
-    getItemKey: (i) => messages[i].id,
-  });
+  // We render the loaded messages directly (no virtualization). Variable-height
+  // message bubbles made the virtualizer re-measure rows mid-scroll, which is
+  // what made scrolling jerky. Messages load a page at a time, so the DOM stays
+  // small and native scrolling is smooth.
+  const stickToBottom = useRef(true);
+  const loadingOlder = useRef(false);
 
   useEffect(() => {
     void loadMessages(id);
@@ -51,30 +49,21 @@ export default function ChatView() {
       .catch(() => navigate("/"));
   }, [id, loadMessages, navigate]);
 
-  // Whether the user is parked at the bottom (so new content should follow).
-  const stickToBottom = useRef(true);
-  const totalSize = virtualizer.getTotalSize();
-
   // New conversation → start pinned to the latest message.
   useEffect(() => {
     stickToBottom.current = true;
   }, [id]);
 
-  // Keep the view pinned to the bottom as messages arrive and as row heights
-  // settle from their estimates. We set scrollTop directly instead of using
-  // virtualizer.scrollToIndex({ align: "end" }) — that helper retries across
-  // frames to "land" the index, which fights dynamic measurement and makes the
-  // list vibrate. A direct scrollTop is a one-shot and converges cleanly.
+  // Pin to the bottom as messages arrive, while the user is at the bottom.
   useLayoutEffect(() => {
     if (!stickToBottom.current) return;
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [totalSize, messages.length, id]);
+  }, [messages.length, id]);
 
-  // Re-pin to the bottom when the scroll container itself resizes — the
-  // on-screen keyboard opening shrinks it, which would otherwise leave the
-  // latest messages hidden behind the keyboard/input bar. Only follows while
-  // the user is already at the bottom, so reading older messages is undisturbed.
+  // Re-pin to the bottom when the scroll container resizes — the on-screen
+  // keyboard opening shrinks it, which would otherwise hide the latest messages
+  // behind the keyboard/input bar. Only follows while parked at the bottom.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -120,18 +109,22 @@ export default function ChatView() {
     if (!el) return;
     // Only auto-follow new content while the user is at the bottom.
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (el.scrollTop < 60 && messages.length > 0) {
-      const anchorId = messages[0].id;
+    // Load older history near the top, keeping the viewport anchored so the
+    // content doesn't jump when older messages prepend.
+    if (el.scrollTop < 60 && messages.length > 0 && !loadingOlder.current) {
+      loadingOlder.current = true;
+      const prevHeight = el.scrollHeight;
+      const prevTop = el.scrollTop;
       void loadOlder(id).then(() => {
-        const idx = useChat
-          .getState()
-          .messagesByConv[id]?.findIndex((m) => m.id === anchorId);
-        if (idx && idx > 0) virtualizer.scrollToIndex(idx, { align: "start" });
+        requestAnimationFrame(() => {
+          const el2 = scrollRef.current;
+          if (el2) el2.scrollTop = el2.scrollHeight - prevHeight + prevTop;
+          loadingOlder.current = false;
+        });
       });
     }
   };
 
-  const items = virtualizer.getVirtualItems();
   let prevDay = "";
   let prevSender: string | null = null;
 
@@ -162,15 +155,12 @@ export default function ChatView() {
             No messages yet. Say hi 👋
           </div>
         ) : (
-          <div
-            style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}
-          >
-            {items.map((vi) => {
-              const m = messages[vi.index];
+          <div className="flex flex-col">
+            {messages.map((m, i) => {
               const day = dayLabel(m.created_at);
               const showDay = day !== prevDay;
               prevDay = day;
-              const next = messages[vi.index + 1];
+              const next = messages[i + 1];
               const isLastInGroup = !next || next.sender_id !== m.sender_id;
               const showSender =
                 conv?.type === "group" &&
@@ -184,18 +174,7 @@ export default function ChatView() {
                 : null;
 
               return (
-                <div
-                  key={vi.key}
-                  data-index={vi.index}
-                  ref={virtualizer.measureElement}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    transform: `translateY(${vi.start}px)`,
-                  }}
-                >
+                <div key={m.id}>
                   {showDay && (
                     <div className="my-2 text-center text-xs font-medium text-gray-400">
                       {day}
