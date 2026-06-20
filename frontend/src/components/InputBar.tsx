@@ -62,7 +62,7 @@ export default function InputBar({
   const hasText = text.trim().length > 0;
 
   return (
-    <div className="kv-input-bar border-t border-gray-100">
+    <div id="kv-inputbar" className="kv-input-bar border-t border-gray-100">
       {replyPreview != null && (
         <div className="flex items-center justify-between bg-gray-50 px-4 py-1.5 text-sm text-gray-500">
           <span className="truncate">↩ Replying to: {replyPreview || "…"}</span>

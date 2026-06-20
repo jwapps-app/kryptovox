@@ -63,13 +63,13 @@ export default function App() {
       const se = document.scrollingElement;
       if (se && se.scrollTop) se.scrollTop = 0;
       const vv = window.visualViewport;
-      const standalone =
-        (window.navigator as { standalone?: boolean }).standalone ||
-        window.matchMedia("(display-mode: standalone)").matches;
+      const kbCls = document.documentElement.classList.contains("kb-open") ? "1" : "0";
+      const ib = document.getElementById("kv-inputbar");
+      const ibBot = ib ? Math.round(ib.getBoundingClientRect().bottom) : -1;
       dbg.textContent =
-        `vh:${rootStyle.getPropertyValue("--vh")} in:${window.innerHeight} ` +
-        `vv:${vv ? Math.round(vv.height) : "-"} off:${vv ? Math.round(vv.offsetTop) : "-"} ` +
-        `typ:${isTyping() ? "Y" : "N"} sa:${standalone ? "PWA" : "tab"}`;
+        `vh:${rootStyle.getPropertyValue("--vh")} vv:${vv ? Math.round(vv.height) : "-"} ` +
+        `kb:${kbCls} inBot:${ibBot} bodyH:${document.body.clientHeight} ` +
+        `typ:${isTyping() ? "Y" : "N"}`;
     };
     let warmup: ReturnType<typeof setInterval> | undefined;
     const rearm = () => {
