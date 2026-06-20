@@ -71,6 +71,20 @@ export default function ChatView() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [totalSize, messages.length, id]);
 
+  // Re-pin to the bottom when the scroll container itself resizes — the
+  // on-screen keyboard opening shrinks it, which would otherwise leave the
+  // latest messages hidden behind the keyboard/input bar. Only follows while
+  // the user is already at the bottom, so reading older messages is undisturbed.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Mark the newest non-own message read (unless read receipts are disabled).
   useEffect(() => {
     const last = messages[messages.length - 1];
