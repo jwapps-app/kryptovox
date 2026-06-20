@@ -18,11 +18,16 @@ self.addEventListener("push", (event) => {
   }
   const title = data.title || "Kryptovox";
   const url = data.url || "/";
+  // Update the app-icon badge count (Badging API) even though the app is closed.
+  if (typeof data.badge === "number" && self.navigator.setAppBadge) {
+    if (data.badge > 0) self.navigator.setAppBadge(data.badge).catch(() => {});
+    else if (self.navigator.clearAppBadge) self.navigator.clearAppBadge().catch(() => {});
+  }
   event.waitUntil(
     self.registration.showNotification(title, {
       body: data.body || "New message",
       icon: "/icon-192.png",
-      badge: "/icon-192.png",
+      badge: "/icon-192.png", // monochrome status-bar glyph, not the count
       data: { url },
       tag: url, // collapse repeats from the same conversation into one banner
     })
