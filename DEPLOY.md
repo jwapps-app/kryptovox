@@ -167,6 +167,8 @@ Portainer's UI, not a `.env` file.
    | `ALLOWED_ORIGINS` | `https://chat.yourdomain.com` |
    | `VAPID_EMAIL` | `mailto:you@yourdomain.com` |
    | `WEB_PORT` | `8095` *(host port nginx is published on — any free port)* |
+   | `DEFAULT_RETENTION_DAYS` | `0` *(optional; default retention for new chats, 0 = forever)* |
+   | `BACKUP_RETENTION_DAYS` | `14` *(optional; keep ≤ your retention so deletes age out of backups)* |
 
 5. **Deploy the stack.** The backend runs migrations on start. nginx is now
    reachable on the NAS at `http://<NAS-IP>:<WEB_PORT>`.

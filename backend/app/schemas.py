@@ -126,6 +126,12 @@ class ConversationUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
 
 
+class RetentionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # 0 = keep forever; otherwise delete messages older than this many days.
+    retention_days: int = Field(ge=0, le=3650)
+
+
 class ConversationMemberOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     user_id: uuid.UUID
@@ -142,6 +148,7 @@ class ConversationOut(BaseModel):
     my_role: str = "member"
     last_message: "MessageOut | None" = None
     unread_count: int = 0
+    retention_days: int = 0
 
 
 # ---------- Messages ----------
