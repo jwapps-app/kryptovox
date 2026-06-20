@@ -12,6 +12,7 @@ export default function ConversationList() {
   const textByMessage = useChat((s) => s.textByMessage);
   const loadConversations = useChat((s) => s.loadConversations);
   const leaveConversation = useChat((s) => s.leaveConversation);
+  const markUnread = useChat((s) => s.markUnread);
   const navigate = useNavigate();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
@@ -110,6 +111,7 @@ export default function ConversationList() {
               preview={preview}
               onOpen={() => navigate(`/chat/${c.id}`)}
               onDelete={() => void leaveConversation(c.id)}
+              onMarkUnread={() => void markUnread(c.id)}
             />
           );
         })}

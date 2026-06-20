@@ -31,6 +31,7 @@ interface ChatState {
   loadFullImage: (message: Message) => Promise<string>;
   unsend: (messageId: string, conversationId: string) => Promise<void>;
   markRead: (conversationId: string, messageId: string) => Promise<void>;
+  markUnread: (conversationId: string) => Promise<void>;
   toggleReaction: (
     conversationId: string,
     messageId: string,
@@ -288,6 +289,16 @@ export const useChat = create<ChatState>((set, get) => ({
     } catch {
       /* best-effort */
     }
+  },
+
+  markUnread: async (conversationId) => {
+    await api(`/conversations/${conversationId}/unread`, { method: "POST" });
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId ? { ...c, unread_count: Math.max(1, c.unread_count) } : c
+      ),
+    }));
+    syncBadge(get().conversations);
   },
 
   handleWsEvent: async (event) => {
