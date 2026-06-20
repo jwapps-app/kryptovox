@@ -54,6 +54,17 @@ html.kb-open .kv-input-bar {
   scrollbar-width: none;
 }
 
+/* Conversation-row delete: swipe reveals it on touch; on mouse devices a trash
+   button shows on hover instead (swipe doesn't map to a mouse). */
+.kv-row-trash {
+  display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .kv-row:hover .kv-row-trash {
+    display: flex;
+  }
+}
+
 /* Smooth momentum scrolling on iOS. The app body is position:fixed, so without
    these an inner scroll area chains its overscroll into the fixed body and
    stutters. `contain` stops the chain; `-webkit-overflow-scrolling: touch`
