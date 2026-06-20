@@ -36,6 +36,16 @@ body {
   overflow: hidden;
 }
 
+/* Input bar clears the home indicator — except while the keyboard is open
+   (no indicator then), where the padding would otherwise float it above the
+   keyboard. App.tsx toggles .kb-open on <html>. */
+.kv-input-bar {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+html.kb-open .kv-input-bar {
+  padding-bottom: 0;
+}
+
 /* Hide scrollbars in the chat thread but keep scrolling. */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
