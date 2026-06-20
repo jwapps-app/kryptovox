@@ -6,35 +6,34 @@
   color-scheme: light;
 }
 
-html,
-body {
+html {
   height: 100%;
-  margin: 0;
-  overflow: hidden;
 }
 
-/* Pin the app to the *visual* viewport: its height AND its scroll offset are
-   driven by JS (App.tsx) from window.visualViewport, so when the iOS keyboard
-   opens the whole UI tracks the visible area instead of sliding out of view.
-   Top safe-area inset is padded here so every screen clears the notch. */
-#root {
+/* Full-screen, top-anchored, fixed. --vh is set from JS (App.tsx) to the real
+   paintable height, shrinking above the keyboard only when typing. position:
+   fixed + the JS scroll-reset stops iOS from dragging the UI when the keyboard
+   opens. This is the approach proven in the sibling Colloqui app. */
+body {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: var(--app-height, 100dvh);
-  transform: translateY(var(--app-top, 0px));
-  box-sizing: border-box;
-  padding-top: env(safe-area-inset-top);
+  height: var(--vh, 100dvh);
   overflow: hidden;
-}
-
-body {
+  margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
   -webkit-font-smoothing: antialiased;
   background: #ffffff;
   color: #000000;
+}
+
+#root {
+  height: 100%;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top);
+  overflow: hidden;
 }
 
 /* Hide scrollbars in the chat thread but keep scrolling. */
