@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useAuth } from "./store/auth";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { takePendingNav } from "./lib/pendingNav";
 import Login from "./pages/Login";
 import ConversationList from "./pages/ConversationList";
 import ChatView from "./pages/ChatView";
@@ -13,10 +14,31 @@ import CommandPalette from "./components/CommandPalette";
 export default function App() {
   const status = useAuth((s) => s.status);
   const bootstrap = useAuth((s) => s.bootstrap);
+  const navigate = useNavigate();
 
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  // Deep-link from a tapped push notification. While the app is open the SW
+  // posts a message; on a cold start the target was stashed and we read it once
+  // we're signed in. Both route to the chat that sent the notification.
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === "kv-navigate" && typeof e.data.url === "string") {
+        navigate(e.data.url);
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
+  }, [navigate]);
+
+  useEffect(() => {
+    if (status !== "authed") return;
+    void takePendingNav().then((url) => {
+      if (url) navigate(url);
+    });
+  }, [status, navigate]);
 
   // iOS keyboard handling, ported from the sibling Colloqui app. Sets --vh to
   // the real paintable height (max of innerHeight/visualViewport to dodge stale
