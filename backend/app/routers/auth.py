@@ -154,14 +154,11 @@ async def refresh(
     body: RefreshRequest | None = None,
     kv_refresh: str | None = Cookie(default=None),
 ) -> TokenResponse:
-    # CSRF defense-in-depth: if a cross-origin request arrives with an Origin
-    # header, reject it (the cookie path is also SameSite=Lax).
-    origin = request.headers.get("origin")
-    if origin and origin not in settings.cors_origins:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Bad origin")
-
-    # Prefer the token from the request body (client-persisted, survives PWA
-    # force-close); fall back to the cookie.
+    # No CSRF origin check needed: the refresh token comes from the request body
+    # (client-persisted in localStorage), which a cross-site attacker cannot
+    # read or forge. The cookie fallback is SameSite=Lax. The earlier origin
+    # check broke session restore whenever the Origin didn't exactly match
+    # ALLOWED_ORIGINS.
     token = (body.refresh_token if body else None) or kv_refresh
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "No refresh token")
