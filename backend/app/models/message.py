@@ -31,6 +31,10 @@ class Message(Base):
     # { device_id: base64url(wrapped message key), ... }
     encrypted_keys: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     type: Mapped[str] = mapped_column(String, default="text", nullable=False)
+    # For image messages: { id, iv, thumb, thumb_iv, w, h, mime, size }. The
+    # full encrypted image lives as a blob in the media store keyed by `id`; the
+    # thumbnail is encrypted inline here. Server never sees plaintext.
+    media: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     reply_to_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
     )

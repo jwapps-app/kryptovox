@@ -65,10 +65,12 @@ services:
       VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@example.com}
       # Persist the auto-generated VAPID key so push subscriptions survive restarts.
       VAPID_KEY_PATH: /data/vapid_private.pem
+      MEDIA_DIR: /media
     volumes:
-      # Named volume (not a bind mount): inherits the image's `app` ownership so
-      # the non-root backend can write the VAPID key.
+      # Named volumes (not bind mounts): inherit the image's `app` ownership so
+      # the non-root backend can write them. /data = VAPID key, /media = blobs.
       - kryptovox-vapid:/data
+      - kryptovox-media:/media
     deploy:
       resources:
         limits:
@@ -142,3 +144,4 @@ services:
 
 volumes:
   kryptovox-vapid:
+  kryptovox-media:

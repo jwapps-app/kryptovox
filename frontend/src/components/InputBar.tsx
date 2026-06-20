@@ -5,6 +5,7 @@ import { getPrefs } from "../lib/prefs";
 interface Props {
   conversationId: string;
   onSend: (text: string) => Promise<void>;
+  onSendImage: (file: File) => Promise<void>;
   replyPreview?: string | null;
   onCancelReply?: () => void;
 }
@@ -12,13 +13,26 @@ interface Props {
 export default function InputBar({
   conversationId,
   onSend,
+  onSendImage,
   replyPreview,
   onCancelReply,
 }: Props) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<number | null>(null);
+
+  const onPickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be picked again later
+    if (!file) return;
+    try {
+      await onSendImage(file);
+    } catch {
+      /* best-effort; failures are non-fatal */
+    }
+  };
 
   const autoGrow = () => {
     const ta = taRef.current;
@@ -75,6 +89,35 @@ export default function InputBar({
         </div>
       )}
       <div className="flex items-end gap-2 px-3 py-2">
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => fileRef.current?.click()}
+        aria-label="Add photo"
+        className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center text-imsg-blue active:opacity-60"
+      >
+        <svg
+          width="26"
+          height="26"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+          <circle cx="12" cy="13" r="4" />
+        </svg>
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={onPickImage}
+      />
       <textarea
         ref={taRef}
         rows={1}

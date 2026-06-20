@@ -66,11 +66,13 @@ services:
       DEFAULT_RETENTION_DAYS: ${DEFAULT_RETENTION_DAYS:-0}
       VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@example.com}
       VAPID_KEY_PATH: /data/vapid_private.pem
+      MEDIA_DIR: /media
     volumes:
-      # Named volume (not a /volume1 bind mount): it inherits the image's `app`
-      # ownership, so the non-root backend can write the VAPID key. Persists the
-      # key across redeploys so push subscriptions keep working.
+      # Named volumes (not /volume1 bind mounts): they inherit the image's `app`
+      # ownership, so the non-root backend can write them. /data persists the
+      # VAPID key; /media holds encrypted image blobs.
       - kryptovox-vapid:/data
+      - kryptovox-media:/media
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,6 +126,7 @@ services:
 
 volumes:
   kryptovox-vapid:
+  kryptovox-media:
 
 # ===========================================================================
 # Set these in Portainer → Stack → Environment variables:

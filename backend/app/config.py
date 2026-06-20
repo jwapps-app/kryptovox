@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # forever. Changing this does not touch existing conversations.
     default_retention_days: int = 0
 
+    # Encrypted media (image) blob store.
+    media_dir: str = "media"
+    max_media_bytes: int = 25 * 1024 * 1024  # 25 MB ciphertext cap
+
     # CORS — comma-separated list of allowed origins
     allowed_origins: str = "https://localhost:5173"
 
