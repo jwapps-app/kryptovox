@@ -17,6 +17,8 @@ export default function Admin() {
   const [password, setPassword] = useState("");
   const [makeAdmin, setMakeAdmin] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [defaultRetention, setDefaultRetention] = useState(0);
+  const [retentionSaved, setRetentionSaved] = useState(false);
 
   const load = () => api<AdminUser[]>("/admin/users").then(setUsers).catch(() => {});
 
@@ -26,8 +28,21 @@ export default function Admin() {
       return;
     }
     void load();
+    api<{ default_retention_days: number }>("/config")
+      .then((c) => setDefaultRetention(c.default_retention_days))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const saveRetention = async (days: number) => {
+    const c = await api<{ default_retention_days: number }>("/config", {
+      method: "PUT",
+      body: JSON.stringify({ default_retention_days: days }),
+    });
+    setDefaultRetention(c.default_retention_days);
+    setRetentionSaved(true);
+    setTimeout(() => setRetentionSaved(false), 1500);
+  };
 
   const createUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +96,34 @@ export default function Admin() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4">
+        <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">
+          Default message retention
+        </h2>
+        <div className="mb-6 rounded-2xl bg-white p-2 shadow-sm">
+          {[
+            { days: 0, label: "Forever" },
+            { days: 7, label: "7 days" },
+            { days: 30, label: "30 days" },
+            { days: 90, label: "90 days" },
+            { days: 365, label: "1 year" },
+          ].map((opt) => (
+            <button
+              key={opt.days}
+              onClick={() => void saveRetention(opt.days)}
+              className="flex w-full items-center justify-between border-b border-gray-50 px-2 py-2 text-left text-[15px] last:border-0"
+            >
+              <span>{opt.label}</span>
+              {defaultRetention === opt.days && (
+                <span className="text-imsg-blue">✓</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <p className="mb-6 -mt-4 text-xs text-gray-400">
+          Applies to every conversation that hasn’t set its own override.
+          {retentionSaved && <span className="text-imsg-blue"> · Saved</span>}
+        </p>
+
         <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">
           Create user
         </h2>

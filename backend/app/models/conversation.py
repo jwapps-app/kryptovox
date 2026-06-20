@@ -24,9 +24,10 @@ class Conversation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    # Days to keep messages; 0 = forever. Swept by services/retention.py.
-    retention_days: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default="0", default=0
+    # Days to keep messages; 0 = forever, NULL = inherit the global default.
+    # Swept by services/retention.py.
+    retention_days: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None
     )
 
     members: Mapped[list["ConversationMember"]] = relationship(
