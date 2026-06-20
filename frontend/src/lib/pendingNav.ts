@@ -31,9 +31,7 @@ export async function peekClickLog(): Promise<{ url: string; ts: number }[]> {
   });
 }
 
-// Reads (and clears) the deep-link target the push service worker stashed on a
-// notification tap, so a cold-started app can navigate to the right chat.
-export async function takePendingNav(maxAgeMs = 120_000): Promise<string | null> {
+function takeKey(key: string, maxAgeMs: number): Promise<string | null> {
   return new Promise((resolve) => {
     let open: IDBOpenDBRequest;
     try {
@@ -48,11 +46,11 @@ export async function takePendingNav(maxAgeMs = 120_000): Promise<string | null>
       let result: string | null = null;
       const tx = db.transaction("nav", "readwrite");
       const store = tx.objectStore("nav");
-      const get = store.get("pending");
+      const get = store.get(key);
       get.onsuccess = () => {
         const rec = get.result as { url: string; ts: number } | undefined;
         if (rec && Date.now() - rec.ts < maxAgeMs) result = rec.url;
-        store.delete("pending");
+        store.delete(key);
       };
       tx.oncomplete = () => {
         db.close();
@@ -65,4 +63,15 @@ export async function takePendingNav(maxAgeMs = 120_000): Promise<string | null>
     };
     open.onerror = () => resolve(null);
   });
+}
+
+// Target stashed by notificationclick (cold launch). Read once on sign-in.
+export function takePendingNav(maxAgeMs = 120_000): Promise<string | null> {
+  return takeKey("pending", maxAgeMs);
+}
+
+// Target stashed by the push event (covers the iOS background-resume case where
+// notificationclick never fires). Short window so a normal app open won't jump.
+export function takeRecentPush(maxAgeMs = 30_000): Promise<string | null> {
+  return takeKey("lastpush", maxAgeMs);
 }
