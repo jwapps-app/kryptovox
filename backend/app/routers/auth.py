@@ -171,8 +171,6 @@ async def refresh(
     ):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
 
-    # Rotate: revoke old, issue new.
-    record.revoked = True
     device = await db.get(Device, record.device_id)
     if device is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Device revoked")
@@ -180,7 +178,19 @@ async def refresh(
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
 
-    return await _issue_tokens(db, response, user, device)
+    # Keep the SAME refresh token (no rotation) and slide its expiry. Rotation
+    # broke installed PWAs: the rotated cookie often isn't persisted before the
+    # app closes, so the next launch presented a revoked token and got bounced
+    # to the login screen. A stable long-lived token (revocable on logout)
+    # avoids that while still being hashed-at-rest and server-revocable.
+    record.expires_at = refresh_token_expiry()
+    _set_refresh_cookie(response, kv_refresh)
+    return TokenResponse(
+        access_token=create_access_token(user.id, device.id),
+        expires_in=settings.access_token_expire_minutes * 60,
+        user=UserOut.model_validate(user),
+        device_id=device.id,
+    )
 
 
 @router.post("/logout", status_code=204)
