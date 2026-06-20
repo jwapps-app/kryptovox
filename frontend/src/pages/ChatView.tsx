@@ -20,17 +20,38 @@ export default function ChatView() {
 
   const messages = useChat((s) => s.messagesByConv[id]) ?? [];
   const textByMessage = useChat((s) => s.textByMessage);
+  const thumbByMessage = useChat((s) => s.thumbByMessage);
   const typing = useChat((s) => s.typingByConv[id]) ?? [];
   const readBy = useChat((s) => s.readByConv[id]) ?? {};
   const loadMessages = useChat((s) => s.loadMessages);
   const loadOlder = useChat((s) => s.loadOlder);
   const sendMessage = useChat((s) => s.sendMessage);
+  const sendImage = useChat((s) => s.sendImage);
+  const loadFullImage = useChat((s) => s.loadFullImage);
   const unsend = useChat((s) => s.unsend);
   const markRead = useChat((s) => s.markRead);
   const toggleReaction = useChat((s) => s.toggleReaction);
 
   const [conv, setConv] = useState<Conversation | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
+
+  const openImage = async (m: Message) => {
+    setViewerLoading(true);
+    setViewerUrl(null);
+    try {
+      setViewerUrl(await loadFullImage(m));
+    } catch {
+      /* leave closed on failure */
+    } finally {
+      setViewerLoading(false);
+    }
+  };
+  const closeViewer = () => {
+    setViewerUrl(null);
+    setViewerLoading(false);
+  };
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // We render the loaded messages directly (no virtualization). Variable-height
@@ -199,6 +220,8 @@ export default function ChatView() {
                     currentUserId={user.id}
                     replyText={replyText}
                     status={statusFor(m)}
+                    thumbUrl={thumbByMessage[m.id]}
+                    onOpenImage={openImage}
                     onReact={(mid, emoji) => toggleReaction(id, mid, emoji, user.id)}
                     onReply={(msg) => setReplyTo(msg)}
                     onUnsend={(mid) => unsend(mid, id)}
@@ -219,7 +242,25 @@ export default function ChatView() {
           await sendMessage(id, text, memberIds, replyTo?.id ?? null);
           setReplyTo(null);
         }}
+        onSendImage={(file) => sendImage(id, file, memberIds)}
       />
+
+      {(viewerLoading || viewerUrl) && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+          onClick={closeViewer}
+        >
+          {viewerUrl ? (
+            <img
+              src={viewerUrl}
+              alt="Photo"
+              className="max-h-full max-w-full object-contain"
+            />
+          ) : (
+            <div className="text-white">Loading…</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

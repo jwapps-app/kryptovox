@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
 from app.models import Conversation, Message
+from app.services import media_store
 from app.services.app_settings import get_default_retention_days
 
 log = logging.getLogger("kryptovox.retention")
@@ -38,6 +39,17 @@ async def sweep_once(db: AsyncSession) -> int:
         if days <= 0:
             continue
         cutoff = now - timedelta(days=days)
+        # Delete the encrypted image blobs for expiring messages first.
+        media_ids = await db.execute(
+            select(Message.media["id"].astext).where(
+                Message.conversation_id == conv_id,
+                Message.created_at < cutoff,
+                Message.media.isnot(None),
+            )
+        )
+        for mid in media_ids.scalars().all():
+            if mid:
+                media_store.delete(mid)
         result = await db.execute(
             delete(Message).where(
                 Message.conversation_id == conv_id,

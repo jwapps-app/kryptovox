@@ -3,6 +3,8 @@ import { api } from "../lib/api";
 import { cacheUserKeys, gatherRecipients, getUserPublicKey } from "../lib/keys";
 import { syncBadge } from "../lib/badge";
 import { decryptMessage, encryptMessage } from "../crypto/messaging";
+import { decryptFull, decryptThumb, encryptImage } from "../crypto/media";
+import { fetchMedia, uploadMedia } from "../lib/media";
 import { useAuth } from "./auth";
 import type { Conversation, Message, MessagePage, WsEvent } from "../lib/types";
 
@@ -10,6 +12,7 @@ interface ChatState {
   conversations: Conversation[];
   messagesByConv: Record<string, Message[]>;
   textByMessage: Record<string, string>;
+  thumbByMessage: Record<string, string>; // messageId -> decrypted thumbnail object URL
   cursorByConv: Record<string, string | null>;
   typingByConv: Record<string, string[]>; // userIds currently typing
   // conversationId -> userId -> messageId they last read
@@ -23,6 +26,8 @@ interface ChatState {
     memberIds: string[],
     replyToId?: string | null
   ) => Promise<void>;
+  sendImage: (conversationId: string, file: File, memberIds: string[]) => Promise<void>;
+  loadFullImage: (message: Message) => Promise<string>;
   unsend: (messageId: string, conversationId: string) => Promise<void>;
   markRead: (conversationId: string, messageId: string) => Promise<void>;
   toggleReaction: (
@@ -34,8 +39,24 @@ interface ChatState {
   handleWsEvent: (event: WsEvent) => Promise<void>;
 }
 
+async function decryptThumbForMe(msg: Message): Promise<string | null> {
+  if (msg.type !== "image" || !msg.media || msg.deleted_at) return null;
+  const { identity, user } = useAuth.getState();
+  if (!identity || !user || !msg.sender_id) return null;
+  const wrapped = msg.encrypted_keys[user.id];
+  if (!wrapped) return null;
+  const senderPub = await getUserPublicKey(msg.sender_id);
+  if (!senderPub) return null;
+  try {
+    const blob = await decryptThumb(msg.media, wrapped, senderPub, identity.privateKey);
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
+}
+
 async function decryptForMe(msg: Message): Promise<string> {
-  if (msg.deleted_at) return "";
+  if (msg.deleted_at || msg.type === "image") return "";
   const { identity, user } = useAuth.getState();
   if (!identity || !user) return "🔒";
   const wrapped = msg.encrypted_keys[user.id];
@@ -60,6 +81,7 @@ export const useChat = create<ChatState>((set, get) => ({
   conversations: [],
   messagesByConv: {},
   textByMessage: {},
+  thumbByMessage: {},
   cursorByConv: {},
   typingByConv: {},
   readByConv: {},
@@ -82,15 +104,19 @@ export const useChat = create<ChatState>((set, get) => ({
   loadMessages: async (conversationId) => {
     const page = await api<MessagePage>(`/conversations/${conversationId}/messages`);
     const texts: Record<string, string> = {};
+    const thumbs: Record<string, string> = {};
     await Promise.all(
       page.messages.map(async (m) => {
         texts[m.id] = await decryptForMe(m);
+        const t = await decryptThumbForMe(m);
+        if (t) thumbs[m.id] = t;
       })
     );
     set((s) => ({
       messagesByConv: { ...s.messagesByConv, [conversationId]: page.messages },
       cursorByConv: { ...s.cursorByConv, [conversationId]: page.next_cursor },
       textByMessage: { ...s.textByMessage, ...texts },
+      thumbByMessage: { ...s.thumbByMessage, ...thumbs },
     }));
   },
 
@@ -101,9 +127,12 @@ export const useChat = create<ChatState>((set, get) => ({
       `/conversations/${conversationId}/messages?cursor=${encodeURIComponent(cursor)}`
     );
     const texts: Record<string, string> = {};
+    const thumbs: Record<string, string> = {};
     await Promise.all(
       page.messages.map(async (m) => {
         texts[m.id] = await decryptForMe(m);
+        const t = await decryptThumbForMe(m);
+        if (t) thumbs[m.id] = t;
       })
     );
     set((s) => ({
@@ -113,6 +142,7 @@ export const useChat = create<ChatState>((set, get) => ({
       },
       cursorByConv: { ...s.cursorByConv, [conversationId]: page.next_cursor },
       textByMessage: { ...s.textByMessage, ...texts },
+      thumbByMessage: { ...s.thumbByMessage, ...thumbs },
     }));
   },
 
@@ -140,6 +170,48 @@ export const useChat = create<ChatState>((set, get) => ({
         textByMessage: { ...s.textByMessage, [msg.id]: text },
       };
     });
+  },
+
+  sendImage: async (conversationId, file, memberIds) => {
+    const { identity } = useAuth.getState();
+    if (!identity) throw new Error("No identity");
+    const recipients = await gatherRecipients(memberIds);
+    const enc = await encryptImage(file, recipients, identity.privateKey);
+    const id = await uploadMedia(enc.blob);
+    const msg = await api<Message>(`/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({
+        encrypted_keys: enc.encrypted_keys,
+        type: "image",
+        media: { ...enc.media, id },
+      }),
+    });
+    // Show our own image instantly from the local file (no round-trip decrypt).
+    const localUrl = URL.createObjectURL(file);
+    set((s) => {
+      const existing = s.messagesByConv[conversationId] ?? [];
+      const already = existing.some((m) => m.id === msg.id);
+      return {
+        messagesByConv: {
+          ...s.messagesByConv,
+          [conversationId]: already ? existing : [...existing, msg],
+        },
+        thumbByMessage: { ...s.thumbByMessage, [msg.id]: localUrl },
+      };
+    });
+  },
+
+  loadFullImage: async (message) => {
+    const { identity, user } = useAuth.getState();
+    if (!identity || !user || !message.media || !message.sender_id) {
+      throw new Error("Cannot load image");
+    }
+    const wrapped = message.encrypted_keys[user.id];
+    const senderPub = await getUserPublicKey(message.sender_id);
+    if (!wrapped || !senderPub) throw new Error("No key for this image");
+    const cipher = await fetchMedia(message.media.id);
+    const blob = await decryptFull(message.media, cipher, wrapped, senderPub, identity.privateKey);
+    return URL.createObjectURL(blob);
   },
 
   unsend: async (messageId, conversationId) => {
@@ -210,6 +282,7 @@ export const useChat = create<ChatState>((set, get) => ({
       case "message.new": {
         const msg = p as unknown as Message;
         const text = await decryptForMe(msg);
+        const thumb = await decryptThumbForMe(msg);
         // Dedupe atomically inside the updater: the early check + later append
         // otherwise race (own-send echo, or two events for the same id) and
         // produce a duplicate. Reading fresh `s` here closes that window.
@@ -224,6 +297,9 @@ export const useChat = create<ChatState>((set, get) => ({
               [msg.conversation_id]: [...existing, msg],
             },
             textByMessage: { ...s.textByMessage, [msg.id]: text },
+            thumbByMessage: thumb
+              ? { ...s.thumbByMessage, [msg.id]: thumb }
+              : s.thumbByMessage,
           };
         });
         // Refresh conversation ordering / previews.

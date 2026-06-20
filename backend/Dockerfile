@@ -20,8 +20,8 @@ COPY . .
 # creating it owned by `app` means a fresh named volume mounted there inherits
 # that ownership, so the non-root process can write to it.
 RUN useradd --create-home --uid 10001 app \
-    && mkdir -p /data \
-    && chown -R app:app /app /data
+    && mkdir -p /data /media \
+    && chown -R app:app /app /data /media
 USER app
 
 EXPOSE 8000
