@@ -5,7 +5,21 @@ import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import "./index.css";
 
-registerSW({ immediate: true });
+// Auto-update the service worker, and actively re-check for a new version when
+// the app regains focus — otherwise iOS PWAs can run a stale cached build for a
+// long time. With autoUpdate, finding a new SW triggers skipWaiting + reload.
+registerSW({
+  immediate: true,
+  onRegisteredSW(_url, registration) {
+    if (!registration) return;
+    const check = () => {
+      if (!document.hidden) registration.update().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    setInterval(check, 60 * 60 * 1000);
+  },
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
