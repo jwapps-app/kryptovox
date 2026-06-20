@@ -67,13 +67,47 @@ function idbPut(key: string, value: unknown): Promise<void> {
   );
 }
 
-export async function loadIdentity(): Promise<Identity | null> {
-  assertSecureContext();
-  return (await idbGet<Identity>(KEY_ID)) ?? null;
+// We persist the key MATERIAL (exported bytes), not the CryptoKey objects.
+// iOS/WebKit cannot reliably store/retrieve CryptoKey objects in IndexedDB —
+// the record exists but reads back broken, which logged users out on reopen.
+// Raw bytes round-trip everywhere.
+interface StoredKeys {
+  priv: string; // base64url PKCS#8
+  pub: string; // base64url raw
 }
 
 async function storeIdentity(identity: Identity): Promise<void> {
-  await idbPut(KEY_ID, identity);
+  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", identity.privateKey));
+  const stored: StoredKeys = {
+    priv: bytesToBase64url(pkcs8),
+    pub: identity.publicKeyB64,
+  };
+  await idbPut(KEY_ID, stored);
+}
+
+export async function loadIdentity(): Promise<Identity | null> {
+  assertSecureContext();
+  const stored = await idbGet<StoredKeys>(KEY_ID);
+  if (!stored || !stored.priv || !stored.pub) return null;
+  try {
+    const privateKey = await crypto.subtle.importKey(
+      "pkcs8",
+      base64urlToBytes(stored.priv),
+      { name: "X25519" },
+      true,
+      ["deriveBits"]
+    );
+    const publicKey = await crypto.subtle.importKey(
+      "raw",
+      base64urlToBytes(stored.pub),
+      { name: "X25519" },
+      true,
+      []
+    );
+    return { privateKey, publicKey, publicKeyB64: stored.pub };
+  } catch {
+    return null;
+  }
 }
 
 export async function clearIdentity(): Promise<void> {
