@@ -34,10 +34,25 @@ export default function App() {
   }, [navigate]);
 
   useEffect(() => {
-    if (status !== "authed") return;
-    void takePendingNav().then((url) => {
-      if (url) navigate(url);
-    });
+    // Read the stashed deep-link target on initial sign-in AND whenever the app
+    // becomes visible again (tapping a banner resumes the PWA on iOS without
+    // delivering the SW message). takePendingNav clears it, so it fires once.
+    const check = () => {
+      if (document.visibilityState !== "visible") return;
+      if (useAuth.getState().status !== "authed") return;
+      void takePendingNav().then((url) => {
+        if (url) navigate(url);
+      });
+    };
+    check();
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    window.addEventListener("pageshow", check);
+    return () => {
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("focus", check);
+      window.removeEventListener("pageshow", check);
+    };
   }, [status, navigate]);
 
   // iOS keyboard handling, ported from the sibling Colloqui app. Sets --vh to
