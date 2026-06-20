@@ -15,11 +15,11 @@ from functools import lru_cache
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException, webpush
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Device
+from app.models import ConversationMember, Device, Message
 from app.services.fanout import conversation_member_ids
 from app.services.presence import is_online
 
@@ -89,6 +89,29 @@ async def _send(subscription: dict, payload: dict, device: Device, db: AsyncSess
         log.warning("Push delivery error: %s", exc)
 
 
+async def _unread_total(db: AsyncSession, user_id: uuid.UUID) -> int:
+    """Total unread messages for a user across all their conversations — drives
+    the app-icon badge count. Mirrors the per-conversation unread logic."""
+    rows = await db.execute(
+        select(ConversationMember).where(ConversationMember.user_id == user_id)
+    )
+    total = 0
+    for member in rows.scalars().all():
+        after = None
+        if member.last_read_message_id:
+            last_read = await db.get(Message, member.last_read_message_id)
+            after = last_read.created_at if last_read else None
+        stmt = select(func.count(Message.id)).where(
+            Message.conversation_id == member.conversation_id,
+            Message.sender_id != user_id,
+            Message.deleted_at.is_(None),
+        )
+        if after is not None:
+            stmt = stmt.where(Message.created_at > after)
+        total += int(await db.scalar(stmt) or 0)
+    return total
+
+
 async def notify_offline(
     db: AsyncSession,
     conversation_id: uuid.UUID,
@@ -96,7 +119,7 @@ async def notify_offline(
     sender_name: str,
 ) -> None:
     """Push to every recipient device that is currently offline + subscribed."""
-    payload = {
+    base = {
         "title": sender_name or "Kryptovox",
         "body": "New message",
         "url": f"/chat/{conversation_id}",
@@ -106,6 +129,8 @@ async def notify_offline(
     for uid in await conversation_member_ids(db, conversation_id):
         if uid == sender_user_id:
             continue
+        # Per-recipient unread total for the home-screen icon badge.
+        payload = {**base, "badge": await _unread_total(db, uid)}
         rows = await db.execute(
             select(Device).where(
                 Device.user_id == uid, Device.push_subscription.isnot(None)
