@@ -18,6 +18,7 @@ interface ChatState {
   // conversationId -> userId -> messageId they last read
   readByConv: Record<string, Record<string, string>>;
   loadConversations: () => Promise<void>;
+  leaveConversation: (conversationId: string) => Promise<void>;
   loadMessages: (conversationId: string) => Promise<void>;
   loadOlder: (conversationId: string) => Promise<void>;
   sendMessage: (
@@ -99,6 +100,19 @@ export const useChat = create<ChatState>((set, get) => ({
     );
     set((s) => ({ conversations, textByMessage: { ...s.textByMessage, ...texts } }));
     syncBadge(conversations);
+  },
+
+  leaveConversation: async (conversationId) => {
+    await api(`/conversations/${conversationId}/leave`, { method: "POST" });
+    set((s) => {
+      const messagesByConv = { ...s.messagesByConv };
+      delete messagesByConv[conversationId];
+      return {
+        conversations: s.conversations.filter((c) => c.id !== conversationId),
+        messagesByConv,
+      };
+    });
+    syncBadge(get().conversations);
   },
 
   loadMessages: async (conversationId) => {
