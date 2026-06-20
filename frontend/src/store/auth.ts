@@ -74,10 +74,25 @@ export const useAuth = create<AuthState>((set, get) => ({
     );
     const identity = await loadIdentity();
     try {
-      const tok = await api<TokenResponse>("/auth/refresh", {
-        method: "POST",
-        body: JSON.stringify({ refresh_token: getRefreshToken() }),
-      });
+      // Retry: on a mobile cold start the first request can fail before the
+      // network is ready (ERR_CONNECTION_REFUSED). Don't drop the session on a
+      // single transient failure.
+      let tok: TokenResponse | undefined;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          tok = await api<TokenResponse>("/auth/refresh", {
+            method: "POST",
+            body: JSON.stringify({ refresh_token: getRefreshToken() }),
+          });
+          break;
+        } catch (e) {
+          // A real 401 (invalid/expired token) shouldn't be retried.
+          if ((e as { status?: number }).status === 401) throw e;
+          if (attempt === 3) throw e;
+          await new Promise((r) => setTimeout(r, 700));
+        }
+      }
+      if (!tok) throw new Error("refresh failed");
       setAccessToken(tok.access_token);
       setRefreshToken(tok.refresh_token);
       if (!identity) {
