@@ -5,6 +5,7 @@ import { useAuth } from "../store/auth";
 import { conversationTitle, userLabel } from "../lib/format";
 import { safetyNumber } from "../lib/safety";
 import Avatar from "../components/Avatar";
+import BackButton from "../components/BackButton";
 import type { Conversation, User } from "../lib/types";
 
 const RETENTION_OPTIONS: { days: number | null; label: string }[] = [
@@ -90,9 +91,7 @@ export default function ChatInfo() {
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
-        <button className="text-2xl text-imsg-blue" onClick={() => navigate(`/chat/${id}`)}>
-          ‹
-        </button>
+        <BackButton onClick={() => navigate(`/chat/${id}`)} />
         <span className="font-semibold">{isGroup ? "Group Info" : "Contact Info"}</span>
         {isGroup && isAdmin && (
           <button className="ml-auto text-sm text-imsg-blue" onClick={rename}>
