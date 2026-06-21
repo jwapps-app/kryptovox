@@ -42,10 +42,12 @@ async def sweep_once(db: AsyncSession) -> int:
     )
     for conv_id, secs in disc.all():
         cutoff = now - timedelta(seconds=secs)
+        # Clock starts on read (disappear_started_at); unread messages persist.
         media_ids = await db.execute(
             select(Message.media["id"].astext).where(
                 Message.conversation_id == conv_id,
-                Message.created_at < cutoff,
+                Message.disappear_started_at.isnot(None),
+                Message.disappear_started_at < cutoff,
                 Message.media.isnot(None),
             )
         )
@@ -54,7 +56,9 @@ async def sweep_once(db: AsyncSession) -> int:
                 media_store.delete(mid)
         result = await db.execute(
             delete(Message).where(
-                Message.conversation_id == conv_id, Message.created_at < cutoff
+                Message.conversation_id == conv_id,
+                Message.disappear_started_at.isnot(None),
+                Message.disappear_started_at < cutoff,
             )
         )
         removed += result.rowcount or 0

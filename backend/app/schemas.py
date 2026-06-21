@@ -255,6 +255,7 @@ class MessageOut(BaseModel):
     reply_to_id: uuid.UUID | None
     edited_at: datetime | None
     deleted_at: datetime | None
+    disappear_started_at: datetime | None = None
     created_at: datetime
     reactions: list[ReactionOut] = []
 
