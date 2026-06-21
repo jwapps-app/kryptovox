@@ -147,6 +147,15 @@ export default function ChatView() {
     return messages.filter((m) => new Date(m.created_at).getTime() > cutoff);
   }, [messages, disappearSecs, nowTick]);
 
+  // In-chat search: filter to messages whose decrypted text matches.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [chatQuery, setChatQuery] = useState("");
+  const displayed = useMemo(() => {
+    const q = chatQuery.trim().toLowerCase();
+    if (!searchOpen || !q) return visible;
+    return visible.filter((m) => (textByMessage[m.id] ?? "").toLowerCase().includes(q));
+  }, [visible, searchOpen, chatQuery, textByMessage]);
+
   // Read status only applies to my most recent outgoing message.
   const lastMine = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -207,7 +216,17 @@ export default function ChatView() {
           </span>
         )}
         <button
-          className="ml-auto text-xl text-imsg-blue"
+          className="ml-auto text-lg text-imsg-blue"
+          aria-label="Search"
+          onClick={() => {
+            setSearchOpen((v) => !v);
+            setChatQuery("");
+          }}
+        >
+          🔍
+        </button>
+        <button
+          className="text-xl text-imsg-blue"
           aria-label="Info"
           onClick={() => navigate(`/chat/${id}/info`)}
         >
@@ -215,22 +234,35 @@ export default function ChatView() {
         </button>
       </header>
 
+      {searchOpen && (
+        <div className="border-b border-gray-100 px-3 py-2">
+          <input
+            autoFocus
+            className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[15px] outline-none"
+            placeholder="Search this conversation"
+            autoCapitalize="none"
+            value={chatQuery}
+            onChange={(e) => setChatQuery(e.target.value)}
+          />
+        </div>
+      )}
+
       <div
         ref={scrollRef}
         onScroll={onScroll}
         className="no-scrollbar kv-scroll flex-1 overflow-y-auto py-3"
       >
-        {visible.length === 0 ? (
+        {displayed.length === 0 ? (
           <div className="mt-10 text-center text-gray-400">
-            No messages yet. Say hi 👋
+            {searchOpen && chatQuery.trim() ? "No matches" : "No messages yet. Say hi 👋"}
           </div>
         ) : (
           <div className="flex flex-col">
-            {visible.map((m, i) => {
+            {displayed.map((m, i) => {
               const day = dayLabel(m.created_at);
               const showDay = day !== prevDay;
               prevDay = day;
-              const next = visible[i + 1];
+              const next = displayed[i + 1];
               const isLastInGroup = !next || next.sender_id !== m.sender_id;
               const showSender =
                 conv?.type === "group" &&
