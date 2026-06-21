@@ -85,6 +85,7 @@ export default function MessageBubble({
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Dismiss the tapback popup when tapping anywhere outside this bubble.
   useEffect(() => {
@@ -96,6 +97,16 @@ export default function MessageBubble({
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  // The menu renders below the bubble; for messages near the bottom it would be
+  // off-screen, so scroll it fully into view when it opens.
+  useEffect(() => {
+    if (!open) return;
+    const t = requestAnimationFrame(() =>
+      menuRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    );
+    return () => cancelAnimationFrame(t);
   }, [open]);
 
   if (message.deleted_at) {
@@ -255,95 +266,88 @@ export default function MessageBubble({
         </div>
       )}
 
-      {/* Action menu on tap: emoji tapbacks on the left, actions stacked right. */}
-      {open && (
-        <div
-          onMouseDown={keepKeyboard}
-          className="mt-1 flex items-stretch gap-2 rounded-2xl bg-white px-2.5 py-2 shadow"
-        >
-          <div className="flex items-center gap-1.5">
-            {TAPBACKS.map((emoji) => (
-              <button
-                key={emoji}
-                className="text-xl leading-none"
-                onClick={() => {
-                  onReact(message.id, emoji);
-                  setOpen(false);
-                }}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-          {(() => {
-            const showCopy = message.type === "text" && !!text;
-            const showEdit = isMine && message.type === "text" && !!onEdit;
-            const showForward =
-              !!onForward && (message.type === "text" || message.type === "location");
-            const btn = "p-0.5 text-imsg-blue active:opacity-60";
-            return (
-              <div className="flex flex-col gap-2 self-center border-l border-gray-200 pl-2.5">
-                <div className="flex gap-3.5">
-                  {(showCopy || showEdit) && (
-                    <div className="flex flex-col items-center gap-2.5">
-                      {showCopy && (
-                        <button
-                          className={btn}
-                          aria-label="Copy"
-                          title="Copy"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(text).catch(() => {});
-                            setOpen(false);
-                          }}
-                        >
-                          <IconCopy />
-                        </button>
-                      )}
-                      {showEdit && (
-                        <button
-                          className={btn}
-                          aria-label="Edit"
-                          title="Edit"
-                          onClick={() => {
-                            onEdit!(message);
-                            setOpen(false);
-                          }}
-                        >
-                          <IconPencil />
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex flex-col items-center gap-2.5">
-                    {showForward && (
-                      <button
-                        className={btn}
-                        aria-label="Forward"
-                        title="Forward"
-                        onClick={() => {
-                          onForward!(message);
-                          setOpen(false);
-                        }}
-                      >
-                        <IconForward />
-                      </button>
-                    )}
-                    <button
-                      className={btn}
-                      aria-label="Reply"
-                      title="Reply"
-                      onClick={() => {
-                        onReply(message);
-                        setOpen(false);
-                      }}
-                    >
-                      <IconReply />
-                    </button>
-                  </div>
-                </div>
+      {/* Action menu on tap: emoji tapbacks on top, action icons in a row below. */}
+      {open &&
+        (() => {
+          const showCopy = message.type === "text" && !!text;
+          const showEdit = isMine && message.type === "text" && !!onEdit;
+          const showForward =
+            !!onForward && (message.type === "text" || message.type === "location");
+          const btn = "p-0.5 text-imsg-blue active:opacity-60";
+          return (
+            <div
+              ref={menuRef}
+              onMouseDown={keepKeyboard}
+              className="mt-1 inline-flex flex-col gap-1.5 rounded-2xl bg-white px-2.5 py-2 shadow"
+            >
+              <div className="flex items-center justify-center gap-2">
+                {TAPBACKS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    className="text-xl leading-none"
+                    onClick={() => {
+                      onReact(message.id, emoji);
+                      setOpen(false);
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center justify-center gap-4 border-t border-gray-100 pt-1.5">
+                {showCopy && (
+                  <button
+                    className={btn}
+                    aria-label="Copy"
+                    title="Copy"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(text).catch(() => {});
+                      setOpen(false);
+                    }}
+                  >
+                    <IconCopy />
+                  </button>
+                )}
+                {showEdit && (
+                  <button
+                    className={btn}
+                    aria-label="Edit"
+                    title="Edit"
+                    onClick={() => {
+                      onEdit!(message);
+                      setOpen(false);
+                    }}
+                  >
+                    <IconPencil />
+                  </button>
+                )}
+                {showForward && (
+                  <button
+                    className={btn}
+                    aria-label="Forward"
+                    title="Forward"
+                    onClick={() => {
+                      onForward!(message);
+                      setOpen(false);
+                    }}
+                  >
+                    <IconForward />
+                  </button>
+                )}
+                <button
+                  className={btn}
+                  aria-label="Reply"
+                  title="Reply"
+                  onClick={() => {
+                    onReply(message);
+                    setOpen(false);
+                  }}
+                >
+                  <IconReply />
+                </button>
                 {isMine && (
                   <button
-                    className="flex justify-center border-t border-gray-100 pt-1.5 text-red-500 active:opacity-60"
+                    className="p-0.5 text-red-500 active:opacity-60"
                     aria-label="Unsend"
                     title="Unsend"
                     onClick={() => {
@@ -355,10 +359,9 @@ export default function MessageBubble({
                   </button>
                 )}
               </div>
-            );
-          })()}
-        </div>
-      )}
+            </div>
+          );
+        })()}
 
       {open && (
         <div className="mt-0.5 px-1 text-[11px] text-gray-400">
