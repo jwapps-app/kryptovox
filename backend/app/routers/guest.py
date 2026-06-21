@@ -10,7 +10,7 @@ from app.models import GuestMessage, GuestThread
 from app.ratelimit import limiter
 from app.schemas import GuestMessageIn, GuestMessageOut, PublicThreadOut
 from app.services.fanout import fanout_user
-from app.services.push import notify_user
+from app.services.push import notify_user, user_badge_total
 from app.ws.events import GUEST_REPLY, envelope
 
 # Public (no auth): a guest only ever holds a link to a single thread, and can
@@ -73,9 +73,15 @@ async def guest_reply(
     await fanout_user(
         thread.creator_id, envelope(GUEST_REPLY, {"thread_id": str(thread_id)})
     )
+    badge = await user_badge_total(db, thread.creator_id)
     await notify_user(
         db,
         thread.creator_id,
-        {"title": "Secret link", "body": "New reply", "url": f"/links/{thread_id}"},
+        {
+            "title": "Secret link",
+            "body": "New reply",
+            "url": f"/links/{thread_id}",
+            "badge": badge,
+        },
     )
     return GuestMessageOut.model_validate(msg)

@@ -18,8 +18,12 @@ export function setAppBadge(count: number): void {
   }
 }
 
-// Sum the unread counts across all conversations and reflect it on the icon.
-export function syncBadge(conversations: { unread_count: number }[]): void {
-  const total = conversations.reduce((n, c) => n + (c.unread_count || 0), 0);
+// Reflect total unread (conversations + secret-link replies) on the app icon.
+export function syncBadge(
+  conversations: { unread_count: number }[],
+  guestUnread = 0
+): void {
+  const total =
+    conversations.reduce((n, c) => n + (c.unread_count || 0), 0) + guestUnread;
   setAppBadge(total);
 }

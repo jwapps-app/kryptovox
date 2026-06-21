@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { decryptWithKey, encryptWithKey, importThreadKey } from "../crypto/guest";
 import { useViewportHeight } from "../hooks/useViewportHeight";
+import ExpiryBadge from "../components/ExpiryBadge";
 import { clockTime } from "../lib/format";
 import type { PublicThread } from "../lib/types";
 
@@ -19,6 +20,7 @@ export default function GuestView() {
   const keyB64 = window.location.hash.slice(1);
   const [error, setError] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<Decoded[]>([]);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const keyRef = useRef<CryptoKey | null>(null);
@@ -33,6 +35,7 @@ export default function GuestView() {
       if (res.status === 410) return setError("This link has expired.");
       if (!res.ok) return setError("This link is invalid or was removed.");
       const thread = (await res.json()) as PublicThread;
+      setExpiresAt(thread.expires_at);
       const out: Decoded[] = [];
       for (const m of thread.messages) {
         let t = "🔒";
@@ -118,7 +121,11 @@ export default function GuestView() {
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
         <span className="font-semibold">Secret message</span>
-        <span className="ml-auto text-xs text-gray-400">end-to-end encrypted</span>
+        {expiresAt ? (
+          <ExpiryBadge expiresAt={expiresAt} className="ml-auto text-xs text-gray-400" />
+        ) : (
+          <span className="ml-auto text-xs text-gray-400">end-to-end encrypted</span>
+        )}
       </header>
 
       <div ref={scrollRef} className="kv-scroll no-scrollbar flex-1 overflow-y-auto py-3">

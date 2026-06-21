@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { relativeTime } from "../lib/format";
+import ExpiryBadge from "./ExpiryBadge";
 import type { GuestThreadSummary } from "../lib/types";
 
 const REVEAL = 84;
@@ -88,14 +89,22 @@ export default function GuestThreadRow({ thread, label, preview, onOpen, onDelet
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between">
               <span className="truncate font-medium">{label}</span>
-              <span className="ml-2 shrink-0 text-xs text-gray-400">
+              <span className="ml-2 flex shrink-0 items-center gap-1.5 text-xs text-gray-400">
                 {relativeTime(thread.last_message_at)}
+                {thread.unread && (
+                  <span className="h-2 w-2 rounded-full bg-imsg-blue" />
+                )}
               </span>
             </div>
             <div className="truncate text-sm text-gray-500">
               {thread.last?.sender === "guest" ? "↩ " : ""}
               {preview}
             </div>
+            <ExpiryBadge
+              expiresAt={thread.expires_at}
+              burnMinutes={thread.burn_minutes}
+              className="text-xs text-gray-400"
+            />
           </div>
         </button>
 

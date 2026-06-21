@@ -88,6 +88,7 @@ export interface GuestThreadSummary {
   wrapped_key: string;
   label_ciphertext: string | null;
   label_iv: string | null;
+  unread: boolean;
   last: GuestMessage | null;
 }
 
