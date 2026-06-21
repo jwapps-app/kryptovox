@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { clockTime } from "../lib/format";
+import { mapsUrl } from "../lib/prefs";
 import type { Message } from "../lib/types";
 
 export const TAPBACKS = ["❤️", "👍", "👎", "😂", "‼️", "❓"];
@@ -76,9 +77,7 @@ export default function MessageBubble({
       /* unparseable — fall back to a plain label */
     }
   }
-  const mapUrl = location
-    ? `https://maps.apple.com/?ll=${location.lat},${location.lng}&q=Shared%20Location`
-    : "";
+  const mapUrl = location ? mapsUrl(location.lat, location.lng) : "";
 
   // Aggregate reactions by emoji.
   const counts = new Map<string, { count: number; mine: boolean }>();

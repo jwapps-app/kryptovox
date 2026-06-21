@@ -140,6 +140,27 @@ export default function Settings() {
           />
         </Section>
 
+        <Section title="Location">
+          <div className="flex items-center justify-between py-1">
+            <span className="text-[15px]">Open locations in</span>
+            <div className="flex gap-1">
+              {(["apple", "google"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPrefsState(setPref("mapsProvider", p))}
+                  className={`rounded-full border px-3 py-1 text-sm ${
+                    prefs.mapsProvider === p
+                      ? "border-imsg-blue bg-blue-50 text-imsg-blue"
+                      : "border-gray-200 text-gray-600"
+                  }`}
+                >
+                  {p === "apple" ? "Apple Maps" : "Google Maps"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Section>
+
         <Section title="Notifications">
           {push && !push.supported && (
             <p className="text-sm text-gray-500">
