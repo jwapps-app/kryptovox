@@ -31,6 +31,11 @@ interface ChatState {
     replyToId?: string | null
   ) => Promise<void>;
   sendImage: (conversationId: string, file: File, memberIds: string[]) => Promise<void>;
+  sendLocation: (
+    conversationId: string,
+    coords: { lat: number; lng: number; acc: number },
+    memberIds: string[]
+  ) => Promise<void>;
   loadFullImage: (message: Message) => Promise<string>;
   unsend: (messageId: string, conversationId: string) => Promise<void>;
   markRead: (conversationId: string, messageId: string) => Promise<void>;
@@ -224,6 +229,29 @@ export const useChat = create<ChatState>((set, get) => ({
           [conversationId]: already ? existing : [...existing, msg],
         },
         thumbByMessage: { ...s.thumbByMessage, [msg.id]: localUrl },
+      };
+    });
+  },
+
+  sendLocation: async (conversationId, coords, memberIds) => {
+    const { identity } = useAuth.getState();
+    if (!identity) throw new Error("No identity");
+    const recipients = await gatherRecipients(memberIds);
+    const payload = JSON.stringify(coords); // {lat,lng,acc} — encrypted like text
+    const enc = await encryptMessage(payload, recipients, identity.privateKey);
+    const msg = await api<Message>(`/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ ...enc, type: "location" }),
+    });
+    set((s) => {
+      const existing = s.messagesByConv[conversationId] ?? [];
+      const already = existing.some((m) => m.id === msg.id);
+      return {
+        messagesByConv: {
+          ...s.messagesByConv,
+          [conversationId]: already ? existing : [...existing, msg],
+        },
+        textByMessage: { ...s.textByMessage, [msg.id]: payload },
       };
     });
   },
