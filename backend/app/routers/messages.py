@@ -50,7 +50,7 @@ async def get_messages(
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
 ) -> MessagePage:
-    await _require_member(db, conversation_id, identity.user.id)
+    member = await _require_member(db, conversation_id, identity.user.id)
 
     stmt = (
         select(Message)
@@ -58,6 +58,9 @@ async def get_messages(
         .order_by(Message.created_at.desc())
         .limit(PAGE_SIZE + 1)
     )
+    # "Clear history" hides messages before cleared_at, for this member only.
+    if member.cleared_at is not None:
+        stmt = stmt.where(Message.created_at > member.cleared_at)
     if cursor:
         try:
             cursor_dt = datetime.fromisoformat(cursor)

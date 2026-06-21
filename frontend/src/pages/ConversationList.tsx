@@ -87,7 +87,12 @@ export default function ConversationList() {
     for (const g of guests) {
       out.push({ kind: "guest", id: g.id, t: Date.parse(g.last_message_at), thread: g });
     }
-    return out.sort((a, b) => b.t - a.t);
+    return out.sort((a, b) => {
+      const ap = a.kind === "conv" && a.conv.pinned ? 1 : 0;
+      const bp = b.kind === "conv" && b.conv.pinned ? 1 : 0;
+      if (ap !== bp) return bp - ap; // pinned conversations first
+      return b.t - a.t;
+    });
   }, [conversations, guests]);
 
   return (

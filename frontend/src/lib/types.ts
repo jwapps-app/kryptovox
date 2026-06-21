@@ -120,6 +120,8 @@ export interface Conversation {
   last_message: Message | null;
   unread_count: number;
   retention_days: number | null; // null = inherit global default, 0 = forever
+  pinned: boolean;
+  muted: boolean;
 }
 
 // WebSocket envelope
