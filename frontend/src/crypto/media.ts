@@ -27,7 +27,7 @@ export interface EncryptedImage {
   media: Omit<ImageMedia, "id">; // id is filled after upload
 }
 
-async function scaledJpeg(
+export async function scaledJpeg(
   bitmap: ImageBitmap,
   max: number
 ): Promise<{ bytes: Uint8Array; w: number; h: number }> {

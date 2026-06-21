@@ -30,3 +30,42 @@ export async function fetchMedia(id: string): Promise<Uint8Array> {
   if (!res.ok) throw new Error("Image download failed");
   return new Uint8Array(await res.arrayBuffer());
 }
+
+// Secret-link thread media. Host side is authenticated (/links); guest side is
+// public (/guest) — the blob is E2EE either way, gated by the thread.
+const blobBody = (bytes: Uint8Array): Blob =>
+  new Blob([bytes as BlobPart], { type: "application/octet-stream" });
+
+export async function uploadThreadMediaHost(threadId: string, bytes: Uint8Array): Promise<string> {
+  const res = await authedFetch(`/links/${threadId}/media`, {
+    method: "POST",
+    body: blobBody(bytes),
+  });
+  if (!res.ok) throw new Error("Image upload failed");
+  return ((await res.json()) as { id: string }).id;
+}
+
+export async function fetchThreadMediaHost(threadId: string, id: string): Promise<Uint8Array> {
+  const res = await authedFetch(`/links/${threadId}/media/${id}`, { method: "GET" });
+  if (!res.ok) throw new Error("Image download failed");
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+export async function uploadThreadMediaGuest(
+  threadId: string,
+  bytes: Uint8Array
+): Promise<string> {
+  const res = await fetch(`/api/guest/${threadId}/media`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: blobBody(bytes),
+  });
+  if (!res.ok) throw new Error("Image upload failed");
+  return ((await res.json()) as { id: string }).id;
+}
+
+export async function fetchThreadMediaGuest(threadId: string, id: string): Promise<Uint8Array> {
+  const res = await fetch(`/api/guest/${threadId}/media/${id}`, { method: "GET" });
+  if (!res.ok) throw new Error("Image download failed");
+  return new Uint8Array(await res.arrayBuffer());
+}

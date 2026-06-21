@@ -9,7 +9,9 @@ import {
   utf8Decode,
   utf8Encode,
 } from "./base64";
+import { scaledJpeg } from "./media";
 import { WRAP_IV_LEN, deriveWrapKey, importPublicKey } from "./messaging";
+import type { ImageMedia } from "../lib/types";
 
 export async function generateThreadKey(): Promise<{ key: CryptoKey; raw: string }> {
   const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
@@ -53,6 +55,60 @@ export async function decryptWithKey(
     base64urlToBytes(ciphertext)
   );
   return utf8Decode(new Uint8Array(pt));
+}
+
+// Encrypt an image with the thread key K (full + inline thumbnail). The thread
+// key already secures the whole thread, so no per-recipient wrapping is needed.
+export async function encryptImageWithKey(
+  file: File,
+  key: CryptoKey
+): Promise<{ blob: Uint8Array; media: Omit<ImageMedia, "id"> }> {
+  const bitmap = await createImageBitmap(file);
+  const full = await scaledJpeg(bitmap, 1600);
+  const thumb = await scaledJpeg(bitmap, 360);
+  bitmap.close();
+  const ivFull = crypto.getRandomValues(new Uint8Array(12));
+  const fullCipher = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv: ivFull }, key, full.bytes as BufferSource)
+  );
+  const ivThumb = crypto.getRandomValues(new Uint8Array(12));
+  const thumbCipher = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv: ivThumb }, key, thumb.bytes as BufferSource)
+  );
+  return {
+    blob: fullCipher,
+    media: {
+      iv: bytesToBase64url(ivFull),
+      thumb: bytesToBase64url(thumbCipher),
+      thumb_iv: bytesToBase64url(ivThumb),
+      w: full.w,
+      h: full.h,
+      mime: "image/jpeg",
+      size: fullCipher.length,
+    },
+  };
+}
+
+// Decrypt ciphertext bytes with K into an image object URL.
+export async function decryptImageToUrl(
+  cipher: Uint8Array,
+  ivB64: string,
+  key: CryptoKey
+): Promise<string> {
+  const bytes = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64urlToBytes(ivB64) },
+    key,
+    cipher as BufferSource
+  );
+  return URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+}
+
+export function decryptThumbToUrl(
+  thumbB64: string,
+  thumbIv: string,
+  key: CryptoKey
+): Promise<string> {
+  return decryptImageToUrl(base64urlToBytes(thumbB64), thumbIv, key);
 }
 
 export async function wrapKeyForSelf(
