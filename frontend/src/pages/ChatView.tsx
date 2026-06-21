@@ -132,6 +132,21 @@ export default function ChatView() {
   const memberIds = useMemo(() => conv?.members.map((m) => m.id) ?? [], [conv]);
   const othersTyping = typing.filter((u) => u !== user.id);
 
+  // Disappearing messages: hide on time client-side (the server sweeps them too,
+  // within a couple of minutes). Re-tick so they vanish without a reload.
+  const disappearSecs = conv?.disappear_seconds ?? 0;
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!disappearSecs) return;
+    const t = window.setInterval(() => setNowTick(Date.now()), 15000);
+    return () => window.clearInterval(t);
+  }, [disappearSecs]);
+  const visible = useMemo(() => {
+    if (!disappearSecs) return messages;
+    const cutoff = nowTick - disappearSecs * 1000;
+    return messages.filter((m) => new Date(m.created_at).getTime() > cutoff);
+  }, [messages, disappearSecs, nowTick]);
+
   // Read status only applies to my most recent outgoing message.
   const lastMine = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -186,6 +201,11 @@ export default function ChatView() {
         <BackButton onClick={() => navigate("/")} />
         {conv && <Avatar name={title} size={32} />}
         <span className="font-semibold">{title}</span>
+        {disappearSecs > 0 && (
+          <span className="text-gray-400" aria-label="Disappearing messages on">
+            ⏱
+          </span>
+        )}
         <button
           className="ml-auto text-xl text-imsg-blue"
           aria-label="Info"
@@ -200,17 +220,17 @@ export default function ChatView() {
         onScroll={onScroll}
         className="no-scrollbar kv-scroll flex-1 overflow-y-auto py-3"
       >
-        {messages.length === 0 ? (
+        {visible.length === 0 ? (
           <div className="mt-10 text-center text-gray-400">
             No messages yet. Say hi 👋
           </div>
         ) : (
           <div className="flex flex-col">
-            {messages.map((m, i) => {
+            {visible.map((m, i) => {
               const day = dayLabel(m.created_at);
               const showDay = day !== prevDay;
               prevDay = day;
-              const next = messages[i + 1];
+              const next = visible[i + 1];
               const isLastInGroup = !next || next.sender_id !== m.sender_id;
               const showSender =
                 conv?.type === "group" &&

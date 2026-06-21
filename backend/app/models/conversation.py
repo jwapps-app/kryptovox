@@ -29,6 +29,10 @@ class Conversation(Base):
     retention_days: Mapped[int | None] = mapped_column(
         Integer, nullable=True, default=None
     )
+    # Disappearing-messages timer in seconds; 0 = off.
+    disappear_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
 
     members: Mapped[list["ConversationMember"]] = relationship(
         back_populates="conversation", cascade="all, delete-orphan"
