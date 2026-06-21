@@ -1,14 +1,16 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models import GuestMessage, GuestThread
 from app.ratelimit import limiter
 from app.schemas import GuestMessageIn, GuestMessageOut, PublicThreadOut
+from app.services import media_store
 from app.services.fanout import fanout_user
 from app.services.push import notify_user, user_badge_total
 from app.ws.events import GUEST_REPLY, envelope
@@ -90,3 +92,46 @@ async def guest_reply(
         },
     )
     return GuestMessageOut.model_validate(msg)
+
+
+@router.post("/{thread_id}/media", status_code=201)
+@limiter.limit("10/minute")
+async def guest_upload_media(
+    request: Request,
+    thread_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    await _active_thread(db, thread_id)
+    body = await request.body()
+    if not body:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty body")
+    if len(body) > settings.max_media_bytes:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Too large")
+    return {"id": media_store.save(body)}
+
+
+@router.get("/{thread_id}/media/{media_id}")
+async def guest_get_media(
+    thread_id: uuid.UUID,
+    media_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    await _active_thread(db, thread_id)
+    ok = await db.scalar(
+        select(GuestMessage.id)
+        .where(
+            GuestMessage.thread_id == thread_id,
+            GuestMessage.media["id"].astext == media_id,
+        )
+        .limit(1)
+    )
+    if ok is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    data = media_store.load(media_id)
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )

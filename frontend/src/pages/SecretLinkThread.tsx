@@ -4,11 +4,15 @@ import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import {
+  decryptImageToUrl,
+  decryptThumbToUrl,
   decryptWithKey,
+  encryptImageWithKey,
   encryptWithKey,
   exportThreadKey,
   unwrapKeyForSelf,
 } from "../crypto/guest";
+import { fetchThreadMediaHost, uploadThreadMediaHost } from "../lib/media";
 import BackButton from "../components/BackButton";
 import ExpiryBadge from "../components/ExpiryBadge";
 import GuestBubble from "../components/GuestBubble";
@@ -22,6 +26,11 @@ export default function SecretLinkThread() {
   const guestReplyTick = useChat((s) => s.guestReplyTick);
   const keyRef = useRef<CryptoKey | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const thumbsRef = useRef<Record<string, string>>({});
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
   const [msgs, setMsgs] = useState<Decoded[]>([]);
   const [label, setLabel] = useState("Secret link");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -75,8 +84,20 @@ export default function SecretLinkThread() {
         media: m.media,
         created_at: m.created_at,
       });
+      if (m.type === "image" && m.media && !thumbsRef.current[m.id]) {
+        try {
+          thumbsRef.current[m.id] = await decryptThumbToUrl(
+            m.media.thumb,
+            m.media.thumb_iv,
+            keyRef.current
+          );
+        } catch {
+          /* skip */
+        }
+      }
     }
     setMsgs(out);
+    setThumbs({ ...thumbsRef.current });
   }, [id, identity, user.identity_public_key, navigate]);
 
   const loadGuestUnread = useChat((s) => s.loadGuestUnread);
@@ -107,6 +128,36 @@ export default function SecretLinkThread() {
       setText(value);
     } finally {
       setSending(false);
+    }
+  };
+
+  const onPickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !keyRef.current) return;
+    try {
+      const { blob, media } = await encryptImageWithKey(file, keyRef.current);
+      const mediaId = await uploadThreadMediaHost(id, blob);
+      await api(`/links/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ type: "image", media: { ...media, id: mediaId } }),
+      });
+      await load();
+    } catch {
+      /* best-effort */
+    }
+  };
+
+  const openImage = async (m: Decoded) => {
+    if (!m.media || !keyRef.current) return;
+    setViewerLoading(true);
+    try {
+      const bytes = await fetchThreadMediaHost(id, m.media.id);
+      setViewerUrl(await decryptImageToUrl(bytes, m.media.iv, keyRef.current));
+    } catch {
+      /* ignore */
+    } finally {
+      setViewerLoading(false);
     }
   };
 
@@ -178,12 +229,48 @@ export default function SecretLinkThread() {
 
       <div ref={scrollRef} className="kv-scroll no-scrollbar flex-1 overflow-y-auto py-3">
         {msgs.map((m) => (
-          <GuestBubble key={m.id} msg={m} mine={m.sender === "host"} />
+          <GuestBubble
+            key={m.id}
+            msg={m}
+            mine={m.sender === "host"}
+            thumbUrl={thumbs[m.id]}
+            onOpenImage={() => void openImage(m)}
+          />
         ))}
       </div>
 
       <div className="kv-input-bar border-t border-gray-100">
         <div className="flex items-end gap-2 px-3 py-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={onPickImage}
+          />
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => fileRef.current?.click()}
+            aria-label="Send photo"
+            title="Send photo"
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center text-imsg-blue active:opacity-60"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={shareLocation}
@@ -228,6 +315,22 @@ export default function SecretLinkThread() {
           </button>
         </div>
       </div>
+
+      {(viewerLoading || viewerUrl) && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+          onClick={() => {
+            if (viewerUrl) URL.revokeObjectURL(viewerUrl);
+            setViewerUrl(null);
+          }}
+        >
+          {viewerUrl ? (
+            <img src={viewerUrl} alt="Photo" className="max-h-full max-w-full" />
+          ) : (
+            <span className="text-white">Loading…</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
