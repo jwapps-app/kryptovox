@@ -155,7 +155,12 @@ async def host_reply(
 ) -> GuestMessageOut:
     thread = await _own_thread(db, thread_id, identity.user.id)
     msg = GuestMessage(
-        thread_id=thread_id, sender="host", ciphertext=body.ciphertext, iv=body.iv
+        thread_id=thread_id,
+        sender="host",
+        type=body.type,
+        ciphertext=body.ciphertext,
+        iv=body.iv,
+        media=body.media.model_dump() if body.media else None,
     )
     db.add(msg)
     thread.last_message_at = datetime.now(UTC)

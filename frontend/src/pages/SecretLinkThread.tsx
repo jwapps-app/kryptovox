@@ -9,17 +9,10 @@ import {
   exportThreadKey,
   unwrapKeyForSelf,
 } from "../crypto/guest";
-import { clockTime } from "../lib/format";
 import BackButton from "../components/BackButton";
 import ExpiryBadge from "../components/ExpiryBadge";
-import type { GuestThreadDetail } from "../lib/types";
-
-interface Decoded {
-  id: string;
-  sender: "host" | "guest";
-  text: string;
-  created_at: string;
-}
+import GuestBubble from "../components/GuestBubble";
+import type { Decoded, GuestThreadDetail } from "../lib/types";
 
 export default function SecretLinkThread() {
   const { id = "" } = useParams();
@@ -66,13 +59,22 @@ export default function SecretLinkThread() {
     }
     const out: Decoded[] = [];
     for (const m of detail.messages) {
-      let t = "🔒";
-      try {
-        t = await decryptWithKey(keyRef.current, m.ciphertext, m.iv);
-      } catch {
-        t = "[unable to decrypt]";
+      let t = "";
+      if (m.ciphertext) {
+        try {
+          t = await decryptWithKey(keyRef.current, m.ciphertext, m.iv);
+        } catch {
+          t = "[unable to decrypt]";
+        }
       }
-      out.push({ id: m.id, sender: m.sender, text: t, created_at: m.created_at });
+      out.push({
+        id: m.id,
+        sender: m.sender,
+        type: m.type,
+        text: t,
+        media: m.media,
+        created_at: m.created_at,
+      });
     }
     setMsgs(out);
   }, [id, identity, user.identity_public_key, navigate]);
@@ -87,6 +89,8 @@ export default function SecretLinkThread() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [msgs.length]);
 
+  const [locating, setLocating] = useState(false);
+
   const send = async () => {
     const value = text.trim();
     if (!value || !keyRef.current || sending) return;
@@ -94,13 +98,44 @@ export default function SecretLinkThread() {
     setText("");
     try {
       const enc = await encryptWithKey(keyRef.current, value);
-      await api(`/links/${id}/messages`, { method: "POST", body: JSON.stringify(enc) });
+      await api(`/links/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ type: "text", ...enc }),
+      });
       await load();
     } catch {
       setText(value);
     } finally {
       setSending(false);
     }
+  };
+
+  const shareLocation = () => {
+    if (!navigator.geolocation || !keyRef.current || locating) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const payload = JSON.stringify({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            acc: pos.coords.accuracy,
+          });
+          const enc = await encryptWithKey(keyRef.current!, payload);
+          await api(`/links/${id}/messages`, {
+            method: "POST",
+            body: JSON.stringify({ type: "location", ...enc }),
+          });
+          await load();
+        } catch {
+          /* best-effort */
+        } finally {
+          setLocating(false);
+        }
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
   };
 
   const copyLink = async () => {
@@ -142,33 +177,36 @@ export default function SecretLinkThread() {
       </header>
 
       <div ref={scrollRef} className="kv-scroll no-scrollbar flex-1 overflow-y-auto py-3">
-        {msgs.map((m) => {
-          const mine = m.sender === "host";
-          return (
-            <div
-              key={m.id}
-              className={`mb-3 flex flex-col px-3 ${mine ? "items-end" : "items-start"}`}
-            >
-              <div
-                className="max-w-[75%] whitespace-pre-wrap break-words px-3 py-2 text-[17px] leading-snug"
-                style={{
-                  background: mine ? "#007AFF" : "var(--bubble-in-bg)",
-                  color: mine ? "#ffffff" : "var(--bubble-in-text)",
-                  borderRadius: mine ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                }}
-              >
-                {m.text}
-              </div>
-              <div className="mt-0.5 px-1 text-[11px] text-gray-400">
-                {clockTime(m.created_at)}
-              </div>
-            </div>
-          );
-        })}
+        {msgs.map((m) => (
+          <GuestBubble key={m.id} msg={m} mine={m.sender === "host"} />
+        ))}
       </div>
 
       <div className="kv-input-bar border-t border-gray-100">
         <div className="flex items-end gap-2 px-3 py-2">
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={shareLocation}
+            disabled={locating}
+            aria-label="Share location"
+            title="Share location"
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center text-imsg-blue active:opacity-60 disabled:opacity-40"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+          </button>
           <textarea
             rows={1}
             value={text}

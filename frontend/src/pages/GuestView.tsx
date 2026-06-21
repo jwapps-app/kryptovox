@@ -3,15 +3,8 @@ import { useParams } from "react-router-dom";
 import { decryptWithKey, encryptWithKey, importThreadKey } from "../crypto/guest";
 import { useViewportHeight } from "../hooks/useViewportHeight";
 import ExpiryBadge from "../components/ExpiryBadge";
-import { clockTime } from "../lib/format";
-import type { PublicThread } from "../lib/types";
-
-interface Decoded {
-  id: string;
-  sender: "host" | "guest";
-  text: string;
-  created_at: string;
-}
+import GuestBubble from "../components/GuestBubble";
+import type { Decoded, PublicThread } from "../lib/types";
 
 // Public page for a secret-link recipient — no account. The decryption key is in
 // the URL fragment (never sent to the server).
@@ -39,13 +32,22 @@ export default function GuestView() {
       setExpiresAt(thread.expires_at);
       const out: Decoded[] = [];
       for (const m of thread.messages) {
-        let t = "🔒";
-        try {
-          t = await decryptWithKey(keyRef.current, m.ciphertext, m.iv);
-        } catch {
-          t = "[unable to decrypt]";
+        let t = "";
+        if (m.ciphertext) {
+          try {
+            t = await decryptWithKey(keyRef.current, m.ciphertext, m.iv);
+          } catch {
+            t = "[unable to decrypt]";
+          }
         }
-        out.push({ id: m.id, sender: m.sender, text: t, created_at: m.created_at });
+        out.push({
+          id: m.id,
+          sender: m.sender,
+          type: m.type,
+          text: t,
+          media: m.media,
+          created_at: m.created_at,
+        });
       }
       setMsgs(out);
     } catch {
@@ -89,6 +91,18 @@ export default function GuestView() {
     return () => ro.disconnect();
   }, []);
 
+  const [locating, setLocating] = useState(false);
+
+  const post = async (payload: Record<string, unknown>) => {
+    const res = await fetch(`/api/guest/${id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("send failed");
+    await load();
+  };
+
   const send = async () => {
     const value = text.trim();
     if (!value || !keyRef.current || sending) return;
@@ -97,18 +111,36 @@ export default function GuestView() {
     taRef.current?.focus(); // keep the keyboard up after sending
     try {
       const enc = await encryptWithKey(keyRef.current, value);
-      const res = await fetch(`/api/guest/${id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(enc),
-      });
-      if (res.ok) await load();
-      else setText(value);
+      await post({ type: "text", ciphertext: enc.ciphertext, iv: enc.iv });
     } catch {
       setText(value);
     } finally {
       setSending(false);
     }
+  };
+
+  const shareLocation = () => {
+    if (!navigator.geolocation || !keyRef.current || locating) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const payload = JSON.stringify({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            acc: pos.coords.accuracy,
+          });
+          const enc = await encryptWithKey(keyRef.current!, payload);
+          await post({ type: "location", ciphertext: enc.ciphertext, iv: enc.iv });
+        } catch {
+          /* best-effort */
+        } finally {
+          setLocating(false);
+        }
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
   };
 
   if (error) {
@@ -152,33 +184,36 @@ export default function GuestView() {
       )}
 
       <div ref={scrollRef} className="kv-scroll no-scrollbar flex-1 overflow-y-auto py-3">
-        {msgs.map((m) => {
-          const mine = m.sender === "guest";
-          return (
-            <div
-              key={m.id}
-              className={`mb-3 flex flex-col px-3 ${mine ? "items-end" : "items-start"}`}
-            >
-              <div
-                className="max-w-[75%] whitespace-pre-wrap break-words px-3 py-2 text-[17px] leading-snug"
-                style={{
-                  background: mine ? "#007AFF" : "var(--bubble-in-bg)",
-                  color: mine ? "#ffffff" : "var(--bubble-in-text)",
-                  borderRadius: mine ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                }}
-              >
-                {m.text}
-              </div>
-              <div className="mt-0.5 px-1 text-[11px] text-gray-400">
-                {clockTime(m.created_at)}
-              </div>
-            </div>
-          );
-        })}
+        {msgs.map((m) => (
+          <GuestBubble key={m.id} msg={m} mine={m.sender === "guest"} />
+        ))}
       </div>
 
       <div className="kv-input-bar border-t border-gray-100">
         <div className="flex items-end gap-2 px-3 py-2">
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={shareLocation}
+            disabled={locating}
+            aria-label="Share location"
+            title="Share location"
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center text-imsg-blue active:opacity-60 disabled:opacity-40"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+          </button>
           <textarea
             ref={taRef}
             rows={1}

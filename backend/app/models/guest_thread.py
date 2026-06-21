@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -61,8 +61,14 @@ class GuestMessage(Base):
     )
     # 'host' (the registered creator) or 'guest' (the link holder)
     sender: Mapped[str] = mapped_column(String, nullable=False)
+    # 'text' | 'location' | 'image'. For location the ciphertext is encrypted
+    # JSON; for image the blob ref lives in `media` (encrypted with K).
+    type: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="text", default="text"
+    )
     ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
     iv: Mapped[str] = mapped_column(String, nullable=False)
+    media: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

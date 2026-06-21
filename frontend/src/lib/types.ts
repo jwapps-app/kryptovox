@@ -77,8 +77,20 @@ export interface MessagePage {
 export interface GuestMessage {
   id: string;
   sender: "host" | "guest";
+  type: string;
   ciphertext: string;
   iv: string;
+  media: ImageMedia | null;
+  created_at: string;
+}
+
+// A decrypted guest-thread message, ready to render.
+export interface Decoded {
+  id: string;
+  sender: "host" | "guest";
+  type: string; // "text" | "location" | "image"
+  text: string; // plaintext, or JSON for location
+  media: ImageMedia | null;
   created_at: string;
 }
 
