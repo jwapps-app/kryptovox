@@ -178,7 +178,7 @@ class MessageCreate(BaseModel):
     ciphertext: str = ""
     iv: str = ""
     encrypted_keys: dict[str, str]  # device_id -> base64url wrapped key
-    type: str = Field(default="text", pattern="^(text|image|reaction|system)$")
+    type: str = Field(default="text", pattern="^(text|image|reaction|system|location)$")
     reply_to_id: uuid.UUID | None = None
     media: MediaRef | None = None
 

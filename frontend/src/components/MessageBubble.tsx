@@ -68,6 +68,18 @@ export default function MessageBubble({
 
   const radius = isMine ? "18px 18px 4px 18px" : "18px 18px 18px 4px";
 
+  let location: { lat: number; lng: number; acc: number } | null = null;
+  if (message.type === "location") {
+    try {
+      location = JSON.parse(text);
+    } catch {
+      /* unparseable — fall back to a plain label */
+    }
+  }
+  const mapUrl = location
+    ? `https://maps.apple.com/?ll=${location.lat},${location.lng}&q=Shared%20Location`
+    : "";
+
   // Aggregate reactions by emoji.
   const counts = new Map<string, { count: number; mine: boolean }>();
   for (const r of message.reactions) {
@@ -118,6 +130,43 @@ export default function MessageBubble({
             </div>
           )}
         </button>
+      ) : message.type === "location" && location ? (
+        <a
+          href={mapUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onMouseDown={keepKeyboard}
+          className="block max-w-[78%] px-3 py-2.5"
+          style={{
+            background: isMine ? "#007AFF" : "#E9E9EB",
+            color: isMine ? "#ffffff" : "#000000",
+            borderRadius: radius,
+          }}
+        >
+          <div className="flex items-center gap-2.5">
+            <svg
+              width="26"
+              height="26"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              className="shrink-0"
+            >
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            <div className="min-w-0">
+              <div className="text-[15px] font-medium leading-tight">Shared location</div>
+              <div className="text-xs opacity-80">
+                ±{Math.round(location.acc)} m · Open in Maps
+              </div>
+            </div>
+          </div>
+        </a>
       ) : (
         <div
           onMouseDown={keepKeyboard}
@@ -129,7 +178,7 @@ export default function MessageBubble({
             borderRadius: radius,
           }}
         >
-          {text || "…"}
+          {message.type === "location" ? "📍 Location" : text || "…"}
         </div>
       )}
 
