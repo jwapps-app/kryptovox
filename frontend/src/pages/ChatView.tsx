@@ -27,6 +27,7 @@ export default function ChatView() {
   const loadOlder = useChat((s) => s.loadOlder);
   const sendMessage = useChat((s) => s.sendMessage);
   const sendImage = useChat((s) => s.sendImage);
+  const sendLocation = useChat((s) => s.sendLocation);
   const loadFullImage = useChat((s) => s.loadFullImage);
   const unsend = useChat((s) => s.unsend);
   const markRead = useChat((s) => s.markRead);
@@ -243,6 +244,7 @@ export default function ChatView() {
           setReplyTo(null);
         }}
         onSendImage={(file) => sendImage(id, file, memberIds)}
+        onSendLocation={(coords) => sendLocation(id, coords, memberIds)}
       />
 
       {(viewerLoading || viewerUrl) && (

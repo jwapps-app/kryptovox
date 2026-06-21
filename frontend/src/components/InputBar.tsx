@@ -6,6 +6,7 @@ interface Props {
   conversationId: string;
   onSend: (text: string) => Promise<void>;
   onSendImage: (file: File) => Promise<void>;
+  onSendLocation: (coords: { lat: number; lng: number; acc: number }) => Promise<void>;
   replyPreview?: string | null;
   onCancelReply?: () => void;
 }
@@ -14,11 +15,30 @@ export default function InputBar({
   conversationId,
   onSend,
   onSendImage,
+  onSendLocation,
   replyPreview,
   onCancelReply,
 }: Props) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [locating, setLocating] = useState(false);
+
+  const shareLocation = () => {
+    if (!navigator.geolocation || locating) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        void onSendLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          acc: pos.coords.accuracy,
+        });
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<number | null>(null);
@@ -118,6 +138,30 @@ export default function InputBar({
         hidden
         onChange={onPickImage}
       />
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={shareLocation}
+        disabled={locating}
+        aria-label="Share location"
+        className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center text-imsg-blue active:opacity-60 disabled:opacity-40"
+      >
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className={locating ? "animate-pulse" : ""}
+        >
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+          <circle cx="12" cy="10" r="3" />
+        </svg>
+      </button>
       <textarea
         ref={taRef}
         rows={1}
