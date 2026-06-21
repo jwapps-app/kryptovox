@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +35,9 @@ class GuestThread(Base):
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # "Burn after reading": NULL = time-based (expires_at fixed at creation).
+    # Non-NULL = expires_at starts on the guest's first open (now + burn_minutes).
+    burn_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     messages: Mapped[list["GuestMessage"]] = relationship(
         back_populates="thread", cascade="all, delete-orphan"
