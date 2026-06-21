@@ -62,6 +62,7 @@ export interface Message {
   reply_to_id: string | null;
   edited_at: string | null;
   deleted_at: string | null;
+  disappear_seconds: number; // per-message window, 0 = permanent
   disappear_started_at: string | null; // set on recipient's first read
   created_at: string;
   reactions: Reaction[];

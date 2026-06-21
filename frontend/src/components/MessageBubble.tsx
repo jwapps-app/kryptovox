@@ -64,7 +64,6 @@ interface Props {
   onUnsend: (id: string) => void;
   onEdit?: (message: Message) => void;
   onForward?: (message: Message) => void;
-  disappearSecs?: number;
   thumbUrl?: string;
   onOpenImage?: (message: Message) => void;
 }
@@ -82,7 +81,6 @@ export default function MessageBubble({
   onUnsend,
   onEdit,
   onForward,
-  disappearSecs,
   thumbUrl,
   onOpenImage,
 }: Props) {
@@ -250,7 +248,7 @@ export default function MessageBubble({
 
       {/* Disappearing countdown — each message burns on its own clock, so every
           started message shows its own timer. */}
-      {disappearSecs && message.disappear_started_at && !message.deleted_at ? (
+      {message.disappear_seconds && message.disappear_started_at && !message.deleted_at ? (
         <div className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-gray-400">
           <svg
             width="11"
@@ -270,7 +268,7 @@ export default function MessageBubble({
           <ExpiryBadge
             bare
             expiresAt={new Date(
-              Date.parse(message.disappear_started_at) + disappearSecs * 1000
+              Date.parse(message.disappear_started_at) + message.disappear_seconds * 1000
             ).toISOString()}
           />
         </div>

@@ -118,6 +118,11 @@ async def send_message(
 ) -> MessageOut:
     await _require_member(db, conversation_id, identity.user.id)
 
+    # Bake the conversation's current disappearing window onto the message, so
+    # toggling the setting only affects new messages, not existing history.
+    conv = await db.get(Conversation, conversation_id)
+    disappear_seconds = conv.disappear_seconds if conv else 0
+
     msg = Message(
         conversation_id=conversation_id,
         sender_id=identity.user.id,
@@ -128,6 +133,7 @@ async def send_message(
         type=body.type,
         media=body.media.model_dump() if body.media else None,
         reply_to_id=body.reply_to_id,
+        disappear_seconds=disappear_seconds,
     )
     db.add(msg)
     await db.flush()
@@ -238,24 +244,26 @@ async def mark_read(
     # Disappearing messages: start the clock on the recipient's first read, so
     # the timer counts from open time. Covers everything up to the read point
     # that someone else sent and that hasn't started yet.
-    conv = await db.get(Conversation, conversation_id)
     started_at: datetime | None = None
     up_to_iso: str | None = None
-    if conv is not None and conv.disappear_seconds > 0:
-        read_msg = await db.get(Message, message_id)
-        if read_msg is not None:
+    read_msg = await db.get(Message, message_id)
+    if read_msg is not None:
+        # Only messages that were themselves sent as ephemeral (disappear_seconds
+        # > 0) get a clock — older permanent messages are never affected.
+        result = await db.execute(
+            update(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.disappear_seconds > 0,
+                Message.sender_id != identity.user.id,
+                Message.disappear_started_at.is_(None),
+                Message.created_at <= read_msg.created_at,
+            )
+            .values(disappear_started_at=now)
+        )
+        if result.rowcount:
             started_at = now
             up_to_iso = read_msg.created_at.isoformat()
-            await db.execute(
-                update(Message)
-                .where(
-                    Message.conversation_id == conversation_id,
-                    Message.sender_id != identity.user.id,
-                    Message.disappear_started_at.is_(None),
-                    Message.created_at <= read_msg.created_at,
-                )
-                .values(disappear_started_at=now)
-            )
     await db.commit()
 
     await fanout_conversation(

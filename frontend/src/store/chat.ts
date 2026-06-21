@@ -447,6 +447,7 @@ export const useChat = create<ChatState>((set, get) => ({
           messagesByConv: {
             ...s.messagesByConv,
             [convId]: (s.messagesByConv[convId] ?? []).map((m) =>
+              m.disappear_seconds > 0 &&
               !m.disappear_started_at &&
               m.sender_id !== readerId &&
               new Date(m.created_at).getTime() <= upTo
