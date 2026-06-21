@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -24,7 +24,12 @@ async def _active_thread(db: AsyncSession, thread_id: uuid.UUID) -> GuestThread:
     thread = await db.get(GuestThread, thread_id)
     if thread is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    if thread.expires_at and thread.expires_at <= datetime.now(UTC):
+    now = datetime.now(UTC)
+    # Burn thread, first open: start the clock.
+    if thread.burn_minutes and thread.expires_at is None:
+        thread.expires_at = now + timedelta(minutes=thread.burn_minutes)
+        await db.commit()
+    if thread.expires_at and thread.expires_at <= now:
         raise HTTPException(status.HTTP_410_GONE, "This link has expired")
     return thread
 

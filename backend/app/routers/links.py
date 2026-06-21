@@ -34,13 +34,16 @@ async def create_link(
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
 ) -> GuestThreadDetail:
+    # Burn threads start their clock on the guest's first open (expires_at stays
+    # NULL here). Time-based threads get a fixed expiry now.
     expires_at = None
-    if body.expires_in_days and body.expires_in_days > 0:
+    if not body.burn_minutes and body.expires_in_days and body.expires_in_days > 0:
         expires_at = datetime.now(UTC) + timedelta(days=body.expires_in_days)
     thread = GuestThread(
         creator_id=identity.user.id,
         wrapped_key=body.wrapped_key,
         expires_at=expires_at,
+        burn_minutes=body.burn_minutes,
         label_ciphertext=body.label_ciphertext,
         label_iv=body.label_iv,
     )
@@ -56,6 +59,7 @@ async def create_link(
         id=thread.id,
         created_at=thread.created_at,
         expires_at=thread.expires_at,
+        burn_minutes=thread.burn_minutes,
         wrapped_key=thread.wrapped_key,
         label_ciphertext=thread.label_ciphertext,
         label_iv=thread.label_iv,
@@ -87,6 +91,7 @@ async def list_links(
                 created_at=t.created_at,
                 last_message_at=t.last_message_at,
                 expires_at=t.expires_at,
+                burn_minutes=t.burn_minutes,
                 wrapped_key=t.wrapped_key,
                 label_ciphertext=t.label_ciphertext,
                 label_iv=t.label_iv,
@@ -109,15 +114,27 @@ async def get_link(
         .order_by(GuestMessage.created_at)
     )
     msgs = [GuestMessageOut.model_validate(m) for m in rows.scalars().all()]
-    return GuestThreadDetail(
+    detail = GuestThreadDetail(
         id=thread.id,
         created_at=thread.created_at,
         expires_at=thread.expires_at,
+        burn_minutes=thread.burn_minutes,
         wrapped_key=thread.wrapped_key,
         label_ciphertext=thread.label_ciphertext,
         label_iv=thread.label_iv,
         messages=msgs,
     )
+    # Burn thread whose window has closed: this read IS the trigger to delete —
+    # the creator is guaranteed to have seen everything (including the last
+    # reply) before it's gone. We return the already-serialized detail.
+    if (
+        thread.burn_minutes
+        and thread.expires_at is not None
+        and thread.expires_at <= datetime.now(UTC)
+    ):
+        await db.delete(thread)
+        await db.commit()
+    return detail
 
 
 @router.post("/{thread_id}/messages", response_model=GuestMessageOut, status_code=201)

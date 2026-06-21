@@ -9,7 +9,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
@@ -57,10 +57,30 @@ async def sweep_once(db: AsyncSession) -> int:
             )
         )
         removed += result.rowcount or 0
-    # Expired secret-link threads (messages cascade).
+    # Secret-link thread cleanup (messages cascade):
+    #  - time-based: delete at expiry.
+    #  - burn, opened: the creator's post-window read deletes it; this is just a
+    #    safety net 7 days later if they never come back to read it.
+    #  - burn, never opened: clean up after 30 days.
     expired = await db.execute(
         delete(GuestThread).where(
-            GuestThread.expires_at.isnot(None), GuestThread.expires_at < now
+            or_(
+                and_(
+                    GuestThread.burn_minutes.is_(None),
+                    GuestThread.expires_at.isnot(None),
+                    GuestThread.expires_at < now,
+                ),
+                and_(
+                    GuestThread.burn_minutes.isnot(None),
+                    GuestThread.expires_at.isnot(None),
+                    GuestThread.expires_at < now - timedelta(days=7),
+                ),
+                and_(
+                    GuestThread.burn_minutes.isnot(None),
+                    GuestThread.expires_at.is_(None),
+                    GuestThread.created_at < now - timedelta(days=30),
+                ),
+            )
         )
     )
     removed += expired.rowcount or 0

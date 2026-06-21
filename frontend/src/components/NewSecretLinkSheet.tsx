@@ -5,10 +5,11 @@ import { encryptWithKey, generateThreadKey, wrapKeyForSelf } from "../crypto/gue
 import type { GuestThreadDetail } from "../lib/types";
 
 const EXPIRY = [
-  { days: 1, label: "1 day" },
-  { days: 7, label: "7 days" },
-  { days: 30, label: "30 days" },
-  { days: 0, label: "Never" },
+  { key: "burn", label: "Burn · 10 min after open" },
+  { key: "1", label: "1 day" },
+  { key: "7", label: "7 days" },
+  { key: "30", label: "30 days" },
+  { key: "0", label: "Never" },
 ];
 
 export default function NewSecretLinkSheet({ onClose }: { onClose: () => void }) {
@@ -16,7 +17,7 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
   const user = useAuth((s) => s.user)!;
   const [label, setLabel] = useState("");
   const [text, setText] = useState("");
-  const [expiry, setExpiry] = useState(7);
+  const [expiry, setExpiry] = useState("7");
   const [busy, setBusy] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -34,11 +35,13 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
         user.identity_public_key
       );
       const labelEnc = label.trim() ? await encryptWithKey(key, label.trim()) : null;
+      const burn = expiry === "burn";
       const thread = await api<GuestThreadDetail>("/links", {
         method: "POST",
         body: JSON.stringify({
           wrapped_key,
-          expires_in_days: expiry,
+          expires_in_days: burn ? null : Number(expiry),
+          burn_minutes: burn ? 10 : null,
           ciphertext: enc.ciphertext,
           iv: enc.iv,
           label_ciphertext: labelEnc?.ciphertext ?? null,
@@ -99,13 +102,13 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
               className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-[16px] outline-none focus:border-imsg-blue"
             />
             <div className="mt-3 text-xs font-semibold uppercase text-gray-400">Expires</div>
-            <div className="mt-1 flex gap-2">
+            <div className="mt-1 flex flex-wrap gap-2">
               {EXPIRY.map((e) => (
                 <button
-                  key={e.days}
-                  onClick={() => setExpiry(e.days)}
+                  key={e.key}
+                  onClick={() => setExpiry(e.key)}
                   className={`rounded-full border px-3 py-1 text-sm ${
-                    expiry === e.days
+                    expiry === e.key
                       ? "border-imsg-blue bg-blue-50 text-imsg-blue"
                       : "border-gray-200 text-gray-600"
                   }`}
@@ -114,6 +117,12 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
                 </button>
               ))}
             </div>
+            {expiry === "burn" && (
+              <p className="mt-1 text-xs text-gray-400">
+                The 10-minute clock starts when they open it. It won't be deleted
+                until you've read it.
+              </p>
+            )}
             <button
               disabled={!text.trim() || busy}
               onClick={() => void create()}
