@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { initials } from "../lib/format";
+import { avatarUrl } from "../lib/avatars";
 
 const COLORS = [
   "#FF3B30",
@@ -22,10 +24,38 @@ function colorFor(seed: string): string {
 export default function Avatar({
   name,
   size = 44,
+  userId,
+  hasAvatar,
 }: {
   name: string;
   size?: number;
+  userId?: string;
+  hasAvatar?: boolean;
 }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (userId && hasAvatar) {
+      void avatarUrl(userId).then((u) => alive && setUrl(u));
+    } else {
+      setUrl(null);
+    }
+    return () => {
+      alive = false;
+    };
+  }, [userId, hasAvatar]);
+
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt={name}
+        className="shrink-0 rounded-full object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
   return (
     <div
       className="flex shrink-0 items-center justify-center rounded-full font-medium text-white"

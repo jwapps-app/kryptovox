@@ -208,7 +208,16 @@ export default function ChatView() {
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
         <BackButton onClick={() => navigate("/")} />
-        {conv && <Avatar name={title} size={32} />}
+        {conv &&
+          (() => {
+            const other =
+              conv.type === "direct"
+                ? conv.members.find((m) => m.id !== user.id)
+                : undefined;
+            return (
+              <Avatar name={title} size={32} userId={other?.id} hasAvatar={other?.has_avatar} />
+            );
+          })()}
         <span className="font-semibold">{title}</span>
         {disappearSecs > 0 && (
           <span className="text-gray-400" aria-label="Disappearing messages on">

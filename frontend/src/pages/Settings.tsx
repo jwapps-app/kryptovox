@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
+import { useChat } from "../store/chat";
+import { buildAvatar } from "../crypto/avatar";
+import { invalidateAvatar } from "../lib/avatars";
+import type { RecipientKey } from "../crypto/messaging";
 import { getPrefs, setPref } from "../lib/prefs";
 import { applyTheme } from "../lib/theme";
 import {
@@ -21,8 +25,12 @@ import type { Device, User } from "../lib/types";
 export default function Settings() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user)!;
+  const identity = useAuth((s) => s.identity);
   const currentDeviceId = useAuth((s) => s.deviceId);
   const logout = useAuth((s) => s.logout);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarVer, setAvatarVer] = useState(0); // bump to re-render my avatar
 
   const [displayName, setDisplayName] = useState(user.display_name ?? "");
   const [saved, setSaved] = useState(false);
@@ -66,6 +74,61 @@ export default function Settings() {
     }
   };
 
+  // The set of contacts who may view my photo: everyone I share a chat with.
+  const gatherContacts = async (): Promise<RecipientKey[]> => {
+    await useChat.getState().loadConversations().catch(() => {});
+    const seen = new Set<string>();
+    const out: RecipientKey[] = [];
+    for (const c of useChat.getState().conversations) {
+      for (const m of c.members) {
+        if (m.id !== user.id && m.identity_public_key && !seen.has(m.id)) {
+          seen.add(m.id);
+          out.push({ userId: m.id, publicKeyB64: m.identity_public_key });
+        }
+      }
+    }
+    return out;
+  };
+
+  const onPickAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !identity || !user.identity_public_key || avatarBusy) return;
+    setAvatarBusy(true);
+    try {
+      const contacts = await gatherContacts();
+      const payload = await buildAvatar(
+        file,
+        identity.privateKey,
+        user.identity_public_key,
+        contacts
+      );
+      await api("/users/me/avatar", { method: "PUT", body: JSON.stringify(payload) });
+      useAuth.setState({ user: { ...user, has_avatar: true } });
+      invalidateAvatar(user.id);
+      setAvatarVer((v) => v + 1);
+    } catch {
+      /* best-effort */
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    if (avatarBusy) return;
+    setAvatarBusy(true);
+    try {
+      await api("/users/me/avatar", { method: "DELETE" });
+      useAuth.setState({ user: { ...user, has_avatar: false } });
+      invalidateAvatar(user.id);
+      setAvatarVer((v) => v + 1);
+    } catch {
+      /* best-effort */
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   const saveName = async () => {
     const updated = await api<User>("/users/me", {
       method: "PATCH",
@@ -95,8 +158,42 @@ export default function Settings() {
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-6 flex flex-col items-center">
-          <Avatar name={displayName || user.username} size={72} />
-          <div className="mt-2 text-sm text-gray-500">@{user.username}</div>
+          <button
+            onClick={() => avatarFileRef.current?.click()}
+            disabled={avatarBusy}
+            className="relative rounded-full active:opacity-70 disabled:opacity-50"
+            aria-label="Change photo"
+          >
+            <Avatar
+              key={avatarVer}
+              name={displayName || user.username}
+              size={72}
+              userId={user.id}
+              hasAvatar={user.has_avatar}
+            />
+          </button>
+          <input
+            ref={avatarFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={onPickAvatar}
+          />
+          <div className="mt-2 flex items-center gap-3 text-sm">
+            <button
+              className="text-imsg-blue disabled:opacity-50"
+              disabled={avatarBusy}
+              onClick={() => avatarFileRef.current?.click()}
+            >
+              {avatarBusy ? "Saving…" : user.has_avatar ? "Change Photo" : "Add Photo"}
+            </button>
+            {user.has_avatar && !avatarBusy && (
+              <button className="text-red-500" onClick={() => void removeAvatar()}>
+                Remove
+              </button>
+            )}
+          </div>
+          <div className="mt-1 text-sm text-gray-500">@{user.username}</div>
         </div>
 
         <Section title="Profile">

@@ -92,7 +92,7 @@ export default function NewGroupSheet({ onClose }: { onClose: () => void }) {
                 setQ("");
               }}
             >
-              <Avatar name={userLabel(u)} size={36} />
+              <Avatar name={userLabel(u)} size={36} userId={u.id} hasAvatar={u.has_avatar} />
               <span>{userLabel(u)}</span>
             </button>
           </li>
