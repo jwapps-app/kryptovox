@@ -224,9 +224,22 @@ export default function ChatView() {
           })()}
         <span className="font-semibold">{title}</span>
         {disappearSecs > 0 && (
-          <span className="text-gray-400" aria-label="Disappearing messages on">
-            ⏱
-          </span>
+          <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-gray-400"
+            aria-label="Disappearing messages on"
+          >
+            <line x1="10" y1="2" x2="14" y2="2" />
+            <line x1="12" y1="14" x2="15" y2="11" />
+            <circle cx="12" cy="14" r="8" />
+          </svg>
         )}
         <button
           className="ml-auto text-imsg-blue active:opacity-60"
@@ -331,6 +344,7 @@ export default function ChatView() {
                       setEditing(msg);
                     }}
                     onForward={(msg) => setForwarding(msg)}
+                    disappearSecs={disappearSecs}
                   />
                 </div>
               );

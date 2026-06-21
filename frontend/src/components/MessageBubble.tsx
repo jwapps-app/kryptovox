@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { clockTime } from "../lib/format";
 import { mapsUrl } from "../lib/prefs";
+import ExpiryBadge from "./ExpiryBadge";
 import type { Message } from "../lib/types";
 
 export const TAPBACKS = ["❤️", "👍", "👎", "😂", "‼️", "❓"];
@@ -63,6 +64,7 @@ interface Props {
   onUnsend: (id: string) => void;
   onEdit?: (message: Message) => void;
   onForward?: (message: Message) => void;
+  disappearSecs?: number;
   thumbUrl?: string;
   onOpenImage?: (message: Message) => void;
 }
@@ -80,6 +82,7 @@ export default function MessageBubble({
   onUnsend,
   onEdit,
   onForward,
+  disappearSecs,
   thumbUrl,
   onOpenImage,
 }: Props) {
@@ -244,6 +247,34 @@ export default function MessageBubble({
       {message.edited_at && !message.deleted_at && (
         <div className="mt-0.5 px-1 text-[11px] text-gray-400">Edited</div>
       )}
+
+      {/* Disappearing countdown — once the recipient's read started the clock.
+          Shown on the last bubble of a group to avoid a wall of tickers. */}
+      {disappearSecs && message.disappear_started_at && !message.deleted_at && isLastInGroup ? (
+        <div className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-gray-400">
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="10" y1="2" x2="14" y2="2" />
+            <line x1="12" y1="14" x2="15" y2="11" />
+            <circle cx="12" cy="14" r="8" />
+          </svg>
+          <ExpiryBadge
+            bare
+            expiresAt={new Date(
+              Date.parse(message.disappear_started_at) + disappearSecs * 1000
+            ).toISOString()}
+          />
+        </div>
+      ) : null}
 
       {/* Aggregated reaction pills */}
       {counts.size > 0 && (
