@@ -143,8 +143,12 @@ export default function ChatView() {
   }, [disappearSecs]);
   const visible = useMemo(() => {
     if (!disappearSecs) return messages;
-    const cutoff = nowTick - disappearSecs * 1000;
-    return messages.filter((m) => new Date(m.created_at).getTime() > cutoff);
+    // The clock starts when the recipient reads it (disappear_started_at);
+    // messages not yet read stay visible until they are.
+    return messages.filter((m) => {
+      if (!m.disappear_started_at) return true;
+      return new Date(m.disappear_started_at).getTime() + disappearSecs * 1000 > nowTick;
+    });
   }, [messages, disappearSecs, nowTick]);
 
   // In-chat search: filter to messages whose decrypted text matches.

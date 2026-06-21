@@ -40,6 +40,12 @@ class Message(Base):
     )
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When a disappearing message's clock started: set on the recipient's first
+    # read, so the timer counts from open time, not send time. NULL = unread, so
+    # it persists until read (and is exempt from the disappearing sweep).
+    disappear_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
