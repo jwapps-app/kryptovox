@@ -248,9 +248,9 @@ export default function MessageBubble({
         <div className="mt-0.5 px-1 text-[11px] text-gray-400">Edited</div>
       )}
 
-      {/* Disappearing countdown — once the recipient's read started the clock.
-          Shown on the last bubble of a group to avoid a wall of tickers. */}
-      {disappearSecs && message.disappear_started_at && !message.deleted_at && isLastInGroup ? (
+      {/* Disappearing countdown — each message burns on its own clock, so every
+          started message shows its own timer. */}
+      {disappearSecs && message.disappear_started_at && !message.deleted_at ? (
         <div className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-gray-400">
           <svg
             width="11"
