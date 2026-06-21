@@ -120,6 +120,7 @@ export interface Conversation {
   last_message: Message | null;
   unread_count: number;
   retention_days: number | null; // null = inherit global default, 0 = forever
+  disappear_seconds: number; // 0 = off
   pinned: boolean;
   muted: boolean;
 }

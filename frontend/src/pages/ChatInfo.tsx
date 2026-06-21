@@ -18,6 +18,14 @@ const RETENTION_OPTIONS: { days: number | null; label: string }[] = [
   { days: 365, label: "1 year" },
 ];
 
+const DISAPPEAR_OPTIONS: { secs: number; label: string }[] = [
+  { secs: 0, label: "Off" },
+  { secs: 300, label: "5 min" },
+  { secs: 3600, label: "1 hour" },
+  { secs: 86400, label: "1 day" },
+  { secs: 604800, label: "1 week" },
+];
+
 function retentionLabel(days: number): string {
   if (days <= 0) return "Forever";
   if (days === 365) return "1 year";
@@ -87,6 +95,14 @@ export default function ChatInfo() {
     const updated = await api<Conversation>(`/conversations/${id}/retention`, {
       method: "PATCH",
       body: JSON.stringify({ retention_days: days }),
+    });
+    setConv(updated);
+  };
+
+  const setDisappearing = async (seconds: number) => {
+    const updated = await api<Conversation>(`/conversations/${id}/disappearing`, {
+      method: "PATCH",
+      body: JSON.stringify({ seconds }),
     });
     setConv(updated);
   };
@@ -184,6 +200,29 @@ export default function ChatInfo() {
             Clear history
           </button>
         </div>
+
+        {/* Disappearing messages — per-conversation auto-delete timer. */}
+        <h2 className="mb-2 mt-6 text-xs font-semibold uppercase text-gray-400">
+          Disappearing messages
+        </h2>
+        <div className="rounded-2xl bg-white p-2 shadow-sm">
+          {DISAPPEAR_OPTIONS.map((opt) => (
+            <button
+              key={opt.secs}
+              onClick={() => void setDisappearing(opt.secs)}
+              className="flex w-full items-center justify-between border-b border-gray-50 px-2 py-2 text-left text-[15px] last:border-0"
+            >
+              <span>{opt.label}</span>
+              {conv.disappear_seconds === opt.secs && (
+                <span className="text-imsg-blue">✓</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-gray-400">
+          When on, each message is removed for everyone once it reaches this age —
+          counted from when it was sent.
+        </p>
 
         {/* Safety number — compare out-of-band to verify no key was swapped. */}
         <h2 className="mb-2 mt-6 text-xs font-semibold uppercase text-gray-400">
