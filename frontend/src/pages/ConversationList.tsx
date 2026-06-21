@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { decryptWithKey, unwrapKeyForSelf } from "../crypto/guest";
+import { conversationTitle } from "../lib/format";
 import ConversationRow from "../components/ConversationRow";
 import GuestThreadRow from "../components/GuestThreadRow";
 import NewMessageSheet from "../components/NewMessageSheet";
@@ -29,6 +30,7 @@ export default function ConversationList() {
   const [groupOpen, setGroupOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [guests, setGuests] = useState<GuestThreadSummary[]>([]);
   const [guestText, setGuestText] = useState<Record<string, { label: string; preview: string }>>(
     {}
@@ -94,6 +96,27 @@ export default function ConversationList() {
       return b.t - a.t;
     });
   }, [conversations, guests]);
+
+  // Filter by title, participant names, or the (decrypted) last-message preview.
+  const filtered = useMemo<Item[]>(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((item) => {
+      if (item.kind === "conv") {
+        const c = item.conv;
+        const hay = [
+          conversationTitle(c, user.id),
+          ...c.members.map((m) => `${m.display_name ?? ""} ${m.username}`),
+          c.last_message ? textByMessage[c.last_message.id] ?? "" : "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      }
+      const g = guestText[item.id];
+      return `${g?.label ?? ""} ${g?.preview ?? ""}`.toLowerCase().includes(q);
+    });
+  }, [items, query, textByMessage, guestText, user.id]);
 
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
@@ -171,6 +194,16 @@ export default function ConversationList() {
         )}
       </header>
 
+      <div className="px-3 py-2">
+        <input
+          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[15px] outline-none"
+          placeholder="Search"
+          autoCapitalize="none"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+
       <ul className="kv-scroll flex-1 overflow-y-auto">
         {items.length === 0 && (
           <li className="px-4 py-10 text-center text-gray-400">
@@ -179,7 +212,10 @@ export default function ConversationList() {
             Tap ✎ to start one.
           </li>
         )}
-        {items.map((item) =>
+        {items.length > 0 && filtered.length === 0 && (
+          <li className="px-4 py-10 text-center text-gray-400">No matches</li>
+        )}
+        {filtered.map((item) =>
           item.kind === "conv" ? (
             <ConversationRow
               key={`c-${item.id}`}
