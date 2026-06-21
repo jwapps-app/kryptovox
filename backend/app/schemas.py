@@ -327,16 +327,20 @@ class GuestThreadCreate(BaseModel):
 
 class GuestMessageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ciphertext: str = Field(max_length=_CIPHER_MAX)
-    iv: str = Field(max_length=64)
+    type: str = Field(default="text", pattern="^(text|location|image)$")
+    ciphertext: str = Field(default="", max_length=_CIPHER_MAX)
+    iv: str = Field(default="", max_length=64)
+    media: MediaRef | None = None
 
 
 class GuestMessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     sender: str
+    type: str = "text"
     ciphertext: str
     iv: str
+    media: dict | None = None
     created_at: datetime
 
 

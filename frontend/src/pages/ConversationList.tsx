@@ -53,9 +53,13 @@ export default function ConversationList() {
           t.label_ciphertext && t.label_iv
             ? await decryptWithKey(key, t.label_ciphertext, t.label_iv)
             : "Secret link";
-        const preview = t.last
-          ? await decryptWithKey(key, t.last.ciphertext, t.last.iv)
-          : "";
+        const preview = !t.last
+          ? ""
+          : t.last.type === "image"
+            ? "📷 Photo"
+            : t.last.type === "location"
+              ? "📍 Location"
+              : await decryptWithKey(key, t.last.ciphertext, t.last.iv);
         decoded[t.id] = { label, preview };
       } catch {
         decoded[t.id] = { label: "Secret link", preview: "…" };
