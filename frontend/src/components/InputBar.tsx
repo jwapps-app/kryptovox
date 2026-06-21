@@ -98,6 +98,9 @@ export default function InputBar({
       setSending(true);
       try {
         await onSubmitEdit(value);
+        // Restore the pre-edit draft so the edited text isn't left in the bar
+        // (where it could be sent again as a new message).
+        setText(getDraft(conversationId));
         onCancelEdit?.();
       } catch {
         /* keep the text so they can retry */

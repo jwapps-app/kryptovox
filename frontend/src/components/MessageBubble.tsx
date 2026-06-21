@@ -210,77 +210,81 @@ export default function MessageBubble({
         </div>
       )}
 
-      {/* Action row on tap */}
+      {/* Action menu on tap: emoji tapbacks on the left, actions stacked right. */}
       {open && (
         <div
           onMouseDown={keepKeyboard}
-          className="mt-1 flex max-w-[85vw] flex-wrap items-center justify-center gap-1 rounded-2xl bg-white px-2 py-1 shadow"
+          className="mt-1 flex items-stretch gap-2 rounded-2xl bg-white px-2.5 py-2 shadow"
         >
-          {TAPBACKS.map((emoji) => (
+          <div className="flex items-center gap-1.5">
+            {TAPBACKS.map((emoji) => (
+              <button
+                key={emoji}
+                className="text-xl leading-none"
+                onClick={() => {
+                  onReact(message.id, emoji);
+                  setOpen(false);
+                }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-col items-end gap-1.5 self-center border-l border-gray-200 pl-2.5 text-sm">
+            {message.type === "text" && text && (
+              <button
+                className="text-imsg-blue"
+                onClick={() => {
+                  navigator.clipboard?.writeText(text).catch(() => {});
+                  setOpen(false);
+                }}
+              >
+                Copy
+              </button>
+            )}
+            {onForward && (message.type === "text" || message.type === "location") && (
+              <button
+                className="text-imsg-blue"
+                onClick={() => {
+                  onForward(message);
+                  setOpen(false);
+                }}
+              >
+                Forward
+              </button>
+            )}
             <button
-              key={emoji}
-              className="text-lg"
+              className="text-imsg-blue"
               onClick={() => {
-                onReact(message.id, emoji);
+                onReply(message);
                 setOpen(false);
               }}
             >
-              {emoji}
+              Reply
             </button>
-          ))}
-          {message.type === "text" && text && (
-            <button
-              className="ml-1 border-l border-gray-200 pl-2 text-xs text-imsg-blue"
-              onClick={() => {
-                navigator.clipboard?.writeText(text).catch(() => {});
-                setOpen(false);
-              }}
-            >
-              Copy
-            </button>
-          )}
-          {onForward && (message.type === "text" || message.type === "location") && (
-            <button
-              className="ml-1 border-l border-gray-200 pl-2 text-xs text-imsg-blue"
-              onClick={() => {
-                onForward(message);
-                setOpen(false);
-              }}
-            >
-              Forward
-            </button>
-          )}
-          <button
-            className="ml-1 border-l border-gray-200 pl-2 text-xs text-imsg-blue"
-            onClick={() => {
-              onReply(message);
-              setOpen(false);
-            }}
-          >
-            Reply
-          </button>
-          {isMine && message.type === "text" && onEdit && (
-            <button
-              className="ml-1 border-l border-gray-200 pl-2 text-xs text-imsg-blue"
-              onClick={() => {
-                onEdit(message);
-                setOpen(false);
-              }}
-            >
-              Edit
-            </button>
-          )}
-          {isMine && (
-            <button
-              className="pl-1 text-xs text-red-500"
-              onClick={() => {
-                if (confirm("Unsend this message?")) onUnsend(message.id);
-                setOpen(false);
-              }}
-            >
-              Unsend
-            </button>
-          )}
+            {isMine && message.type === "text" && onEdit && (
+              <button
+                className="text-imsg-blue"
+                onClick={() => {
+                  onEdit(message);
+                  setOpen(false);
+                }}
+              >
+                Edit
+              </button>
+            )}
+            {isMine && (
+              <button
+                className="text-red-500"
+                onClick={() => {
+                  if (confirm("Unsend this message?")) onUnsend(message.id);
+                  setOpen(false);
+                }}
+              >
+                Unsend
+              </button>
+            )}
+          </div>
         </div>
       )}
 
