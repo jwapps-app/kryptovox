@@ -12,6 +12,8 @@ import ChatInfo from "./pages/ChatInfo";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import SecretLinkThread from "./pages/SecretLinkThread";
+import NotesList from "./pages/NotesList";
+import NoteEditor from "./pages/NoteEditor";
 import CommandPalette from "./components/CommandPalette";
 
 export default function App() {
@@ -97,6 +99,8 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/links/:id" element={<SecretLinkThread />} />
+        <Route path="/notes" element={<NotesList />} />
+        <Route path="/notes/:id" element={<NoteEditor />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

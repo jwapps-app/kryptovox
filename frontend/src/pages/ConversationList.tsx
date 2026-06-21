@@ -5,6 +5,7 @@ import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { decryptWithKey, unwrapKeyForSelf } from "../crypto/guest";
 import { conversationTitle } from "../lib/format";
+import BottomTabs from "../components/BottomTabs";
 import ConversationRow from "../components/ConversationRow";
 import GuestThreadRow from "../components/GuestThreadRow";
 import NewMessageSheet from "../components/NewMessageSheet";
@@ -246,6 +247,8 @@ export default function ConversationList() {
           )
         )}
       </ul>
+
+      <BottomTabs />
 
       {sheetOpen && <NewMessageSheet onClose={() => setSheetOpen(false)} />}
       {groupOpen && <NewGroupSheet onClose={() => setGroupOpen(false)} />}
