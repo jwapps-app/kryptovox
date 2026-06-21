@@ -10,6 +10,8 @@ import {
   wrapKeyForSelf,
 } from "../crypto/guest";
 import BackButton from "../components/BackButton";
+import NoteMarkdown from "../components/NoteMarkdown";
+import { toggleCheckbox } from "../lib/markdown";
 import type { Note } from "../lib/types";
 
 export default function NoteEditor() {
@@ -22,7 +24,9 @@ export default function NoteEditor() {
   const [body, setBody] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [loaded, setLoaded] = useState(false);
+  const [mode, setMode] = useState<"edit" | "read">(id === "new" ? "edit" : "read");
 
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const keyRef = useRef<CryptoKey | null>(null);
   const rawRef = useRef<string | null>(null); // raw key, for the first wrap-to-self
   const noteIdRef = useRef<string | null>(id === "new" ? null : id);
@@ -126,6 +130,38 @@ export default function NoteEditor() {
     fn();
   };
 
+  const changeBody = (next: string) => edit(() => setBody(next));
+
+  // Wrap the current selection with markers (bold/italic/code).
+  const wrap = (marker: string) => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart;
+    const e = ta.selectionEnd;
+    const sel = body.slice(s, e);
+    changeBody(body.slice(0, s) + marker + sel + marker + body.slice(e));
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = s + marker.length;
+      ta.selectionEnd = e + marker.length;
+    });
+  };
+
+  // Prefix the current line (heading / bullet / checkbox).
+  const prefixLine = (prefix: string) => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart;
+    const lineStart = body.lastIndexOf("\n", s - 1) + 1;
+    changeBody(body.slice(0, lineStart) + prefix + body.slice(lineStart));
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = s + prefix.length;
+    });
+  };
+
+  const onCheckToggle = (index: number) => changeBody(toggleCheckbox(body, index));
+
   const back = async () => {
     if (dirtyRef.current) await save();
     navigate("/notes");
@@ -144,6 +180,12 @@ export default function NoteEditor() {
         <span className="flex-1 text-sm text-gray-400">
           {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
         </span>
+        <button
+          className="text-sm text-imsg-blue active:opacity-60"
+          onClick={() => setMode((m) => (m === "edit" ? "read" : "edit"))}
+        >
+          {mode === "edit" ? "Done" : "Edit"}
+        </button>
         <button
           className="text-red-500 active:opacity-60"
           aria-label="Delete note"
@@ -169,20 +211,104 @@ export default function NoteEditor() {
         </button>
       </header>
 
-      <div className="flex flex-1 flex-col overflow-hidden px-4 pt-3">
-        <input
-          className="mb-2 w-full bg-transparent text-xl font-semibold outline-none"
-          placeholder="Title"
-          value={title}
-          onChange={(e) => edit(() => setTitle(e.target.value))}
-        />
-        <textarea
-          className="kv-scroll flex-1 resize-none bg-transparent text-[17px] leading-snug outline-none"
-          placeholder="Write something… only you can read it."
-          value={body}
-          onChange={(e) => edit(() => setBody(e.target.value))}
-        />
-      </div>
+      {mode === "edit" ? (
+        <div className="flex flex-1 flex-col overflow-hidden px-4 pt-3">
+          <input
+            className="mb-2 w-full bg-transparent text-xl font-semibold outline-none"
+            placeholder="Title"
+            value={title}
+            onChange={(e) => edit(() => setTitle(e.target.value))}
+          />
+          <FormatBar
+            onBold={() => wrap("**")}
+            onItalic={() => wrap("_")}
+            onHeading={() => prefixLine("# ")}
+            onBullet={() => prefixLine("- ")}
+            onCheckbox={() => prefixLine("- [ ] ")}
+          />
+          <textarea
+            ref={taRef}
+            className="kv-scroll mt-2 flex-1 resize-none bg-transparent text-[17px] leading-snug outline-none"
+            placeholder="Write something… **bold**, - bullets, - [ ] checkboxes. Only you can read it."
+            value={body}
+            onChange={(e) => edit(() => setBody(e.target.value))}
+          />
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col overflow-hidden px-4 pt-3">
+          {title && <h1 className="mb-1 text-2xl font-bold">{title}</h1>}
+          {body.trim() ? (
+            <NoteMarkdown source={body} onToggle={onCheckToggle} />
+          ) : (
+            <button
+              className="mt-4 text-left text-gray-400"
+              onClick={() => setMode("edit")}
+            >
+              Empty note — tap Edit to write.
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FormatBar({
+  onBold,
+  onItalic,
+  onHeading,
+  onBullet,
+  onCheckbox,
+}: {
+  onBold: () => void;
+  onItalic: () => void;
+  onHeading: () => void;
+  onBullet: () => void;
+  onCheckbox: () => void;
+}) {
+  // preventDefault on mousedown so tapping a button doesn't blur the textarea
+  // (which would lose the selection we're about to format).
+  const keep = (fn: () => void) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    fn();
+  };
+  const btn = "flex h-8 w-9 items-center justify-center rounded-lg text-imsg-blue active:bg-gray-100";
+  const stroke = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  return (
+    <div className="flex gap-1 border-b border-gray-100 pb-2">
+      <button className={`${btn} font-bold`} onMouseDown={keep(onBold)} aria-label="Bold">
+        B
+      </button>
+      <button className={`${btn} italic font-serif`} onMouseDown={keep(onItalic)} aria-label="Italic">
+        I
+      </button>
+      <button className={`${btn} font-semibold`} onMouseDown={keep(onHeading)} aria-label="Heading">
+        H
+      </button>
+      <button className={btn} onMouseDown={keep(onBullet)} aria-label="Bulleted list">
+        <svg width="20" height="20" viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+          <line x1="9" y1="6" x2="20" y2="6" />
+          <line x1="9" y1="12" x2="20" y2="12" />
+          <line x1="9" y1="18" x2="20" y2="18" />
+          <circle cx="4.5" cy="6" r="1" />
+          <circle cx="4.5" cy="12" r="1" />
+          <circle cx="4.5" cy="18" r="1" />
+        </svg>
+      </button>
+      <button className={btn} onMouseDown={keep(onCheckbox)} aria-label="Checklist">
+        <svg width="20" height="20" viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+          <polyline points="3 6 4.5 7.5 7 5" />
+          <polyline points="3 17 4.5 18.5 7 16" />
+          <line x1="11" y1="6" x2="20" y2="6" />
+          <line x1="11" y1="17" x2="20" y2="17" />
+        </svg>
+      </button>
     </div>
   );
 }
