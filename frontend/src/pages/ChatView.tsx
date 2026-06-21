@@ -225,14 +225,27 @@ export default function ChatView() {
           </span>
         )}
         <button
-          className="ml-auto text-lg text-imsg-blue"
+          className="ml-auto text-imsg-blue active:opacity-60"
           aria-label="Search"
           onClick={() => {
             setSearchOpen((v) => !v);
             setChatQuery("");
           }}
         >
-          🔍
+          <svg
+            width="23"
+            height="23"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
         </button>
         <button
           className="text-xl text-imsg-blue"
