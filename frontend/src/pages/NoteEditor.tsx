@@ -162,6 +162,50 @@ export default function NoteEditor() {
 
   const onCheckToggle = (index: number) => changeBody(toggleCheckbox(body, index));
 
+  // Pressing Enter inside a list continues it (new bullet/checkbox/number); on an
+  // empty item it exits the list instead.
+  const onBodyKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    const ta = e.currentTarget;
+    const pos = ta.selectionStart;
+    if (pos !== ta.selectionEnd) return;
+    const lineStart = body.lastIndexOf("\n", pos - 1) + 1;
+    const lineEnd = body.indexOf("\n", pos);
+    const line = body.slice(lineStart, lineEnd === -1 ? body.length : lineEnd);
+
+    const task = line.match(/^(\s*)[-*]\s+\[[ xX]\]\s+(.*)$/);
+    const bullet = line.match(/^(\s*)([-*])\s+(.*)$/);
+    const num = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+    let prefix: string | null = null;
+    let empty = false;
+    if (task) {
+      prefix = `${task[1]}- [ ] `;
+      empty = task[2].trim() === "";
+    } else if (bullet) {
+      prefix = `${bullet[1]}${bullet[2]} `;
+      empty = bullet[3].trim() === "";
+    } else if (num) {
+      prefix = `${num[1]}${Number(num[2]) + 1}. `;
+      empty = num[3].trim() === "";
+    }
+    if (!prefix) return;
+
+    e.preventDefault();
+    if (empty) {
+      changeBody(body.slice(0, lineStart) + body.slice(pos));
+      requestAnimationFrame(() => {
+        ta.selectionStart = ta.selectionEnd = lineStart;
+      });
+    } else {
+      const insert = `\n${prefix}`;
+      changeBody(body.slice(0, pos) + insert + body.slice(pos));
+      const next = pos + insert.length;
+      requestAnimationFrame(() => {
+        ta.selectionStart = ta.selectionEnd = next;
+      });
+    }
+  };
+
   const back = async () => {
     if (dirtyRef.current) await save();
     navigate("/notes");
@@ -232,6 +276,7 @@ export default function NoteEditor() {
             placeholder="Write something… **bold**, - bullets, - [ ] checkboxes. Only you can read it."
             value={body}
             onChange={(e) => edit(() => setBody(e.target.value))}
+            onKeyDown={onBodyKeyDown}
           />
         </div>
       ) : (
