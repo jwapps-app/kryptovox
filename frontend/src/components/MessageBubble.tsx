@@ -230,61 +230,78 @@ export default function MessageBubble({
               </button>
             ))}
           </div>
-          <div className="flex flex-col items-end gap-1.5 self-center border-l border-gray-200 pl-2.5 text-sm">
-            {message.type === "text" && text && (
-              <button
-                className="text-imsg-blue"
-                onClick={() => {
-                  navigator.clipboard?.writeText(text).catch(() => {});
-                  setOpen(false);
-                }}
-              >
-                Copy
-              </button>
-            )}
-            {onForward && (message.type === "text" || message.type === "location") && (
-              <button
-                className="text-imsg-blue"
-                onClick={() => {
-                  onForward(message);
-                  setOpen(false);
-                }}
-              >
-                Forward
-              </button>
-            )}
-            <button
-              className="text-imsg-blue"
-              onClick={() => {
-                onReply(message);
-                setOpen(false);
-              }}
-            >
-              Reply
-            </button>
-            {isMine && message.type === "text" && onEdit && (
-              <button
-                className="text-imsg-blue"
-                onClick={() => {
-                  onEdit(message);
-                  setOpen(false);
-                }}
-              >
-                Edit
-              </button>
-            )}
-            {isMine && (
-              <button
-                className="text-red-500"
-                onClick={() => {
-                  if (confirm("Unsend this message?")) onUnsend(message.id);
-                  setOpen(false);
-                }}
-              >
-                Unsend
-              </button>
-            )}
-          </div>
+          {(() => {
+            const showCopy = message.type === "text" && !!text;
+            const showEdit = isMine && message.type === "text" && !!onEdit;
+            const showForward =
+              !!onForward && (message.type === "text" || message.type === "location");
+            const action = "text-left text-imsg-blue";
+            return (
+              <div className="flex flex-col gap-1.5 self-center border-l border-gray-200 pl-2.5 text-sm">
+                <div className="flex gap-4">
+                  {(showCopy || showEdit) && (
+                    <div className="flex flex-col items-start gap-1.5">
+                      {showCopy && (
+                        <button
+                          className={action}
+                          onClick={() => {
+                            navigator.clipboard?.writeText(text).catch(() => {});
+                            setOpen(false);
+                          }}
+                        >
+                          Copy
+                        </button>
+                      )}
+                      {showEdit && (
+                        <button
+                          className={action}
+                          onClick={() => {
+                            onEdit!(message);
+                            setOpen(false);
+                          }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex flex-col items-start gap-1.5">
+                    {showForward && (
+                      <button
+                        className={action}
+                        onClick={() => {
+                          onForward!(message);
+                          setOpen(false);
+                        }}
+                      >
+                        Forward
+                      </button>
+                    )}
+                    <button
+                      className={action}
+                      onClick={() => {
+                        onReply(message);
+                        setOpen(false);
+                      }}
+                    >
+                      Reply
+                    </button>
+                  </div>
+                </div>
+                {isMine && (
+                  <button
+                    className="border-t border-gray-100 pt-1.5 text-center text-red-500"
+                    onClick={() => {
+                      if (confirm("Unsend this message?")) onUnsend(message.id);
+                      setOpen(false);
+                    }}
+                  >
+                    Unsend
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
