@@ -200,6 +200,50 @@ class DisappearingUpdate(BaseModel):
     seconds: int = Field(ge=0, le=2592000)  # up to 30 days
 
 
+# ---------- Notes (private, E2EE) ----------
+_NOTE_MAX = 1_000_000  # generous cap for an encrypted note body
+
+
+class NoteCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    wrapped_key: str = Field(max_length=512)
+    title_ciphertext: str = Field(default="", max_length=8192)
+    title_iv: str = Field(default="", max_length=64)
+    body_ciphertext: str = Field(default="", max_length=_NOTE_MAX)
+    body_iv: str = Field(default="", max_length=64)
+
+
+class NoteUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title_ciphertext: str = Field(default="", max_length=8192)
+    title_iv: str = Field(default="", max_length=64)
+    body_ciphertext: str = Field(default="", max_length=_NOTE_MAX)
+    body_iv: str = Field(default="", max_length=64)
+
+
+class NoteListItem(BaseModel):
+    """List view — title only, no body."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    wrapped_key: str
+    title_ciphertext: str
+    title_iv: str
+    updated_at: datetime
+
+
+class NoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    wrapped_key: str
+    title_ciphertext: str
+    title_iv: str
+    body_ciphertext: str
+    body_iv: str
+    created_at: datetime
+    updated_at: datetime
+
+
 # ---------- Messages ----------
 class MediaRef(BaseModel):
     model_config = ConfigDict(extra="forbid")

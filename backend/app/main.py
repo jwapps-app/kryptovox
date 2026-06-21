@@ -21,6 +21,7 @@ from app.routers import (
     links,
     media,
     messages,
+    notes,
     push,
     users,
 )
@@ -77,6 +78,7 @@ api.include_router(users.router)
 api.include_router(devices.router)
 api.include_router(conversations.router)
 api.include_router(messages.router)
+api.include_router(notes.router)
 api.include_router(push.router)
 api.include_router(media.router)
 api.include_router(config.router)

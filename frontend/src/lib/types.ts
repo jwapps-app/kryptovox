@@ -127,6 +127,26 @@ export interface Conversation {
   muted: boolean;
 }
 
+// Private, E2EE notes
+export interface NoteListItem {
+  id: string;
+  wrapped_key: string;
+  title_ciphertext: string;
+  title_iv: string;
+  updated_at: string;
+}
+
+export interface Note {
+  id: string;
+  wrapped_key: string;
+  title_ciphertext: string;
+  title_iv: string;
+  body_ciphertext: string;
+  body_iv: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // WebSocket envelope
 export interface WsEvent<T = unknown> {
   type: string;
