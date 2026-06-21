@@ -3,10 +3,23 @@
 export interface Prefs {
   readReceipts: boolean;
   typingIndicators: boolean;
+  mapsProvider: "apple" | "google";
 }
 
 const KEY = "kv_prefs";
-const DEFAULTS: Prefs = { readReceipts: true, typingIndicators: true };
+const DEFAULTS: Prefs = {
+  readReceipts: true,
+  typingIndicators: true,
+  mapsProvider: "apple",
+};
+
+// Build an "Open in Maps" URL for the viewer's chosen maps app.
+export function mapsUrl(lat: number, lng: number): string {
+  if (getPrefs().mapsProvider === "google") {
+    return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  }
+  return `https://maps.apple.com/?ll=${lat},${lng}&q=Shared%20Location`;
+}
 
 export function getPrefs(): Prefs {
   try {
