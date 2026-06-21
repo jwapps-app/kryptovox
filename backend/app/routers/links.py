@@ -85,6 +85,11 @@ async def list_links(
             .order_by(GuestMessage.created_at.desc())
             .limit(1)
         )
+        unread = bool(
+            last
+            and last.sender == "guest"
+            and (t.host_read_at is None or last.created_at > t.host_read_at)
+        )
         out.append(
             GuestThreadOut(
                 id=t.id,
@@ -95,6 +100,7 @@ async def list_links(
                 wrapped_key=t.wrapped_key,
                 label_ciphertext=t.label_ciphertext,
                 label_iv=t.label_iv,
+                unread=unread,
                 last=GuestMessageOut.model_validate(last) if last else None,
             )
         )
@@ -133,6 +139,9 @@ async def get_link(
         and thread.expires_at <= datetime.now(UTC)
     ):
         await db.delete(thread)
+        await db.commit()
+    else:
+        thread.host_read_at = datetime.now(UTC)  # clears the unread/badge state
         await db.commit()
     return detail
 

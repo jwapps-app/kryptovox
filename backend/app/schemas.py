@@ -258,6 +258,7 @@ class GuestThreadOut(BaseModel):
     wrapped_key: str
     label_ciphertext: str | None = None
     label_iv: str | None = None
+    unread: bool = False
     last: GuestMessageOut | None = None
 
 
