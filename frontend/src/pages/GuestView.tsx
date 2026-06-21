@@ -25,6 +25,7 @@ export default function GuestView() {
   const [sending, setSending] = useState(false);
   const keyRef = useRef<CryptoKey | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
 
   useViewportHeight();
 
@@ -93,6 +94,7 @@ export default function GuestView() {
     if (!value || !keyRef.current || sending) return;
     setSending(true);
     setText("");
+    taRef.current?.focus(); // keep the keyboard up after sending
     try {
       const enc = await encryptWithKey(keyRef.current, value);
       const res = await fetch(`/api/guest/${id}/messages`, {
@@ -121,12 +123,33 @@ export default function GuestView() {
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
         <span className="font-semibold">Secret message</span>
-        {expiresAt ? (
-          <ExpiryBadge expiresAt={expiresAt} className="ml-auto text-xs text-gray-400" />
-        ) : (
-          <span className="ml-auto text-xs text-gray-400">end-to-end encrypted</span>
-        )}
+        <span className="ml-auto text-xs text-gray-400">end-to-end encrypted</span>
       </header>
+
+      {expiresAt && (
+        <div className="flex items-center justify-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className="shrink-0 animate-pulse"
+          >
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span>
+            This message self-destructs in{" "}
+            <ExpiryBadge expiresAt={expiresAt} bare className="font-semibold" />
+          </span>
+        </div>
+      )}
 
       <div ref={scrollRef} className="kv-scroll no-scrollbar flex-1 overflow-y-auto py-3">
         {msgs.map((m) => {
@@ -157,6 +180,7 @@ export default function GuestView() {
       <div className="kv-input-bar border-t border-gray-100">
         <div className="flex items-end gap-2 px-3 py-2">
           <textarea
+            ref={taRef}
             rows={1}
             value={text}
             onChange={(e) => setText(e.target.value)}
