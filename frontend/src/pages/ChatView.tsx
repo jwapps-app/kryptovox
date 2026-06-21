@@ -132,24 +132,26 @@ export default function ChatView() {
   const memberIds = useMemo(() => conv?.members.map((m) => m.id) ?? [], [conv]);
   const othersTyping = typing.filter((u) => u !== user.id);
 
-  // Disappearing messages: hide on time client-side (the server sweeps them too,
-  // within a couple of minutes). Re-tick so they vanish without a reload.
-  const disappearSecs = conv?.disappear_seconds ?? 0;
+  // Disappearing messages: each carries its own window (disappear_seconds) and
+  // its clock starts when read. Hide on time client-side (the server sweeps them
+  // too within a couple of minutes); re-tick so they vanish without a reload.
+  const disappearSecs = conv?.disappear_seconds ?? 0; // current setting (header)
+  const hasEphemeral = useMemo(
+    () => messages.some((m) => m.disappear_seconds > 0 && m.disappear_started_at),
+    [messages]
+  );
   const [nowTick, setNowTick] = useState(() => Date.now());
   useEffect(() => {
-    if (!disappearSecs) return;
+    if (!hasEphemeral) return;
     const t = window.setInterval(() => setNowTick(Date.now()), 15000);
     return () => window.clearInterval(t);
-  }, [disappearSecs]);
+  }, [hasEphemeral]);
   const visible = useMemo(() => {
-    if (!disappearSecs) return messages;
-    // The clock starts when the recipient reads it (disappear_started_at);
-    // messages not yet read stay visible until they are.
     return messages.filter((m) => {
-      if (!m.disappear_started_at) return true;
-      return new Date(m.disappear_started_at).getTime() + disappearSecs * 1000 > nowTick;
+      if (!m.disappear_seconds || !m.disappear_started_at) return true;
+      return new Date(m.disappear_started_at).getTime() + m.disappear_seconds * 1000 > nowTick;
     });
-  }, [messages, disappearSecs, nowTick]);
+  }, [messages, nowTick]);
 
   // In-chat search: filter to messages whose decrypted text matches.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -344,7 +346,6 @@ export default function ChatView() {
                       setEditing(msg);
                     }}
                     onForward={(msg) => setForwarding(msg)}
-                    disappearSecs={disappearSecs}
                   />
                 </div>
               );

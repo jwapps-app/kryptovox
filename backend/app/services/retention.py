@@ -34,34 +34,23 @@ async def sweep_once(db: AsyncSession) -> int:
     )
     now = datetime.now(UTC)
     removed = 0
-    # Disappearing-messages timers (seconds).
-    disc = await db.execute(
-        select(Conversation.id, Conversation.disappear_seconds).where(
-            Conversation.disappear_seconds > 0
-        )
+    # Disappearing messages: each carries its own window (disappear_seconds) and
+    # starts on read (disappear_started_at); unread/permanent messages persist.
+    expired = and_(
+        Message.disappear_seconds > 0,
+        Message.disappear_started_at.isnot(None),
+        Message.disappear_started_at
+        + func.make_interval(0, 0, 0, 0, 0, 0, Message.disappear_seconds)
+        < now,
     )
-    for conv_id, secs in disc.all():
-        cutoff = now - timedelta(seconds=secs)
-        # Clock starts on read (disappear_started_at); unread messages persist.
-        media_ids = await db.execute(
-            select(Message.media["id"].astext).where(
-                Message.conversation_id == conv_id,
-                Message.disappear_started_at.isnot(None),
-                Message.disappear_started_at < cutoff,
-                Message.media.isnot(None),
-            )
-        )
-        for mid in media_ids.scalars().all():
-            if mid:
-                media_store.delete(mid)
-        result = await db.execute(
-            delete(Message).where(
-                Message.conversation_id == conv_id,
-                Message.disappear_started_at.isnot(None),
-                Message.disappear_started_at < cutoff,
-            )
-        )
-        removed += result.rowcount or 0
+    media_ids = await db.execute(
+        select(Message.media["id"].astext).where(expired, Message.media.isnot(None))
+    )
+    for mid in media_ids.scalars().all():
+        if mid:
+            media_store.delete(mid)
+    result = await db.execute(delete(Message).where(expired))
+    removed += result.rowcount or 0
     for conv_id, override in rows.all():
         days = override if override is not None else default_days
         if days <= 0:

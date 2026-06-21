@@ -227,8 +227,9 @@ export default function ChatInfo() {
           ))}
         </div>
         <p className="mt-2 text-xs text-gray-400">
-          When on, each message is removed for everyone once this much time passes
-          after the recipient opens it. Unread messages stay until they’re read.
+          Applies only to messages sent from now on — existing history is kept.
+          Each new message is removed for everyone once this much time passes
+          after the recipient opens it; unread messages stay until they’re read.
         </p>
 
         {/* Safety number — compare out-of-band to verify no key was swapped. */}
