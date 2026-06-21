@@ -85,13 +85,13 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
         {!link ? (
           <>
             <input
+              autoFocus
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="Label (e.g. “Sarah”) — only you see it"
               className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[16px] outline-none focus:border-imsg-blue"
             />
             <textarea
-              autoFocus
               rows={4}
               value={text}
               onChange={(e) => setText(e.target.value)}
