@@ -102,11 +102,23 @@ export default function ConversationRow({
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between">
               <span className="truncate font-medium">{title}</span>
-              {c.last_message && (
-                <span className="ml-2 shrink-0 text-xs text-gray-400">
-                  {relativeTime(c.last_message.created_at)}
-                </span>
-              )}
+              <span className="ml-2 flex shrink-0 items-center gap-1 text-xs text-gray-400">
+                {c.muted && (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="Muted">
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                    <path d="M18.63 13A17.89 17.89 0 0 1 18 8" />
+                    <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14" />
+                    <path d="M18 8a6 6 0 0 0-9.33-5" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                )}
+                {c.pinned && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-label="Pinned">
+                    <path d="M9 2a1 1 0 0 0-1 1v1H7a1 1 0 0 0 0 2h.28l.72 5.5L5.5 15a1 1 0 0 0 .8 1.6H11V22a1 1 0 0 0 2 0v-5.4h4.7a1 1 0 0 0 .8-1.6L16 11.5l.72-5.5H17a1 1 0 0 0 0-2h-1V3a1 1 0 0 0-1-1z" />
+                  </svg>
+                )}
+                {c.last_message && relativeTime(c.last_message.created_at)}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="truncate text-sm text-gray-500">

@@ -138,6 +138,10 @@ async def notify_offline(
     for uid in await conversation_member_ids(db, conversation_id):
         if uid == sender_user_id:
             continue
+        # Respect per-member mute.
+        member = await db.get(ConversationMember, (conversation_id, uid))
+        if member is not None and member.muted:
+            continue
         # Per-recipient unread total for the home-screen icon badge.
         payload = {**base, "badge": await _unread_total(db, uid)}
         rows = await db.execute(

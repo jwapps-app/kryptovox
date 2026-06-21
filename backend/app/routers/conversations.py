@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, select
@@ -10,6 +11,7 @@ from app.models import Conversation, ConversationMember, Message, User
 from app.schemas import (
     ConversationCreate,
     ConversationOut,
+    ConversationPrefs,
     ConversationUpdate,
     MessageOut,
     RetentionUpdate,
@@ -84,6 +86,8 @@ async def _to_out(
         last_message=MessageOut.model_validate(last) if last else None,
         unread_count=await _unread_count(db, member, user.id),
         retention_days=conv.retention_days,
+        pinned=member.pinned,
+        muted=member.muted,
     )
 
 
@@ -267,6 +271,35 @@ async def set_retention(
         envelope(CONVERSATION_UPDATED, {"conversation_id": str(conversation_id)}),
     )
     return await _to_out(db, conv, member, current)
+
+
+@router.patch("/{conversation_id}/prefs", response_model=ConversationOut)
+async def set_prefs(
+    conversation_id: uuid.UUID,
+    body: ConversationPrefs,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationOut:
+    member = await _ensure_member(db, conversation_id, current.id)
+    if body.pinned is not None:
+        member.pinned = body.pinned
+    if body.muted is not None:
+        member.muted = body.muted
+    await db.flush()
+    conv = await db.get(Conversation, conversation_id)
+    return await _to_out(db, conv, member, current)
+
+
+@router.post("/{conversation_id}/clear", status_code=204)
+async def clear_history(
+    conversation_id: uuid.UUID,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    # Hide messages up to now for THIS member only (the other side keeps theirs).
+    member = await _ensure_member(db, conversation_id, current.id)
+    member.cleared_at = datetime.now(UTC)
+    await db.commit()
 
 
 @router.delete("/{conversation_id}/members/{user_id}", status_code=204)
