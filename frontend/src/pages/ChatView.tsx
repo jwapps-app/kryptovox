@@ -29,12 +29,14 @@ export default function ChatView() {
   const sendImage = useChat((s) => s.sendImage);
   const sendLocation = useChat((s) => s.sendLocation);
   const loadFullImage = useChat((s) => s.loadFullImage);
+  const editMessage = useChat((s) => s.editMessage);
   const unsend = useChat((s) => s.unsend);
   const markRead = useChat((s) => s.markRead);
   const toggleReaction = useChat((s) => s.toggleReaction);
 
   const [conv, setConv] = useState<Conversation | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [editing, setEditing] = useState<Message | null>(null);
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
 
@@ -226,6 +228,10 @@ export default function ChatView() {
                     onReact={(mid, emoji) => toggleReaction(id, mid, emoji, user.id)}
                     onReply={(msg) => setReplyTo(msg)}
                     onUnsend={(mid) => unsend(mid, id)}
+                    onEdit={(msg) => {
+                      setReplyTo(null);
+                      setEditing(msg);
+                    }}
                   />
                 </div>
               );
@@ -245,6 +251,9 @@ export default function ChatView() {
         }}
         onSendImage={(file) => sendImage(id, file, memberIds)}
         onSendLocation={(coords) => sendLocation(id, coords, memberIds)}
+        editing={editing ? { id: editing.id, text: textByMessage[editing.id] ?? "" } : null}
+        onSubmitEdit={(newText) => editMessage(editing!.id, id, newText, memberIds)}
+        onCancelEdit={() => setEditing(null)}
       />
 
       {(viewerLoading || viewerUrl) && (
