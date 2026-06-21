@@ -137,8 +137,8 @@ export default function MessageBubble({
           onMouseDown={keepKeyboard}
           className="block max-w-[78%] px-3 py-2.5"
           style={{
-            background: isMine ? "#007AFF" : "#E9E9EB",
-            color: isMine ? "#ffffff" : "#000000",
+            background: isMine ? "#007AFF" : "var(--bubble-in-bg)",
+            color: isMine ? "#ffffff" : "var(--bubble-in-text)",
             borderRadius: radius,
           }}
         >
@@ -172,8 +172,8 @@ export default function MessageBubble({
           onClick={() => setOpen((v) => !v)}
           className="max-w-[75%] cursor-default whitespace-pre-wrap break-words px-3 py-2 text-[17px] leading-snug"
           style={{
-            background: isMine ? "#007AFF" : "#E9E9EB",
-            color: isMine ? "#ffffff" : "#000000",
+            background: isMine ? "#007AFF" : "var(--bubble-in-bg)",
+            color: isMine ? "#ffffff" : "var(--bubble-in-text)",
             borderRadius: radius,
           }}
         >

@@ -4,10 +4,88 @@
 
 :root {
   color-scheme: light;
+  --bubble-in-bg: #e9e9eb;
+  --bubble-in-text: #000000;
 }
 
 html {
   height: 100%;
+}
+
+/* ---------- Dark mode (html.dark, toggled by lib/theme.ts) ----------
+   The app is styled with Tailwind utility classes, so overriding those classes
+   under .dark re-themes everything without per-component dark: variants. */
+.dark {
+  color-scheme: dark;
+  --bubble-in-bg: #262629;
+  --bubble-in-text: #ffffff;
+}
+.dark body {
+  background: #000000;
+  color: #ffffff;
+}
+.dark .bg-white {
+  background-color: #1c1c1e;
+}
+.dark .bg-gray-50 {
+  background-color: #2c2c2e;
+}
+.dark .bg-gray-100 {
+  background-color: #2c2c2e;
+}
+.dark .bg-gray-200 {
+  background-color: #3a3a3c;
+}
+.dark .hover\:bg-gray-50:hover {
+  background-color: #2c2c2e;
+}
+.dark .hover\:bg-gray-200:hover {
+  background-color: #48484a;
+}
+.dark .bg-blue-50 {
+  background-color: rgba(10, 132, 255, 0.22);
+}
+.dark .bg-red-50 {
+  background-color: rgba(255, 59, 48, 0.16);
+}
+.dark .border-gray-50 {
+  border-color: #232325;
+}
+.dark .border-gray-100 {
+  border-color: #2c2c2e;
+}
+.dark .border-gray-200 {
+  border-color: #3a3a3c;
+}
+.dark .border-red-100 {
+  border-color: rgba(255, 59, 48, 0.3);
+}
+.dark .border-red-200 {
+  border-color: rgba(255, 59, 48, 0.4);
+}
+.dark .text-gray-300 {
+  color: #5a5a5e;
+}
+.dark .text-gray-400 {
+  color: #8e8e93;
+}
+.dark .text-gray-500 {
+  color: #a1a1a6;
+}
+.dark .text-gray-600 {
+  color: #c7c7cc;
+}
+.dark .text-red-600 {
+  color: #ff6b60;
+}
+.dark input:not([type="checkbox"]),
+.dark textarea {
+  background-color: #2c2c2e;
+  color: #ffffff;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #8e8e93;
 }
 
 /* Full-screen, top-anchored, fixed. --vh is set from JS (App.tsx) to the real
