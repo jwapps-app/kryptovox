@@ -14,6 +14,7 @@ const EXPIRY = [
 export default function NewSecretLinkSheet({ onClose }: { onClose: () => void }) {
   const identity = useAuth((s) => s.identity);
   const user = useAuth((s) => s.user)!;
+  const [label, setLabel] = useState("");
   const [text, setText] = useState("");
   const [expiry, setExpiry] = useState(7);
   const [busy, setBusy] = useState(false);
@@ -32,6 +33,7 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
         identity.privateKey,
         user.identity_public_key
       );
+      const labelEnc = label.trim() ? await encryptWithKey(key, label.trim()) : null;
       const thread = await api<GuestThreadDetail>("/links", {
         method: "POST",
         body: JSON.stringify({
@@ -39,6 +41,8 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
           expires_in_days: expiry,
           ciphertext: enc.ciphertext,
           iv: enc.iv,
+          label_ciphertext: labelEnc?.ciphertext ?? null,
+          label_iv: labelEnc?.iv ?? null,
         }),
       });
       setLink(`${window.location.origin}/g/${thread.id}#${raw}`);
@@ -80,6 +84,12 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
 
         {!link ? (
           <>
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Label (e.g. “Sarah”) — only you see it"
+              className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[16px] outline-none focus:border-imsg-blue"
+            />
             <textarea
               autoFocus
               rows={4}

@@ -23,6 +23,9 @@ class GuestThread(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     wrapped_key: Mapped[str] = mapped_column(Text, nullable=False)
+    # Optional label, encrypted with the thread key K (server never sees it).
+    label_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    label_iv: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

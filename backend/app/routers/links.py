@@ -38,7 +38,11 @@ async def create_link(
     if body.expires_in_days and body.expires_in_days > 0:
         expires_at = datetime.now(UTC) + timedelta(days=body.expires_in_days)
     thread = GuestThread(
-        creator_id=identity.user.id, wrapped_key=body.wrapped_key, expires_at=expires_at
+        creator_id=identity.user.id,
+        wrapped_key=body.wrapped_key,
+        expires_at=expires_at,
+        label_ciphertext=body.label_ciphertext,
+        label_iv=body.label_iv,
     )
     db.add(thread)
     await db.flush()
@@ -53,6 +57,8 @@ async def create_link(
         created_at=thread.created_at,
         expires_at=thread.expires_at,
         wrapped_key=thread.wrapped_key,
+        label_ciphertext=thread.label_ciphertext,
+        label_iv=thread.label_iv,
         messages=[GuestMessageOut.model_validate(msg)],
     )
 
@@ -82,6 +88,8 @@ async def list_links(
                 last_message_at=t.last_message_at,
                 expires_at=t.expires_at,
                 wrapped_key=t.wrapped_key,
+                label_ciphertext=t.label_ciphertext,
+                label_iv=t.label_iv,
                 last=GuestMessageOut.model_validate(last) if last else None,
             )
         )
@@ -106,6 +114,8 @@ async def get_link(
         created_at=thread.created_at,
         expires_at=thread.expires_at,
         wrapped_key=thread.wrapped_key,
+        label_ciphertext=thread.label_ciphertext,
+        label_iv=thread.label_iv,
         messages=msgs,
     )
 
