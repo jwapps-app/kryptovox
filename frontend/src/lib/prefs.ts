@@ -4,6 +4,7 @@ export interface Prefs {
   readReceipts: boolean;
   typingIndicators: boolean;
   mapsProvider: "apple" | "google";
+  theme: "light" | "dark" | "system";
 }
 
 const KEY = "kv_prefs";
@@ -11,6 +12,7 @@ const DEFAULTS: Prefs = {
   readReceipts: true,
   typingIndicators: true,
   mapsProvider: "apple",
+  theme: "system",
 };
 
 // Build an "Open in Maps" URL for the viewer's chosen maps app.
