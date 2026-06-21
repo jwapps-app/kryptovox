@@ -2,13 +2,19 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity
-from app.models import ConversationMember, Message, MessageReaction, MessageReceipt
+from app.models import (
+    Conversation,
+    ConversationMember,
+    Message,
+    MessageReaction,
+    MessageReceipt,
+)
 from app.schemas import (
     MessageCreate,
     MessageEdit,
@@ -23,6 +29,7 @@ from app.services.push import notify_offline
 from app.ws.events import (
     CONVERSATION_UPDATED,
     MESSAGE_DELETE,
+    MESSAGE_DISAPPEAR_START,
     MESSAGE_EDIT,
     MESSAGE_NEW,
     REACTION_ADD,
@@ -227,6 +234,28 @@ async def mark_read(
         )
     )
     await db.execute(stmt)
+
+    # Disappearing messages: start the clock on the recipient's first read, so
+    # the timer counts from open time. Covers everything up to the read point
+    # that someone else sent and that hasn't started yet.
+    conv = await db.get(Conversation, conversation_id)
+    started_at: datetime | None = None
+    up_to_iso: str | None = None
+    if conv is not None and conv.disappear_seconds > 0:
+        read_msg = await db.get(Message, message_id)
+        if read_msg is not None:
+            started_at = now
+            up_to_iso = read_msg.created_at.isoformat()
+            await db.execute(
+                update(Message)
+                .where(
+                    Message.conversation_id == conversation_id,
+                    Message.sender_id != identity.user.id,
+                    Message.disappear_started_at.is_(None),
+                    Message.created_at <= read_msg.created_at,
+                )
+                .values(disappear_started_at=now)
+            )
     await db.commit()
 
     await fanout_conversation(
@@ -242,6 +271,22 @@ async def mark_read(
         ),
         exclude_user_id=identity.user.id,
     )
+    if started_at is not None:
+        # Tell every device (incl. the reader's and the sender's) to start hiding
+        # those messages on time.
+        await fanout_conversation(
+            db,
+            conversation_id,
+            envelope(
+                MESSAGE_DISAPPEAR_START,
+                {
+                    "conversation_id": str(conversation_id),
+                    "reader_id": str(identity.user.id),
+                    "up_to": up_to_iso,
+                    "started_at": started_at.isoformat(),
+                },
+            ),
+        )
     # Sync this user's other devices so their unread/badge clears too.
     await fanout_user(
         identity.user.id,

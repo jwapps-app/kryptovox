@@ -438,6 +438,25 @@ export const useChat = create<ChatState>((set, get) => ({
         }));
         break;
       }
+      case "message.disappear_start": {
+        const convId = p.conversation_id as string;
+        const readerId = p.reader_id as string;
+        const startedAt = p.started_at as string;
+        const upTo = new Date(p.up_to as string).getTime();
+        set((s) => ({
+          messagesByConv: {
+            ...s.messagesByConv,
+            [convId]: (s.messagesByConv[convId] ?? []).map((m) =>
+              !m.disappear_started_at &&
+              m.sender_id !== readerId &&
+              new Date(m.created_at).getTime() <= upTo
+                ? { ...m, disappear_started_at: startedAt }
+                : m
+            ),
+          },
+        }));
+        break;
+      }
       case "message.delete": {
         const id = p.id as string;
         const convId = p.conversation_id as string;

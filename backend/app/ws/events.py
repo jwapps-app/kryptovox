@@ -10,6 +10,7 @@ from typing import Any
 MESSAGE_NEW = "message.new"
 MESSAGE_EDIT = "message.edit"
 MESSAGE_DELETE = "message.delete"
+MESSAGE_DISAPPEAR_START = "message.disappear_start"
 RECEIPT_DELIVERED = "receipt.delivered"
 RECEIPT_READ = "receipt.read"
 TYPING_START = "typing.start"

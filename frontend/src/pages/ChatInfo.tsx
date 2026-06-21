@@ -227,8 +227,8 @@ export default function ChatInfo() {
           ))}
         </div>
         <p className="mt-2 text-xs text-gray-400">
-          When on, each message is removed for everyone once it reaches this age —
-          counted from when it was sent.
+          When on, each message is removed for everyone once this much time passes
+          after the recipient opens it. Unread messages stay until they’re read.
         </p>
 
         {/* Safety number — compare out-of-band to verify no key was swapped. */}
