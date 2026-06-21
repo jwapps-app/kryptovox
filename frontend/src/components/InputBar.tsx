@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { sendTyping } from "../hooks/useWebSocket";
+import { getDraft, setDraft } from "../lib/drafts";
 import { getPrefs } from "../lib/prefs";
 
 interface Props {
@@ -19,9 +20,17 @@ export default function InputBar({
   replyPreview,
   onCancelReply,
 }: Props) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => getDraft(conversationId));
   const [sending, setSending] = useState(false);
   const [locating, setLocating] = useState(false);
+
+  // Load this conversation's draft when switching chats; persist on change.
+  useEffect(() => {
+    setText(getDraft(conversationId));
+  }, [conversationId]);
+  useEffect(() => {
+    setDraft(conversationId, text);
+  }, [conversationId, text]);
 
   const shareLocation = () => {
     if (!navigator.geolocation || locating) return;

@@ -22,6 +22,11 @@ interface ChatState {
   loadGuestUnread: () => Promise<void>;
   loadConversations: () => Promise<void>;
   leaveConversation: (conversationId: string) => Promise<void>;
+  setConvPrefs: (
+    conversationId: string,
+    prefs: { pinned?: boolean; muted?: boolean }
+  ) => Promise<void>;
+  clearHistory: (conversationId: string) => Promise<void>;
   loadMessages: (conversationId: string) => Promise<void>;
   loadOlder: (conversationId: string) => Promise<void>;
   sendMessage: (
@@ -131,6 +136,26 @@ export const useChat = create<ChatState>((set, get) => ({
       };
     });
     syncBadge(get().conversations, get().guestUnread);
+  },
+
+  setConvPrefs: async (conversationId, prefs) => {
+    const updated = await api<Conversation>(`/conversations/${conversationId}/prefs`, {
+      method: "PATCH",
+      body: JSON.stringify(prefs),
+    });
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId ? updated : c
+      ),
+    }));
+  },
+
+  clearHistory: async (conversationId) => {
+    await api(`/conversations/${conversationId}/clear`, { method: "POST" });
+    set((s) => ({
+      messagesByConv: { ...s.messagesByConv, [conversationId]: [] },
+      cursorByConv: { ...s.cursorByConv, [conversationId]: null },
+    }));
   },
 
   loadMessages: async (conversationId) => {

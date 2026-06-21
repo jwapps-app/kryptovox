@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
+import { useChat } from "../store/chat";
 import { conversationTitle, userLabel } from "../lib/format";
 import { safetyNumber } from "../lib/safety";
 import Avatar from "../components/Avatar";
@@ -88,6 +89,27 @@ export default function ChatInfo() {
     setConv(updated);
   };
 
+  const setConvPrefs = useChat((s) => s.setConvPrefs);
+  const clearHistory = useChat((s) => s.clearHistory);
+
+  const togglePref = async (key: "pinned" | "muted") => {
+    if (!conv) return;
+    const next = !conv[key];
+    setConv({ ...conv, [key]: next });
+    await setConvPrefs(id, { [key]: next });
+  };
+
+  const clear = async () => {
+    if (
+      !confirm(
+        "Clear this conversation's history on your devices? The other person keeps their copy."
+      )
+    )
+      return;
+    await clearHistory(id);
+    navigate(`/chat/${id}`);
+  };
+
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
@@ -143,6 +165,26 @@ export default function ChatInfo() {
             + Add member
           </button>
         )}
+
+        <h2 className="mb-2 mt-6 text-xs font-semibold uppercase text-gray-400">
+          Conversation
+        </h2>
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between py-1">
+            <span className="text-[15px]">Pin to top</span>
+            <Switch on={conv.pinned} onClick={() => void togglePref("pinned")} />
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <span className="text-[15px]">Mute notifications</span>
+            <Switch on={conv.muted} onClick={() => void togglePref("muted")} />
+          </div>
+          <button
+            className="mt-1 w-full py-1 text-left text-[15px] text-red-500"
+            onClick={() => void clear()}
+          >
+            Clear history
+          </button>
+        </div>
 
         {/* Safety number — compare out-of-band to verify no key was swapped. */}
         <h2 className="mb-2 mt-6 text-xs font-semibold uppercase text-gray-400">
@@ -209,6 +251,21 @@ export default function ChatInfo() {
         />
       )}
     </div>
+  );
+}
+
+function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={on}
+      className={`flex h-7 w-12 shrink-0 items-center rounded-full px-0.5 transition-colors ${
+        on ? "justify-end" : "justify-start"
+      }`}
+      style={{ background: on ? "#34C759" : "#E9E9EB" }}
+    >
+      <span className="h-6 w-6 rounded-full bg-white shadow" />
+    </button>
   );
 }
 

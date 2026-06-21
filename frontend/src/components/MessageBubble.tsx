@@ -220,6 +220,17 @@ export default function MessageBubble({
               {emoji}
             </button>
           ))}
+          {message.type === "text" && text && (
+            <button
+              className="ml-1 border-l border-gray-200 pl-2 text-xs text-imsg-blue"
+              onClick={() => {
+                navigator.clipboard?.writeText(text).catch(() => {});
+                setOpen(false);
+              }}
+            >
+              Copy
+            </button>
+          )}
           <button
             className="ml-1 border-l border-gray-200 pl-2 text-xs text-imsg-blue"
             onClick={() => {
