@@ -29,6 +29,7 @@ export default function SecretLinkThread() {
   const keyRef = useRef<CryptoKey | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [msgs, setMsgs] = useState<Decoded[]>([]);
+  const [label, setLabel] = useState("Secret link");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -49,6 +50,13 @@ export default function SecretLinkThread() {
         );
       } catch {
         return;
+      }
+    }
+    if (detail.label_ciphertext && detail.label_iv) {
+      try {
+        setLabel(await decryptWithKey(keyRef.current, detail.label_ciphertext, detail.label_iv));
+      } catch {
+        /* keep default */
       }
     }
     const out: Decoded[] = [];
@@ -109,8 +117,8 @@ export default function SecretLinkThread() {
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
-        <BackButton onClick={() => navigate("/links")} />
-        <span className="font-semibold">Secret link</span>
+        <BackButton onClick={() => navigate("/")} />
+        <span className="truncate font-semibold">{label}</span>
         <button className="ml-auto text-sm text-imsg-blue" onClick={() => void copyLink()}>
           {copied ? "Copied ✓" : "Copy link"}
         </button>

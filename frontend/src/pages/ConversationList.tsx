@@ -1,26 +1,94 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
+import { decryptWithKey, unwrapKeyForSelf } from "../crypto/guest";
 import ConversationRow from "../components/ConversationRow";
+import GuestThreadRow from "../components/GuestThreadRow";
 import NewMessageSheet from "../components/NewMessageSheet";
 import NewGroupSheet from "../components/NewGroupSheet";
+import NewSecretLinkSheet from "../components/NewSecretLinkSheet";
+import type { Conversation, GuestThreadSummary } from "../lib/types";
+
+type Item =
+  | { kind: "conv"; id: string; t: number; conv: Conversation }
+  | { kind: "guest"; id: string; t: number; thread: GuestThreadSummary };
 
 export default function ConversationList() {
   const user = useAuth((s) => s.user)!;
+  const identity = useAuth((s) => s.identity);
   const conversations = useChat((s) => s.conversations);
   const textByMessage = useChat((s) => s.textByMessage);
   const loadConversations = useChat((s) => s.loadConversations);
   const leaveConversation = useChat((s) => s.leaveConversation);
   const markUnread = useChat((s) => s.markUnread);
+  const guestReplyTick = useChat((s) => s.guestReplyTick);
   const navigate = useNavigate();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [guests, setGuests] = useState<GuestThreadSummary[]>([]);
+  const [guestText, setGuestText] = useState<Record<string, { label: string; preview: string }>>(
+    {}
+  );
+
+  const loadGuests = useCallback(async () => {
+    const list = await api<GuestThreadSummary[]>("/links").catch(() => []);
+    setGuests(list);
+    if (!identity || !user.identity_public_key) return;
+    const decoded: Record<string, { label: string; preview: string }> = {};
+    for (const t of list) {
+      try {
+        const key = await unwrapKeyForSelf(
+          t.wrapped_key,
+          identity.privateKey,
+          user.identity_public_key
+        );
+        const label =
+          t.label_ciphertext && t.label_iv
+            ? await decryptWithKey(key, t.label_ciphertext, t.label_iv)
+            : "Secret link";
+        const preview = t.last
+          ? await decryptWithKey(key, t.last.ciphertext, t.last.iv)
+          : "";
+        decoded[t.id] = { label, preview };
+      } catch {
+        decoded[t.id] = { label: "Secret link", preview: "…" };
+      }
+    }
+    setGuestText(decoded);
+  }, [identity, user.identity_public_key]);
 
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
+  useEffect(() => {
+    void loadGuests();
+  }, [loadGuests, guestReplyTick]);
+
+  const revokeGuest = async (id: string) => {
+    await api(`/links/${id}`, { method: "DELETE" }).catch(() => {});
+    setGuests((g) => g.filter((t) => t.id !== id));
+  };
+
+  // Merge conversations + secret-link threads into one list, newest first.
+  const items = useMemo<Item[]>(() => {
+    const out: Item[] = [];
+    for (const c of conversations) {
+      out.push({
+        kind: "conv",
+        id: c.id,
+        t: c.last_message ? Date.parse(c.last_message.created_at) : 0,
+        conv: c,
+      });
+    }
+    for (const g of guests) {
+      out.push({ kind: "guest", id: g.id, t: Date.parse(g.last_message_at), thread: g });
+    }
+    return out.sort((a, b) => b.t - a.t);
+  }, [conversations, guests]);
 
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
@@ -89,7 +157,7 @@ export default function ConversationList() {
               className="block w-full border-t border-gray-100 px-4 py-2 text-left hover:bg-gray-50"
               onClick={() => {
                 setMenuOpen(false);
-                navigate("/links");
+                setLinkOpen(true);
               }}
             >
               New Secret Link
@@ -99,35 +167,53 @@ export default function ConversationList() {
       </header>
 
       <ul className="kv-scroll flex-1 overflow-y-auto">
-        {conversations.length === 0 && (
+        {items.length === 0 && (
           <li className="px-4 py-10 text-center text-gray-400">
             No conversations yet.
             <br />
             Tap ✎ to start one.
           </li>
         )}
-        {conversations.map((c) => {
-          const preview = c.last_message
-            ? c.last_message.type === "image"
-              ? "📷 Photo"
-              : textByMessage[c.last_message.id] ?? "…"
-            : "No messages yet";
-          return (
+        {items.map((item) =>
+          item.kind === "conv" ? (
             <ConversationRow
-              key={c.id}
-              conversation={c}
+              key={`c-${item.id}`}
+              conversation={item.conv}
               currentUserId={user.id}
-              preview={preview}
-              onOpen={() => navigate(`/chat/${c.id}`)}
-              onDelete={() => void leaveConversation(c.id)}
-              onMarkUnread={() => void markUnread(c.id)}
+              preview={
+                item.conv.last_message
+                  ? item.conv.last_message.type === "image"
+                    ? "📷 Photo"
+                    : textByMessage[item.conv.last_message.id] ?? "…"
+                  : "No messages yet"
+              }
+              onOpen={() => navigate(`/chat/${item.id}`)}
+              onDelete={() => void leaveConversation(item.id)}
+              onMarkUnread={() => void markUnread(item.id)}
             />
-          );
-        })}
+          ) : (
+            <GuestThreadRow
+              key={`g-${item.id}`}
+              thread={item.thread}
+              label={guestText[item.id]?.label ?? "Secret link"}
+              preview={guestText[item.id]?.preview ?? "…"}
+              onOpen={() => navigate(`/links/${item.id}`)}
+              onDelete={() => void revokeGuest(item.id)}
+            />
+          )
+        )}
       </ul>
 
       {sheetOpen && <NewMessageSheet onClose={() => setSheetOpen(false)} />}
       {groupOpen && <NewGroupSheet onClose={() => setGroupOpen(false)} />}
+      {linkOpen && (
+        <NewSecretLinkSheet
+          onClose={() => {
+            setLinkOpen(false);
+            void loadGuests();
+          }}
+        />
+      )}
     </div>
   );
 }
