@@ -8,6 +8,7 @@ import { getPrefs } from "../lib/prefs";
 import { cacheUserKeys } from "../lib/keys";
 import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
+import ForwardSheet from "../components/ForwardSheet";
 import MessageBubble from "../components/MessageBubble";
 import TypingIndicator from "../components/TypingIndicator";
 import InputBar from "../components/InputBar";
@@ -37,6 +38,25 @@ export default function ChatView() {
   const [conv, setConv] = useState<Conversation | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
+  const [forwarding, setForwarding] = useState<Message | null>(null);
+
+  const doForward = async (target: Conversation) => {
+    const m = forwarding;
+    setForwarding(null);
+    if (!m) return;
+    const memberIds = target.members.map((x) => x.id);
+    const content = textByMessage[m.id] ?? "";
+    if (m.type === "location") {
+      try {
+        await sendLocation(target.id, JSON.parse(content), memberIds);
+      } catch {
+        /* malformed */
+      }
+    } else if (content) {
+      await sendMessage(target.id, content, memberIds);
+    }
+    navigate(`/chat/${target.id}`);
+  };
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
 
@@ -232,6 +252,7 @@ export default function ChatView() {
                       setReplyTo(null);
                       setEditing(msg);
                     }}
+                    onForward={(msg) => setForwarding(msg)}
                   />
                 </div>
               );
@@ -255,6 +276,10 @@ export default function ChatView() {
         onSubmitEdit={(newText) => editMessage(editing!.id, id, newText, memberIds)}
         onCancelEdit={() => setEditing(null)}
       />
+
+      {forwarding && (
+        <ForwardSheet onClose={() => setForwarding(null)} onPick={(c) => void doForward(c)} />
+      )}
 
       {(viewerLoading || viewerUrl) && (
         <div

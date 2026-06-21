@@ -17,6 +17,7 @@ interface Props {
   onReply: (message: Message) => void;
   onUnsend: (id: string) => void;
   onEdit?: (message: Message) => void;
+  onForward?: (message: Message) => void;
   thumbUrl?: string;
   onOpenImage?: (message: Message) => void;
 }
@@ -33,6 +34,7 @@ export default function MessageBubble({
   onReply,
   onUnsend,
   onEdit,
+  onForward,
   thumbUrl,
   onOpenImage,
 }: Props) {
@@ -212,7 +214,7 @@ export default function MessageBubble({
       {open && (
         <div
           onMouseDown={keepKeyboard}
-          className="mt-1 flex items-center gap-1 rounded-full bg-white px-2 py-1 shadow"
+          className="mt-1 flex max-w-[85vw] flex-wrap items-center justify-center gap-1 rounded-2xl bg-white px-2 py-1 shadow"
         >
           {TAPBACKS.map((emoji) => (
             <button
@@ -235,6 +237,17 @@ export default function MessageBubble({
               }}
             >
               Copy
+            </button>
+          )}
+          {onForward && (message.type === "text" || message.type === "location") && (
+            <button
+              className="ml-1 border-l border-gray-200 pl-2 text-xs text-imsg-blue"
+              onClick={() => {
+                onForward(message);
+                setOpen(false);
+              }}
+            >
+              Forward
             </button>
           )}
           <button
