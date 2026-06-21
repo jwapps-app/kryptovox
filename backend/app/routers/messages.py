@@ -11,6 +11,7 @@ from app.deps import CurrentIdentity, get_current_identity
 from app.models import ConversationMember, Message, MessageReaction, MessageReceipt
 from app.schemas import (
     MessageCreate,
+    MessageEdit,
     MessageOut,
     MessagePage,
     ReactionCreate,
@@ -22,6 +23,7 @@ from app.services.push import notify_offline
 from app.ws.events import (
     CONVERSATION_UPDATED,
     MESSAGE_DELETE,
+    MESSAGE_EDIT,
     MESSAGE_NEW,
     REACTION_ADD,
     REACTION_REMOVE,
@@ -132,6 +134,33 @@ async def send_message(
     # Push to recipients whose devices are offline (best-effort).
     sender_name = identity.user.display_name or identity.user.username
     await notify_offline(db, conversation_id, identity.user.id, sender_name)
+    return out
+
+
+@router.patch("/messages/{message_id}", response_model=MessageOut)
+async def edit_message(
+    message_id: uuid.UUID,
+    body: MessageEdit,
+    identity: CurrentIdentity = Depends(get_current_identity),
+    db: AsyncSession = Depends(get_db),
+) -> MessageOut:
+    msg = await db.get(Message, message_id)
+    if msg is None or msg.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+    if msg.sender_id != identity.user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your message")
+    if msg.type != "text":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only text can be edited")
+    msg.ciphertext = body.ciphertext
+    msg.iv = body.iv
+    msg.encrypted_keys = body.encrypted_keys
+    msg.edited_at = datetime.now(UTC)
+    await db.flush()
+    out = MessageOut.model_validate(msg)
+    await db.commit()
+    await fanout_conversation(
+        db, msg.conversation_id, envelope(MESSAGE_EDIT, out.model_dump(mode="json"))
+    )
     return out
 
 

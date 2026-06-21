@@ -42,6 +42,12 @@ interface ChatState {
     memberIds: string[]
   ) => Promise<void>;
   loadFullImage: (message: Message) => Promise<string>;
+  editMessage: (
+    messageId: string,
+    conversationId: string,
+    newText: string,
+    memberIds: string[]
+  ) => Promise<void>;
   unsend: (messageId: string, conversationId: string) => Promise<void>;
   markRead: (conversationId: string, messageId: string) => Promise<void>;
   markUnread: (conversationId: string) => Promise<void>;
@@ -294,6 +300,26 @@ export const useChat = create<ChatState>((set, get) => ({
     return URL.createObjectURL(blob);
   },
 
+  editMessage: async (messageId, conversationId, newText, memberIds) => {
+    const { identity } = useAuth.getState();
+    if (!identity) throw new Error("No identity");
+    const recipients = await gatherRecipients(memberIds);
+    const enc = await encryptMessage(newText, recipients, identity.privateKey);
+    const msg = await api<Message>(`/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify(enc),
+    });
+    set((s) => ({
+      messagesByConv: {
+        ...s.messagesByConv,
+        [conversationId]: (s.messagesByConv[conversationId] ?? []).map((m) =>
+          m.id === messageId ? msg : m
+        ),
+      },
+      textByMessage: { ...s.textByMessage, [messageId]: newText },
+    }));
+  },
+
   unsend: async (messageId, conversationId) => {
     await api<Message>(`/messages/${messageId}`, { method: "DELETE" });
     set((s) => ({
@@ -394,6 +420,20 @@ export const useChat = create<ChatState>((set, get) => ({
         });
         // Refresh conversation ordering / previews.
         get().loadConversations();
+        break;
+      }
+      case "message.edit": {
+        const msg = p as unknown as Message;
+        const text = await decryptForMe(msg);
+        set((s) => ({
+          messagesByConv: {
+            ...s.messagesByConv,
+            [msg.conversation_id]: (s.messagesByConv[msg.conversation_id] ?? []).map(
+              (m) => (m.id === msg.id ? msg : m)
+            ),
+          },
+          textByMessage: { ...s.textByMessage, [msg.id]: text },
+        }));
         break;
       }
       case "message.delete": {

@@ -191,6 +191,13 @@ class MessageCreate(BaseModel):
     media: MediaRef | None = None
 
 
+class MessageEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ciphertext: str
+    iv: str
+    encrypted_keys: dict[str, str]
+
+
 class ReactionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     emoji: str

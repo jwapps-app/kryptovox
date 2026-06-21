@@ -10,6 +10,9 @@ interface Props {
   onSendLocation: (coords: { lat: number; lng: number; acc: number }) => Promise<void>;
   replyPreview?: string | null;
   onCancelReply?: () => void;
+  editing?: { id: string; text: string } | null;
+  onSubmitEdit?: (text: string) => Promise<void>;
+  onCancelEdit?: () => void;
 }
 
 export default function InputBar({
@@ -19,6 +22,9 @@ export default function InputBar({
   onSendLocation,
   replyPreview,
   onCancelReply,
+  editing,
+  onSubmitEdit,
+  onCancelEdit,
 }: Props) {
   const [text, setText] = useState(() => getDraft(conversationId));
   const [sending, setSending] = useState(false);
@@ -29,8 +35,14 @@ export default function InputBar({
     setText(getDraft(conversationId));
   }, [conversationId]);
   useEffect(() => {
-    setDraft(conversationId, text);
-  }, [conversationId, text]);
+    if (!editing) setDraft(conversationId, text); // editing text isn't a draft
+  }, [conversationId, text, editing]);
+
+  // Entering edit mode loads the message text; leaving restores the draft.
+  useEffect(() => {
+    setText(editing ? editing.text : getDraft(conversationId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id]);
 
   const shareLocation = () => {
     if (!navigator.geolocation || locating) return;
@@ -82,6 +94,18 @@ export default function InputBar({
   const submit = async () => {
     const value = text.trim();
     if (!value || sending) return;
+    if (editing && onSubmitEdit) {
+      setSending(true);
+      try {
+        await onSubmitEdit(value);
+        onCancelEdit?.();
+      } catch {
+        /* keep the text so they can retry */
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
     setSending(true);
     setText("");
     if (taRef.current) {
@@ -109,6 +133,14 @@ export default function InputBar({
 
   return (
     <div id="kv-inputbar" className="kv-input-bar border-t border-gray-100">
+      {editing && (
+        <div className="flex items-center justify-between bg-gray-50 px-4 py-1.5 text-sm text-gray-500">
+          <span className="truncate">✎ Editing message</span>
+          <button className="ml-2 text-imsg-blue" onClick={onCancelEdit}>
+            Cancel
+          </button>
+        </div>
+      )}
       {replyPreview != null && (
         <div className="flex items-center justify-between bg-gray-50 px-4 py-1.5 text-sm text-gray-500">
           <span className="truncate">↩ Replying to: {replyPreview || "…"}</span>
