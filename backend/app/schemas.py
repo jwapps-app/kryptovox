@@ -227,6 +227,8 @@ class GuestThreadCreate(BaseModel):
     expires_in_days: int | None = Field(default=7, ge=0, le=365)
     ciphertext: str = Field(max_length=_CIPHER_MAX)  # the first message
     iv: str = Field(max_length=64)
+    label_ciphertext: str | None = Field(default=None, max_length=4096)
+    label_iv: str | None = Field(default=None, max_length=64)
 
 
 class GuestMessageIn(BaseModel):
@@ -252,6 +254,8 @@ class GuestThreadOut(BaseModel):
     last_message_at: datetime
     expires_at: datetime | None
     wrapped_key: str
+    label_ciphertext: str | None = None
+    label_iv: str | None = None
     last: GuestMessageOut | None = None
 
 
@@ -260,6 +264,8 @@ class GuestThreadDetail(BaseModel):
     created_at: datetime
     expires_at: datetime | None
     wrapped_key: str
+    label_ciphertext: str | None = None
+    label_iv: str | None = None
     messages: list[GuestMessageOut]
 
 
