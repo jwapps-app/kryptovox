@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
-import { relativeTime } from "../lib/format";
 import { decryptWithKey, unwrapKeyForSelf } from "../crypto/guest";
 import BottomTabs from "../components/BottomTabs";
+import NoteRow from "../components/NoteRow";
 import type { NoteListItem } from "../lib/types";
 
 export default function NotesList() {
@@ -40,6 +40,11 @@ export default function NotesList() {
     void load();
   }, [load]);
 
+  const remove = async (noteId: string) => {
+    setNotes((n) => n.filter((x) => x.id !== noteId));
+    await api(`/notes/${noteId}`, { method: "DELETE" }).catch(() => void load());
+  };
+
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -73,24 +78,15 @@ export default function NotesList() {
             Tap ✎ to write one. Only you can read them.
           </li>
         )}
-        {notes.map((n) => {
-          const title = titles[n.id] ?? "";
-          return (
-            <li key={n.id}>
-              <button
-                className="flex w-full items-center justify-between gap-3 border-b border-gray-50 px-4 py-3 text-left hover:bg-gray-50"
-                onClick={() => navigate(`/notes/${n.id}`)}
-              >
-                <span className={`truncate font-medium ${title ? "" : "text-gray-400"}`}>
-                  {title || "Untitled note"}
-                </span>
-                <span className="shrink-0 text-xs text-gray-400">
-                  {relativeTime(n.updated_at)}
-                </span>
-              </button>
-            </li>
-          );
-        })}
+        {notes.map((n) => (
+          <NoteRow
+            key={n.id}
+            title={titles[n.id] ?? ""}
+            updatedAt={n.updated_at}
+            onOpen={() => navigate(`/notes/${n.id}`)}
+            onDelete={() => void remove(n.id)}
+          />
+        ))}
       </ul>
 
       <BottomTabs />

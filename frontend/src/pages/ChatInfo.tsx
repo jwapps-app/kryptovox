@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { conversationTitle, userLabel } from "../lib/format";
+import { setBurnPref } from "../lib/burn";
 import { safetyNumber } from "../lib/safety";
 import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
@@ -105,6 +106,7 @@ export default function ChatInfo() {
       body: JSON.stringify({ seconds }),
     });
     setConv(updated);
+    setBurnPref(id, seconds); // remember for the header toggle
   };
 
   const togglePref = async (key: "pinned" | "muted") => {

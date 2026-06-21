@@ -5,6 +5,7 @@ import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { conversationTitle, dayLabel } from "../lib/format";
 import { getPrefs } from "../lib/prefs";
+import { getBurnPref, setBurnPref } from "../lib/burn";
 import { cacheUserKeys } from "../lib/keys";
 import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
@@ -153,6 +154,23 @@ export default function ChatView() {
     });
   }, [messages, nowTick]);
 
+  // Quick burn-after-reading toggle from the header. Off → restore the
+  // conversation's remembered window (default 1h); on → off.
+  const toggleBurn = async () => {
+    if (!conv) return;
+    const next = disappearSecs > 0 ? 0 : getBurnPref(id);
+    try {
+      const updated = await api<Conversation>(`/conversations/${id}/disappearing`, {
+        method: "PATCH",
+        body: JSON.stringify({ seconds: next }),
+      });
+      setConv(updated);
+      if (next > 0) setBurnPref(id, next);
+    } catch {
+      /* ignore */
+    }
+  };
+
   // In-chat search: filter to messages whose decrypted text matches.
   const [searchOpen, setSearchOpen] = useState(false);
   const [chatQuery, setChatQuery] = useState("");
@@ -225,24 +243,33 @@ export default function ChatView() {
             );
           })()}
         <span className="font-semibold">{title}</span>
-        {disappearSecs > 0 && (
+        <button
+          onClick={() => void toggleBurn()}
+          aria-label="Burn after reading"
+          aria-pressed={disappearSecs > 0}
+          title={
+            disappearSecs > 0 ? "Burn after reading: on" : "Burn after reading: off"
+          }
+          className={`active:opacity-60 ${
+            disappearSecs > 0 ? "text-imsg-blue" : "text-gray-300"
+          }`}
+        >
           <svg
-            width="19"
-            height="19"
+            width="20"
+            height="20"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.8"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="text-gray-400"
-            aria-label="Disappearing messages on"
+            aria-hidden="true"
           >
             <line x1="10" y1="2" x2="14" y2="2" />
             <line x1="12" y1="14" x2="15" y2="11" />
             <circle cx="12" cy="14" r="8" />
           </svg>
-        )}
+        </button>
         <button
           className="ml-auto text-imsg-blue active:opacity-60"
           aria-label="Search"
