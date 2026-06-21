@@ -68,6 +68,7 @@ class UserOut(BaseModel):
     is_admin: bool = False
     # Public identity key for E2EE wrapping (null until the user establishes it).
     identity_public_key: str | None = None
+    has_avatar: bool = False  # true when an encrypted profile photo is set
 
 
 class SetupStatus(BaseModel):
@@ -102,6 +103,31 @@ class UserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     display_name: str | None = Field(default=None, max_length=64)
     avatar_url: str | None = None
+
+
+# ---------- E2EE profile photos ----------
+_AVATAR_MAX = 400_000  # generous cap for a small encrypted JPEG
+
+
+class AvatarUpload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ciphertext: str = Field(max_length=_AVATAR_MAX)
+    iv: str = Field(max_length=64)
+    self_key: str = Field(max_length=512)  # K wrapped to the owner (self-ECDH)
+    encrypted_keys: dict[str, str] = {}  # recipient_id -> K wrapped to that contact
+
+
+class AvatarKeysUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    encrypted_keys: dict[str, str]  # re-wrapped K for the current contact set
+
+
+class AvatarOut(BaseModel):
+    ciphertext: str
+    iv: str
+    wrapped_key: str  # K wrapped for the requester (self_key if owner == requester)
+    self: bool
+    owner_public_key: str | None = None
 
 
 class DeviceOut(BaseModel):

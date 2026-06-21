@@ -5,6 +5,7 @@ export interface User {
   avatar_url: string | null;
   is_admin?: boolean;
   identity_public_key?: string | null;
+  has_avatar?: boolean;
 }
 
 export interface AdminUser {

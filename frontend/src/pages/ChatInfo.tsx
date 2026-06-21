@@ -139,7 +139,14 @@ export default function ChatInfo() {
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-6 flex flex-col items-center">
-          <Avatar name={title} size={72} />
+          {(() => {
+            const other = !isGroup
+              ? conv.members.find((m) => m.id !== user.id)
+              : undefined;
+            return (
+              <Avatar name={title} size={72} userId={other?.id} hasAvatar={other?.has_avatar} />
+            );
+          })()}
           <div className="mt-2 text-lg font-semibold">{title}</div>
         </div>
 
@@ -152,7 +159,7 @@ export default function ChatInfo() {
               key={m.id}
               className="flex items-center gap-3 border-b border-gray-50 px-2 py-2 last:border-0"
             >
-              <Avatar name={userLabel(m)} size={36} />
+              <Avatar name={userLabel(m)} size={36} userId={m.id} hasAvatar={m.has_avatar} />
               <div className="flex-1">
                 <div className="text-[15px]">
                   {userLabel(m)}
@@ -362,7 +369,7 @@ function AddMemberSheet({
               className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-gray-50"
               onClick={() => add(u.id)}
             >
-              <Avatar name={userLabel(u)} size={36} />
+              <Avatar name={userLabel(u)} size={36} userId={u.id} hasAvatar={u.has_avatar} />
               <span>{userLabel(u)}</span>
             </button>
           </li>
