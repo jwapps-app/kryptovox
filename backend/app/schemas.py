@@ -158,6 +158,7 @@ class ConversationOut(BaseModel):
     last_message: "MessageOut | None" = None
     unread_count: int = 0
     retention_days: int | None = None  # null = inherit the global default
+    disappear_seconds: int = 0
     pinned: bool = False
     muted: bool = False
 
@@ -166,6 +167,11 @@ class ConversationPrefs(BaseModel):
     model_config = ConfigDict(extra="forbid")
     pinned: bool | None = None
     muted: bool | None = None
+
+
+class DisappearingUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    seconds: int = Field(ge=0, le=2592000)  # up to 30 days
 
 
 # ---------- Messages ----------

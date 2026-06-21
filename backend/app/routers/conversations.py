@@ -13,6 +13,7 @@ from app.schemas import (
     ConversationOut,
     ConversationPrefs,
     ConversationUpdate,
+    DisappearingUpdate,
     MessageOut,
     RetentionUpdate,
     UserOut,
@@ -86,6 +87,7 @@ async def _to_out(
         last_message=MessageOut.model_validate(last) if last else None,
         unread_count=await _unread_count(db, member, user.id),
         retention_days=conv.retention_days,
+        disappear_seconds=conv.disappear_seconds,
         pinned=member.pinned,
         muted=member.muted,
     )
@@ -264,6 +266,27 @@ async def set_retention(
     if conv is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
     conv.retention_days = body.retention_days
+    await db.flush()
+    await fanout_conversation(
+        db,
+        conversation_id,
+        envelope(CONVERSATION_UPDATED, {"conversation_id": str(conversation_id)}),
+    )
+    return await _to_out(db, conv, member, current)
+
+
+@router.patch("/{conversation_id}/disappearing", response_model=ConversationOut)
+async def set_disappearing(
+    conversation_id: uuid.UUID,
+    body: DisappearingUpdate,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationOut:
+    member = await _ensure_member(db, conversation_id, current.id)
+    conv = await db.get(Conversation, conversation_id)
+    if conv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
+    conv.disappear_seconds = body.seconds
     await db.flush()
     await fanout_conversation(
         db,

@@ -19,7 +19,7 @@ from app.services.app_settings import get_default_retention_days
 
 log = logging.getLogger("kryptovox.retention")
 
-SWEEP_INTERVAL_SECONDS = 3600  # hourly
+SWEEP_INTERVAL_SECONDS = 120  # disappearing messages need a prompt cadence
 _LOCK_KEY = 0x4B56_5254  # "KVRT" — arbitrary, stable advisory-lock id
 
 
@@ -34,6 +34,30 @@ async def sweep_once(db: AsyncSession) -> int:
     )
     now = datetime.now(UTC)
     removed = 0
+    # Disappearing-messages timers (seconds).
+    disc = await db.execute(
+        select(Conversation.id, Conversation.disappear_seconds).where(
+            Conversation.disappear_seconds > 0
+        )
+    )
+    for conv_id, secs in disc.all():
+        cutoff = now - timedelta(seconds=secs)
+        media_ids = await db.execute(
+            select(Message.media["id"].astext).where(
+                Message.conversation_id == conv_id,
+                Message.created_at < cutoff,
+                Message.media.isnot(None),
+            )
+        )
+        for mid in media_ids.scalars().all():
+            if mid:
+                media_store.delete(mid)
+        result = await db.execute(
+            delete(Message).where(
+                Message.conversation_id == conv_id, Message.created_at < cutoff
+            )
+        )
+        removed += result.rowcount or 0
     for conv_id, override in rows.all():
         days = override if override is not None else default_days
         if days <= 0:
