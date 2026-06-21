@@ -1,13 +1,21 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import User
-from app.schemas import IdentityOut, IdentitySet, UserOut, UserUpdate
+from app.models import AvatarKey, User
+from app.schemas import (
+    AvatarKeysUpdate,
+    AvatarOut,
+    AvatarUpload,
+    IdentityOut,
+    IdentitySet,
+    UserOut,
+    UserUpdate,
+)
 
 router = APIRouter(tags=["users"])
 
@@ -71,6 +79,90 @@ async def set_my_identity(
     return IdentityOut(
         identity_public_key=current.identity_public_key,
         encrypted_private_key=current.encrypted_private_key,
+    )
+
+
+def _avatar_keys(owner_id: uuid.UUID, encrypted_keys: dict[str, str]) -> list[AvatarKey]:
+    rows = []
+    for rid, wk in encrypted_keys.items():
+        try:
+            recipient = uuid.UUID(rid)
+        except ValueError:
+            continue  # skip malformed ids rather than 500
+        rows.append(AvatarKey(owner_id=owner_id, recipient_id=recipient, wrapped_key=wk))
+    return rows
+
+
+@router.put("/users/me/avatar", response_model=UserOut)
+async def set_avatar(
+    body: AvatarUpload,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    current.avatar_ciphertext = body.ciphertext
+    current.avatar_iv = body.iv
+    current.avatar_self_key = body.self_key
+    await db.execute(delete(AvatarKey).where(AvatarKey.owner_id == current.id))
+    for row in _avatar_keys(current.id, body.encrypted_keys):
+        db.add(row)
+    db.add(current)
+    await db.flush()
+    return current
+
+
+@router.delete("/users/me/avatar", response_model=UserOut)
+async def clear_avatar(
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    current.avatar_ciphertext = None
+    current.avatar_iv = None
+    current.avatar_self_key = None
+    await db.execute(delete(AvatarKey).where(AvatarKey.owner_id == current.id))
+    db.add(current)
+    await db.flush()
+    return current
+
+
+@router.put("/users/me/avatar/keys", status_code=status.HTTP_204_NO_CONTENT)
+async def sync_avatar_keys(
+    body: AvatarKeysUpdate,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Re-wrap the avatar key for the current contact set (replace-all)."""
+    await db.execute(delete(AvatarKey).where(AvatarKey.owner_id == current.id))
+    for row in _avatar_keys(current.id, body.encrypted_keys):
+        db.add(row)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/users/{user_id}/avatar", response_model=AvatarOut)
+async def get_avatar(
+    user_id: uuid.UUID,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AvatarOut:
+    owner = await db.get(User, user_id)
+    if owner is None or owner.avatar_ciphertext is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No avatar")
+    if owner.id == current.id:
+        return AvatarOut(
+            ciphertext=owner.avatar_ciphertext,
+            iv=owner.avatar_iv or "",
+            wrapped_key=owner.avatar_self_key or "",
+            self=True,
+            owner_public_key=owner.identity_public_key,
+        )
+    ak = await db.get(AvatarKey, (user_id, current.id))
+    if ak is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No avatar key for you")
+    return AvatarOut(
+        ciphertext=owner.avatar_ciphertext,
+        iv=owner.avatar_iv or "",
+        wrapped_key=ak.wrapped_key,
+        self=False,
+        owner_public_key=owner.identity_public_key,
     )
 
 

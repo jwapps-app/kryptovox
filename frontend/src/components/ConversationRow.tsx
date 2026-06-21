@@ -25,6 +25,8 @@ export default function ConversationRow({
   onMarkUnread,
 }: Props) {
   const title = conversationTitle(c, currentUserId);
+  // Direct chats show the other person's photo; groups keep initials.
+  const other = c.type === "direct" ? c.members.find((m) => m.id !== currentUserId) : undefined;
   const [dx, setDx] = useState(0);
   const startX = useRef(0);
   const startDx = useRef(0);
@@ -98,7 +100,7 @@ export default function ConversationRow({
           className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-gray-50"
           onClick={onClickRow}
         >
-          <Avatar name={title} />
+          <Avatar name={title} userId={other?.id} hasAvatar={other?.has_avatar} />
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between">
               <span className="truncate font-medium">{title}</span>

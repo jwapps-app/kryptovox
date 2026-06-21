@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api } from "../lib/api";
 import { cacheUserKeys, gatherRecipients, getUserPublicKey } from "../lib/keys";
 import { syncBadge } from "../lib/badge";
+import { syncAvatarKeys } from "../lib/avatars";
 import { decryptMessage, encryptMessage } from "../crypto/messaging";
 import { decryptFull, decryptThumb, encryptImage } from "../crypto/media";
 import { fetchMedia, uploadMedia } from "../lib/media";
@@ -129,6 +130,7 @@ export const useChat = create<ChatState>((set, get) => ({
     );
     set((s) => ({ conversations, textByMessage: { ...s.textByMessage, ...texts } }));
     syncBadge(conversations, get().guestUnread);
+    void syncAvatarKeys(conversations); // grant new contacts access to my photo
   },
 
   leaveConversation: async (conversationId) => {

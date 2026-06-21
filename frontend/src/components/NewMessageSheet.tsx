@@ -63,7 +63,7 @@ export default function NewMessageSheet({ onClose }: { onClose: () => void }) {
               className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-gray-50"
               onClick={() => startChat(u)}
             >
-              <Avatar name={userLabel(u)} />
+              <Avatar name={userLabel(u)} userId={u.id} hasAvatar={u.has_avatar} />
               <div>
                 <div className="text-[17px]">{userLabel(u)}</div>
                 <div className="text-sm text-gray-500">@{u.username}</div>
