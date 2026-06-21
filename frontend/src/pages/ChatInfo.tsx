@@ -263,7 +263,7 @@ function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
       }`}
       style={{ background: on ? "#34C759" : "#E9E9EB" }}
     >
-      <span className="h-6 w-6 rounded-full bg-white shadow" />
+      <span className="h-6 w-6 rounded-full shadow" style={{ background: "#fff" }} />
     </button>
   );
 }

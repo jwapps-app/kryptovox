@@ -162,8 +162,8 @@ export default function GuestView() {
               <div
                 className="max-w-[75%] whitespace-pre-wrap break-words px-3 py-2 text-[17px] leading-snug"
                 style={{
-                  background: mine ? "#007AFF" : "#E9E9EB",
-                  color: mine ? "#ffffff" : "#000000",
+                  background: mine ? "#007AFF" : "var(--bubble-in-bg)",
+                  color: mine ? "#ffffff" : "var(--bubble-in-text)",
                   borderRadius: mine ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                 }}
               >

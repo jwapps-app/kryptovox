@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { getPrefs, setPref } from "../lib/prefs";
+import { applyTheme } from "../lib/theme";
 import {
   disablePush,
   enablePush,
@@ -112,6 +113,30 @@ export default function Settings() {
             >
               {saved ? "✓" : "Save"}
             </button>
+          </div>
+        </Section>
+
+        <Section title="Appearance">
+          <div className="flex items-center justify-between py-1">
+            <span className="text-[15px]">Theme</span>
+            <div className="flex gap-1">
+              {(["light", "dark", "system"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => {
+                    setPrefsState(setPref("theme", t));
+                    applyTheme();
+                  }}
+                  className={`rounded-full border px-3 py-1 text-sm capitalize ${
+                    prefs.theme === t
+                      ? "border-imsg-blue bg-blue-50 text-imsg-blue"
+                      : "border-gray-200 text-gray-600"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
         </Section>
 
@@ -266,7 +291,7 @@ function Toggle({
         }`}
         style={{ background: on ? "#34C759" : "#E9E9EB" }}
       >
-        <span className="h-6 w-6 rounded-full bg-white shadow" />
+        <span className="h-6 w-6 rounded-full shadow" style={{ background: "#fff" }} />
       </button>
     </div>
   );

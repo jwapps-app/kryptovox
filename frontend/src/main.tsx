@@ -3,7 +3,10 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import App from "./App";
 import GuestView from "./pages/GuestView";
+import { initTheme } from "./lib/theme";
 import "./index.css";
+
+initTheme(); // set light/dark before first paint to avoid a flash
 
 // Ask the browser not to evict our storage (IndexedDB holds the identity key,
 // localStorage holds the session token) so login persists across restarts.
