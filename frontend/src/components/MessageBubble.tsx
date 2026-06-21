@@ -16,6 +16,7 @@ interface Props {
   onReact: (messageId: string, emoji: string) => void;
   onReply: (message: Message) => void;
   onUnsend: (id: string) => void;
+  onEdit?: (message: Message) => void;
   thumbUrl?: string;
   onOpenImage?: (message: Message) => void;
 }
@@ -31,6 +32,7 @@ export default function MessageBubble({
   onReact,
   onReply,
   onUnsend,
+  onEdit,
   thumbUrl,
   onOpenImage,
 }: Props) {
@@ -181,6 +183,10 @@ export default function MessageBubble({
         </div>
       )}
 
+      {message.edited_at && !message.deleted_at && (
+        <div className="mt-0.5 px-1 text-[11px] text-gray-400">Edited</div>
+      )}
+
       {/* Aggregated reaction pills */}
       {counts.size > 0 && (
         <div
@@ -240,6 +246,17 @@ export default function MessageBubble({
           >
             Reply
           </button>
+          {isMine && message.type === "text" && onEdit && (
+            <button
+              className="ml-1 border-l border-gray-200 pl-2 text-xs text-imsg-blue"
+              onClick={() => {
+                onEdit(message);
+                setOpen(false);
+              }}
+            >
+              Edit
+            </button>
+          )}
           {isMine && (
             <button
               className="pl-1 text-xs text-red-500"
