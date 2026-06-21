@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,6 +40,12 @@ class Message(Base):
     )
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Per-message disappearing window in seconds, stamped from the conversation's
+    # setting at send time (0 = permanent). Baking it onto the message means
+    # enabling/disabling only affects new messages, not existing history.
+    disappear_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
     # When a disappearing message's clock started: set on the recipient's first
     # read, so the timer counts from open time, not send time. NULL = unread, so
     # it persists until read (and is exempt from the disappearing sweep).
