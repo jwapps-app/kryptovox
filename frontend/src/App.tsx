@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useAuth } from "./store/auth";
+import { useChat } from "./store/chat";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useViewportHeight } from "./hooks/useViewportHeight";
 import { takePendingNav, takeRecentPush } from "./lib/pendingNav";
@@ -16,11 +17,17 @@ import CommandPalette from "./components/CommandPalette";
 export default function App() {
   const status = useAuth((s) => s.status);
   const bootstrap = useAuth((s) => s.bootstrap);
+  const loadGuestUnread = useChat((s) => s.loadGuestUnread);
   const navigate = useNavigate();
 
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  // Seed the secret-link unread count (and badge) once signed in.
+  useEffect(() => {
+    if (status === "authed") void loadGuestUnread();
+  }, [status, loadGuestUnread]);
 
   // Deep-link from a tapped push notification (fast path while the app is open).
   useEffect(() => {
@@ -41,6 +48,7 @@ export default function App() {
     const check = async () => {
       if (document.visibilityState !== "visible") return;
       if (useAuth.getState().status !== "authed") return;
+      void useChat.getState().loadGuestUnread(); // refresh secret-link badge on resume
       const pend = await takePendingNav();
       if (pend) {
         navigate(pend);

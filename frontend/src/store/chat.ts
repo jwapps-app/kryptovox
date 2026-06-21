@@ -18,6 +18,8 @@ interface ChatState {
   // conversationId -> userId -> messageId they last read
   readByConv: Record<string, Record<string, string>>;
   guestReplyTick: number; // bumped when a secret-link guest replies
+  guestUnread: number; // count of secret-link threads with an unread reply
+  loadGuestUnread: () => Promise<void>;
   loadConversations: () => Promise<void>;
   leaveConversation: (conversationId: string) => Promise<void>;
   loadMessages: (conversationId: string) => Promise<void>;
@@ -89,6 +91,14 @@ export const useChat = create<ChatState>((set, get) => ({
   typingByConv: {},
   readByConv: {},
   guestReplyTick: 0,
+  guestUnread: 0,
+
+  loadGuestUnread: async () => {
+    const list = await api<{ unread: boolean }[]>("/links").catch(() => []);
+    const guestUnread = list.filter((t) => t.unread).length;
+    set({ guestUnread });
+    syncBadge(get().conversations, guestUnread);
+  },
 
   loadConversations: async () => {
     const conversations = await api<Conversation[]>("/conversations");
@@ -102,7 +112,7 @@ export const useChat = create<ChatState>((set, get) => ({
       })
     );
     set((s) => ({ conversations, textByMessage: { ...s.textByMessage, ...texts } }));
-    syncBadge(conversations);
+    syncBadge(conversations, get().guestUnread);
   },
 
   leaveConversation: async (conversationId) => {
@@ -115,7 +125,7 @@ export const useChat = create<ChatState>((set, get) => ({
         messagesByConv,
       };
     });
-    syncBadge(get().conversations);
+    syncBadge(get().conversations, get().guestUnread);
   },
 
   loadMessages: async (conversationId) => {
@@ -287,7 +297,7 @@ export const useChat = create<ChatState>((set, get) => ({
           c.id === conversationId ? { ...c, unread_count: 0 } : c
         ),
       }));
-      syncBadge(get().conversations);
+      syncBadge(get().conversations, get().guestUnread);
     } catch {
       /* best-effort */
     }
@@ -300,7 +310,7 @@ export const useChat = create<ChatState>((set, get) => ({
         c.id === conversationId ? { ...c, unread_count: Math.max(1, c.unread_count) } : c
       ),
     }));
-    syncBadge(get().conversations);
+    syncBadge(get().conversations, get().guestUnread);
   },
 
   handleWsEvent: async (event) => {
@@ -403,6 +413,7 @@ export const useChat = create<ChatState>((set, get) => ({
       }
       case "guest.reply": {
         set((s) => ({ guestReplyTick: s.guestReplyTick + 1 }));
+        void get().loadGuestUnread();
         break;
       }
     }

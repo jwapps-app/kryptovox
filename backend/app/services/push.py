@@ -19,7 +19,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import ConversationMember, Device, Message
+from app.models import (
+    ConversationMember,
+    Device,
+    GuestMessage,
+    GuestThread,
+    Message,
+)
 from app.services.fanout import conversation_member_ids
 from app.services.presence import is_online
 
@@ -160,6 +166,29 @@ async def notify_offline(
         online,
         pushed,
     )
+
+
+async def user_badge_total(db: AsyncSession, user_id: uuid.UUID) -> int:
+    """Total unread for the app-icon badge: conversation unread + secret-link
+    threads with an unread guest reply."""
+    total = await _unread_total(db, user_id)
+    rows = await db.execute(
+        select(GuestThread).where(GuestThread.creator_id == user_id)
+    )
+    for t in rows.scalars().all():
+        last = await db.scalar(
+            select(GuestMessage)
+            .where(GuestMessage.thread_id == t.id)
+            .order_by(GuestMessage.created_at.desc())
+            .limit(1)
+        )
+        if (
+            last
+            and last.sender == "guest"
+            and (t.host_read_at is None or last.created_at > t.host_read_at)
+        ):
+            total += 1
+    return total
 
 
 async def notify_user(db: AsyncSession, user_id: uuid.UUID, payload: dict) -> None:

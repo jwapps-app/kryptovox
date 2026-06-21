@@ -38,6 +38,10 @@ class GuestThread(Base):
     # "Burn after reading": NULL = time-based (expires_at fixed at creation).
     # Non-NULL = expires_at starts on the guest's first open (now + burn_minutes).
     burn_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # When the creator last opened the thread (drives the unread/badge state).
+    host_read_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     messages: Mapped[list["GuestMessage"]] = relationship(
         back_populates="thread", cascade="all, delete-orphan"

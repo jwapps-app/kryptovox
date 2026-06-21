@@ -11,6 +11,7 @@ import {
 } from "../crypto/guest";
 import { clockTime } from "../lib/format";
 import BackButton from "../components/BackButton";
+import ExpiryBadge from "../components/ExpiryBadge";
 import type { GuestThreadDetail } from "../lib/types";
 
 interface Decoded {
@@ -30,6 +31,8 @@ export default function SecretLinkThread() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [msgs, setMsgs] = useState<Decoded[]>([]);
   const [label, setLabel] = useState("Secret link");
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [burnMinutes, setBurnMinutes] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -38,9 +41,11 @@ export default function SecretLinkThread() {
     if (!identity || !user.identity_public_key) return;
     const detail = await api<GuestThreadDetail>(`/links/${id}`).catch(() => null);
     if (!detail) {
-      navigate("/links");
+      navigate("/");
       return;
     }
+    setExpiresAt(detail.expires_at);
+    setBurnMinutes(detail.burn_minutes);
     if (!keyRef.current) {
       try {
         keyRef.current = await unwrapKeyForSelf(
@@ -72,9 +77,11 @@ export default function SecretLinkThread() {
     setMsgs(out);
   }, [id, identity, user.identity_public_key, navigate]);
 
+  const loadGuestUnread = useChat((s) => s.loadGuestUnread);
   useEffect(() => {
-    void load();
-  }, [load, guestReplyTick]);
+    // Opening the thread marks it read server-side; refresh the badge.
+    void load().then(() => loadGuestUnread());
+  }, [load, guestReplyTick, loadGuestUnread]);
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -118,8 +125,15 @@ export default function SecretLinkThread() {
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
         <BackButton onClick={() => navigate("/")} />
-        <span className="truncate font-semibold">{label}</span>
-        <button className="ml-auto text-sm text-imsg-blue" onClick={() => void copyLink()}>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-semibold leading-tight">{label}</div>
+          <ExpiryBadge
+            expiresAt={expiresAt}
+            burnMinutes={burnMinutes}
+            className="text-xs text-gray-400"
+          />
+        </div>
+        <button className="text-sm text-imsg-blue" onClick={() => void copyLink()}>
           {copied ? "Copied ✓" : "Copy link"}
         </button>
         <button className="text-sm text-red-500" onClick={() => void revoke()}>
