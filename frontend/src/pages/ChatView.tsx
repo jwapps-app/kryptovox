@@ -5,7 +5,7 @@ import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { conversationTitle, dayLabel } from "../lib/format";
 import { getPrefs } from "../lib/prefs";
-import { getBurnPref, setBurnPref } from "../lib/burn";
+import { burnLabel, getBurnPref, setBurnPref } from "../lib/burn";
 import { cacheUserKeys } from "../lib/keys";
 import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
@@ -244,33 +244,6 @@ export default function ChatView() {
           })()}
         <span className="font-semibold">{title}</span>
         <button
-          onClick={() => void toggleBurn()}
-          aria-label="Burn after reading"
-          aria-pressed={disappearSecs > 0}
-          title={
-            disappearSecs > 0 ? "Burn after reading: on" : "Burn after reading: off"
-          }
-          className={`active:opacity-60 ${
-            disappearSecs > 0 ? "text-imsg-blue" : "text-gray-300"
-          }`}
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <line x1="10" y1="2" x2="14" y2="2" />
-            <line x1="12" y1="14" x2="15" y2="11" />
-            <circle cx="12" cy="14" r="8" />
-          </svg>
-        </button>
-        <button
           className="ml-auto text-imsg-blue active:opacity-60"
           aria-label="Search"
           onClick={() => {
@@ -301,6 +274,57 @@ export default function ChatView() {
           ⓘ
         </button>
       </header>
+
+      {/* Burn-after-reading toggle bar — always visible so the state + window
+          are clear at a glance. */}
+      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-1.5">
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className={disappearSecs > 0 ? "text-imsg-blue" : "text-gray-400"}
+        >
+          <line x1="10" y1="2" x2="14" y2="2" />
+          <line x1="12" y1="14" x2="15" y2="11" />
+          <circle cx="12" cy="14" r="8" />
+        </svg>
+        <span className="text-sm">
+          {disappearSecs > 0 ? (
+            <>
+              Disappearing ·{" "}
+              <span className="font-medium text-imsg-blue">{burnLabel(disappearSecs)}</span>
+            </>
+          ) : (
+            <span className="text-gray-500">Disappearing messages</span>
+          )}
+        </span>
+        {disappearSecs > 0 && (
+          <button
+            className="text-xs text-imsg-blue"
+            onClick={() => navigate(`/chat/${id}/info`)}
+          >
+            Change
+          </button>
+        )}
+        <button
+          onClick={() => void toggleBurn()}
+          role="switch"
+          aria-checked={disappearSecs > 0}
+          aria-label="Disappearing messages"
+          className={`ml-auto flex h-6 w-10 shrink-0 items-center rounded-full px-0.5 transition-colors ${
+            disappearSecs > 0 ? "justify-end" : "justify-start"
+          }`}
+          style={{ background: disappearSecs > 0 ? "#34C759" : "#E9E9EB" }}
+        >
+          <span className="h-5 w-5 rounded-full shadow" style={{ background: "#fff" }} />
+        </button>
+      </div>
 
       {searchOpen && (
         <div className="border-b border-gray-100 px-3 py-2">
