@@ -28,6 +28,8 @@ export default function ChatInfo() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const user = useAuth((s) => s.user)!;
+  const setConvPrefs = useChat((s) => s.setConvPrefs);
+  const clearHistory = useChat((s) => s.clearHistory);
 
   const [conv, setConv] = useState<Conversation | null>(null);
   const [safety, setSafety] = useState<string | null>(null);
@@ -88,9 +90,6 @@ export default function ChatInfo() {
     });
     setConv(updated);
   };
-
-  const setConvPrefs = useChat((s) => s.setConvPrefs);
-  const clearHistory = useChat((s) => s.clearHistory);
 
   const togglePref = async (key: "pinned" | "muted") => {
     if (!conv) return;
