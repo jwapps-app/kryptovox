@@ -225,6 +225,7 @@ class GuestThreadCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     wrapped_key: str = Field(max_length=512)  # K wrapped under the creator's key
     expires_in_days: int | None = Field(default=7, ge=0, le=365)
+    burn_minutes: int | None = Field(default=None, ge=1, le=1440)  # clock starts on open
     ciphertext: str = Field(max_length=_CIPHER_MAX)  # the first message
     iv: str = Field(max_length=64)
     label_ciphertext: str | None = Field(default=None, max_length=4096)
@@ -253,6 +254,7 @@ class GuestThreadOut(BaseModel):
     created_at: datetime
     last_message_at: datetime
     expires_at: datetime | None
+    burn_minutes: int | None = None
     wrapped_key: str
     label_ciphertext: str | None = None
     label_iv: str | None = None
@@ -263,6 +265,7 @@ class GuestThreadDetail(BaseModel):
     id: uuid.UUID
     created_at: datetime
     expires_at: datetime | None
+    burn_minutes: int | None = None
     wrapped_key: str
     label_ciphertext: str | None = None
     label_iv: str | None = None

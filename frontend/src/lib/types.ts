@@ -84,6 +84,7 @@ export interface GuestThreadSummary {
   created_at: string;
   last_message_at: string;
   expires_at: string | null;
+  burn_minutes: number | null;
   wrapped_key: string;
   label_ciphertext: string | null;
   label_iv: string | null;
@@ -94,6 +95,7 @@ export interface GuestThreadDetail {
   id: string;
   created_at: string;
   expires_at: string | null;
+  burn_minutes: number | null;
   wrapped_key: string;
   label_ciphertext: string | null;
   label_iv: string | null;
