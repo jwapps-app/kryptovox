@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
+  decryptFileToUrl,
   decryptImageToUrl,
   decryptThumbToUrl,
   decryptWithKey,
+  encryptFileWithKey,
   encryptImageWithKey,
   encryptWithKey,
   importThreadKey,
@@ -28,6 +30,7 @@ export default function GuestView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
   const thumbsRef = useRef<Record<string, string>>({});
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
@@ -158,6 +161,43 @@ export default function GuestView() {
     }
   };
 
+  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !keyRef.current) return;
+    try {
+      const name = await encryptWithKey(keyRef.current, file.name);
+      const f = await encryptFileWithKey(file, keyRef.current);
+      const mediaId = await uploadThreadMediaGuest(id, f.blob);
+      await post({
+        type: "file",
+        ciphertext: name.ciphertext,
+        iv: name.iv,
+        file: { ...f.media, id: mediaId },
+      });
+    } catch {
+      /* best-effort */
+    }
+  };
+
+  const openFile = async (m: Decoded) => {
+    if (!m.media || !keyRef.current) return;
+    try {
+      const bytes = await fetchThreadMediaGuest(id, m.media.id);
+      const url = await decryptFileToUrl(bytes, m.media.iv, m.media.mime, keyRef.current);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = m.text || "file";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      /* best-effort */
+    }
+  };
+
   const openImage = async (m: Decoded) => {
     if (!m.media || !keyRef.current) return;
     setViewerLoading(true);
@@ -243,6 +283,7 @@ export default function GuestView() {
             mine={m.sender === "guest"}
             thumbUrl={thumbs[m.id]}
             onOpenImage={() => void openImage(m)}
+            onOpenFile={() => void openFile(m)}
           />
         ))}
       </div>
@@ -256,6 +297,28 @@ export default function GuestView() {
             className="hidden"
             onChange={onPickImage}
           />
+          <input ref={attachRef} type="file" className="hidden" onChange={onPickFile} />
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => attachRef.current?.click()}
+            aria-label="Attach file"
+            title="Attach file"
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center text-imsg-blue active:opacity-60"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => fileRef.current?.click()}

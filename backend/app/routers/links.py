@@ -175,7 +175,11 @@ async def host_reply(
         type=body.type,
         ciphertext=body.ciphertext,
         iv=body.iv,
-        media=body.media.model_dump() if body.media else None,
+        media=(
+            body.media.model_dump()
+            if body.media
+            else body.file.model_dump() if body.file else None
+        ),
     )
     db.add(msg)
     thread.last_message_at = datetime.now(UTC)
