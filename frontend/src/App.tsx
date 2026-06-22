@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useAuth } from "./store/auth";
 import { useChat } from "./store/chat";
@@ -14,6 +14,8 @@ import Admin from "./pages/Admin";
 import SecretLinkThread from "./pages/SecretLinkThread";
 import NotesList from "./pages/NotesList";
 import CommandPalette from "./components/CommandPalette";
+import LockGate from "./components/LockGate";
+import { isLockEnabled } from "./lib/appLock";
 
 // The note editor pulls in TipTap (~450KB); load it only when a note is opened.
 const NoteEditor = lazy(() => import("./pages/NoteEditor"));
@@ -23,6 +25,26 @@ export default function App() {
   const bootstrap = useAuth((s) => s.bootstrap);
   const loadGuestUnread = useChat((s) => s.loadGuestUnread);
   const navigate = useNavigate();
+  const [locked, setLocked] = useState(() => isLockEnabled());
+  const hiddenAt = useRef<number | null>(null);
+
+  // Re-lock when the app returns to the foreground after being away a while.
+  useEffect(() => {
+    const RELOCK_AFTER = 30000;
+    const onVis = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt.current = Date.now();
+      } else if (
+        isLockEnabled() &&
+        hiddenAt.current &&
+        Date.now() - hiddenAt.current > RELOCK_AFTER
+      ) {
+        setLocked(true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   useEffect(() => {
     void bootstrap();
@@ -89,6 +111,17 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
+    );
+  }
+
+  if (locked) {
+    return (
+      <LockGate
+        onUnlock={() => {
+          hiddenAt.current = null;
+          setLocked(false);
+        }}
+      />
     );
   }
 
