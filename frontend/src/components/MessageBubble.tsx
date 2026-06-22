@@ -6,6 +6,12 @@ import type { Message } from "../lib/types";
 
 export const TAPBACKS = ["❤️", "👍", "👎", "😂", "‼️", "❓"];
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 // Feather/Lucide-style stroked icons, matching the gear/compose/location icons.
 const iconProps: React.SVGProps<SVGSVGElement> = {
   width: 20,
@@ -66,6 +72,7 @@ interface Props {
   onForward?: (message: Message) => void;
   thumbUrl?: string;
   onOpenImage?: (message: Message) => void;
+  onOpenFile?: (message: Message) => void;
 }
 
 export default function MessageBubble({
@@ -83,6 +90,7 @@ export default function MessageBubble({
   onForward,
   thumbUrl,
   onOpenImage,
+  onOpenFile,
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -166,7 +174,41 @@ export default function MessageBubble({
         </div>
       )}
 
-      {message.type === "image" && message.media ? (
+      {message.type === "file" && message.media ? (
+        <button
+          onMouseDown={keepKeyboard}
+          onClick={() => onOpenFile?.(message)}
+          className="flex max-w-[78%] items-center gap-3 px-3 py-2.5 text-left"
+          style={{
+            background: isMine ? "#007AFF" : "var(--bubble-in-bg)",
+            color: isMine ? "#ffffff" : "var(--bubble-in-text)",
+            borderRadius: radius,
+          }}
+          aria-label="Download file"
+        >
+          <svg
+            width="26"
+            height="26"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className="shrink-0"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          <span className="min-w-0">
+            <span className="block truncate text-[15px] font-medium leading-tight">
+              {text || "File"}
+            </span>
+            <span className="text-xs opacity-80">{formatBytes(message.media.size)}</span>
+          </span>
+        </button>
+      ) : message.type === "image" && message.media ? (
         <button
           onMouseDown={keepKeyboard}
           onClick={() => onOpenImage?.(message)}

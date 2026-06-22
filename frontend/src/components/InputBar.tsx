@@ -7,6 +7,7 @@ interface Props {
   conversationId: string;
   onSend: (text: string) => Promise<void>;
   onSendImage: (file: File) => Promise<void>;
+  onSendFile: (file: File) => Promise<void>;
   onSendLocation: (coords: { lat: number; lng: number; acc: number }) => Promise<void>;
   replyPreview?: string | null;
   onCancelReply?: () => void;
@@ -19,6 +20,7 @@ export default function InputBar({
   conversationId,
   onSend,
   onSendImage,
+  onSendFile,
   onSendLocation,
   replyPreview,
   onCancelReply,
@@ -62,7 +64,19 @@ export default function InputBar({
   };
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<number | null>(null);
+
+  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      await onSendFile(file);
+    } catch {
+      /* best-effort */
+    }
+  };
 
   const onPickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -182,6 +196,28 @@ export default function InputBar({
         hidden
         onChange={onPickImage}
       />
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => attachRef.current?.click()}
+        aria-label="Attach file"
+        className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center text-imsg-blue active:opacity-60"
+      >
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+        </svg>
+      </button>
+      <input ref={attachRef} type="file" hidden onChange={onPickFile} />
       <button
         type="button"
         onMouseDown={(e) => e.preventDefault()}

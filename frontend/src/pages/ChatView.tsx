@@ -30,6 +30,8 @@ export default function ChatView() {
   const loadOlder = useChat((s) => s.loadOlder);
   const sendMessage = useChat((s) => s.sendMessage);
   const sendImage = useChat((s) => s.sendImage);
+  const sendFile = useChat((s) => s.sendFile);
+  const loadFile = useChat((s) => s.loadFile);
   const sendLocation = useChat((s) => s.sendLocation);
   const loadFullImage = useChat((s) => s.loadFullImage);
   const editMessage = useChat((s) => s.editMessage);
@@ -83,6 +85,23 @@ export default function ChatView() {
       /* leave closed on failure */
     } finally {
       setViewerLoading(false);
+    }
+  };
+
+  const openFile = async (m: Message) => {
+    try {
+      const url = await loadFile(m);
+      const name = textByMessage[m.id] || "file";
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      /* best-effort */
     }
   };
   const closeViewer = () => {
@@ -430,6 +449,7 @@ export default function ChatView() {
                     status={statusFor(m)}
                     thumbUrl={thumbByMessage[m.id]}
                     onOpenImage={openImage}
+                    onOpenFile={openFile}
                     onReact={(mid, emoji) => toggleReaction(id, mid, emoji, user.id)}
                     onReply={(msg) => setReplyTo(msg)}
                     onUnsend={(mid) => unsend(mid, id)}
@@ -456,6 +476,7 @@ export default function ChatView() {
           setReplyTo(null);
         }}
         onSendImage={(file) => sendImage(id, file, memberIds)}
+        onSendFile={(file) => sendFile(id, file, memberIds)}
         onSendLocation={(coords) => sendLocation(id, coords, memberIds)}
         editing={editing ? { id: editing.id, text: textByMessage[editing.id] ?? "" } : null}
         onSubmitEdit={(newText) => editMessage(editing!.id, id, newText, memberIds)}
