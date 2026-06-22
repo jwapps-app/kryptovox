@@ -8,8 +8,10 @@ import { invalidateAvatar } from "../lib/avatars";
 import {
   biometricsAvailable,
   disableLock,
-  enableLock,
-  isLockEnabled,
+  enableBiometric,
+  lockMethod,
+  setPin,
+  type LockMethod,
 } from "../lib/appLock";
 import type { RecipientKey } from "../crypto/messaging";
 import { getPrefs, setPref } from "../lib/prefs";
@@ -37,21 +39,32 @@ export default function Settings() {
   const avatarFileRef = useRef<HTMLInputElement>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarVer, setAvatarVer] = useState(0); // bump to re-render my avatar
-  const [lockOn, setLockOn] = useState(isLockEnabled());
+  const [lock, setLock] = useState<LockMethod | null>(lockMethod());
 
-  const toggleLock = async () => {
-    if (lockOn) {
+  const chooseLock = async (method: LockMethod | null) => {
+    if (method === null) {
       disableLock();
-      setLockOn(false);
+      setLock(null);
       return;
     }
-    const ok = await enableLock(user.username);
-    setLockOn(ok);
-    if (!ok) {
-      alert(
-        "Couldn't enable app lock. Your device may not support Face ID / Touch ID, or the prompt was cancelled."
-      );
+    if (method === "biometric") {
+      const ok = await enableBiometric(user.username);
+      if (ok) setLock("biometric");
+      else alert("Couldn't enable Face ID. Your device may not support it, or it was cancelled.");
+      return;
     }
+    // PIN
+    const pin = prompt("Set a 4–6 digit PIN")?.replace(/\D/g, "") ?? "";
+    if (pin.length < 4 || pin.length > 6) {
+      if (pin) alert("PIN must be 4–6 digits.");
+      return;
+    }
+    if ((prompt("Re-enter your PIN to confirm")?.replace(/\D/g, "") ?? "") !== pin) {
+      alert("PINs didn't match.");
+      return;
+    }
+    await setPin(pin);
+    setLock("pin");
   };
 
   const [displayName, setDisplayName] = useState(user.display_name ?? "");
@@ -284,19 +297,38 @@ export default function Settings() {
           />
         </Section>
 
-        {biometricsAvailable() && (
-          <Section title="App Lock">
-            <Toggle
-              label="Require Face ID to open"
-              on={lockOn}
-              onClick={() => void toggleLock()}
-            />
-            <p className="px-1 pt-1 text-xs text-gray-400">
-              Locks Kryptovox behind your device biometric on launch and after it’s
-              been in the background.
-            </p>
-          </Section>
-        )}
+        <Section title="App Lock">
+          <div className="flex items-center justify-between py-1">
+            <span className="text-[15px]">Lock</span>
+            <div className="flex gap-1">
+              {(
+                [
+                  { v: null, label: "Off" },
+                  ...(biometricsAvailable()
+                    ? [{ v: "biometric" as const, label: "Face ID" }]
+                    : []),
+                  { v: "pin" as const, label: "PIN" },
+                ] as { v: LockMethod | null; label: string }[]
+              ).map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => void chooseLock(opt.v)}
+                  className={`rounded-full border px-3 py-1 text-sm ${
+                    lock === opt.v
+                      ? "border-imsg-blue bg-blue-50 text-imsg-blue"
+                      : "border-gray-200 text-gray-600"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="px-1 pt-1 text-xs text-gray-400">
+            Locks Kryptovox on launch and after it’s been in the background. A PIN
+            opens without a passkey manager; Face ID uses your device biometric.
+          </p>
+        </Section>
 
         <Section title="Location">
           <div className="flex items-center justify-between py-1">
