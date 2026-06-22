@@ -111,6 +111,41 @@ export function decryptThumbToUrl(
   return decryptImageToUrl(base64urlToBytes(thumbB64), thumbIv, key);
 }
 
+// Arbitrary file in a secret-link thread: encrypt the bytes with the thread key
+// K (the filename rides separately in the message ciphertext via encryptWithKey).
+export async function encryptFileWithKey(
+  file: File,
+  key: CryptoKey
+): Promise<{ blob: Uint8Array; media: { iv: string; mime: string; size: number } }> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, bytes as BufferSource)
+  );
+  return {
+    blob: cipher,
+    media: {
+      iv: bytesToBase64url(iv),
+      mime: file.type || "application/octet-stream",
+      size: cipher.length,
+    },
+  };
+}
+
+export async function decryptFileToUrl(
+  cipher: Uint8Array,
+  ivB64: string,
+  mime: string,
+  key: CryptoKey
+): Promise<string> {
+  const bytes = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64urlToBytes(ivB64) },
+    key,
+    cipher as BufferSource
+  );
+  return URL.createObjectURL(new Blob([bytes], { type: mime || "application/octet-stream" }));
+}
+
 export async function wrapKeyForSelf(
   rawKeyB64: string,
   myPrivateKey: CryptoKey,

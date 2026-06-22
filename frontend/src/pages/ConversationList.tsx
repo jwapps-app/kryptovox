@@ -59,7 +59,9 @@ export default function ConversationList() {
             ? "📷 Photo"
             : t.last.type === "location"
               ? "📍 Location"
-              : await decryptWithKey(key, t.last.ciphertext, t.last.iv);
+              : t.last.type === "file"
+                ? `📎 ${await decryptWithKey(key, t.last.ciphertext, t.last.iv)}`
+                : await decryptWithKey(key, t.last.ciphertext, t.last.iv);
         decoded[t.id] = { label, preview };
       } catch {
         decoded[t.id] = { label: "Secret link", preview: "…" };
