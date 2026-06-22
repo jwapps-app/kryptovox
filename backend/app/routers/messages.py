@@ -131,7 +131,11 @@ async def send_message(
         iv=body.iv,
         encrypted_keys=body.encrypted_keys,
         type=body.type,
-        media=body.media.model_dump() if body.media else None,
+        media=(
+            body.media.model_dump()
+            if body.media
+            else body.file.model_dump() if body.file else None
+        ),
         reply_to_id=body.reply_to_id,
         disappear_seconds=disappear_seconds,
     )
