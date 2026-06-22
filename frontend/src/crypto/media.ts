@@ -2,7 +2,7 @@
 // messaging.ts: one random AES-GCM key encrypts both the full image and a small
 // thumbnail, and is wrapped per recipient via X25519. The server only stores
 // ciphertext (the full image as a blob, the thumbnail inline on the message).
-import { base64urlToBytes, bytesToBase64url, concatBytes } from "./base64";
+import { base64urlToBytes, bytesToBase64url, concatBytes, utf8Encode } from "./base64";
 import { WRAP_IV_LEN, deriveWrapKey, importPublicKey } from "./messaging";
 import type { RecipientKey } from "./messaging";
 
@@ -154,6 +154,78 @@ export function decryptThumb(
 
 export function decryptFull(
   media: ImageMedia,
+  encryptedBlob: Uint8Array,
+  wrappedKeyB64: string,
+  senderPublicKeyB64: string,
+  recipientPrivateKey: CryptoKey
+): Promise<Blob> {
+  return decryptToBlob(
+    encryptedBlob,
+    media.iv,
+    media.mime,
+    wrappedKeyB64,
+    senderPublicKeyB64,
+    recipientPrivateKey
+  );
+}
+
+// Arbitrary file attachments. One per-message key encrypts both the file blob
+// and its filename (the latter rides in the message ciphertext, so it decrypts
+// through the normal text path). Key is wrapped per recipient, same as images.
+export interface EncryptedFile {
+  ciphertext: string; // encrypted filename
+  iv: string;
+  encrypted_keys: Record<string, string>;
+  blob: Uint8Array; // encrypted file bytes, to upload
+  media: { iv: string; mime: string; size: number };
+}
+
+export async function encryptFile(
+  file: File,
+  recipients: RecipientKey[],
+  senderPrivateKey: CryptoKey
+): Promise<EncryptedFile> {
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
+    "encrypt",
+    "decrypt",
+  ]);
+  const ivName = crypto.getRandomValues(new Uint8Array(12));
+  const nameCipher = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv: ivName }, key, utf8Encode(file.name))
+  );
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const ivBlob = crypto.getRandomValues(new Uint8Array(12));
+  const blobCipher = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv: ivBlob }, key, bytes as BufferSource)
+  );
+
+  const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", key));
+  const encrypted_keys: Record<string, string> = {};
+  for (const r of recipients) {
+    if (encrypted_keys[r.userId]) continue;
+    const wrapKey = await deriveWrapKey(senderPrivateKey, await importPublicKey(r.publicKeyB64));
+    const wrapIv = crypto.getRandomValues(new Uint8Array(WRAP_IV_LEN));
+    const wrapped = new Uint8Array(
+      await crypto.subtle.encrypt({ name: "AES-GCM", iv: wrapIv }, wrapKey, rawKey)
+    );
+    encrypted_keys[r.userId] = bytesToBase64url(concatBytes(wrapIv, wrapped));
+  }
+
+  return {
+    ciphertext: bytesToBase64url(nameCipher),
+    iv: bytesToBase64url(ivName),
+    encrypted_keys,
+    blob: blobCipher,
+    media: {
+      iv: bytesToBase64url(ivBlob),
+      mime: file.type || "application/octet-stream",
+      size: blobCipher.length,
+    },
+  };
+}
+
+export function decryptFileBlob(
+  media: { iv: string; mime: string },
   encryptedBlob: Uint8Array,
   wrappedKeyB64: string,
   senderPublicKeyB64: string,

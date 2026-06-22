@@ -232,7 +232,9 @@ export default function ConversationList() {
                     ? "📷 Photo"
                     : item.conv.last_message.type === "location"
                       ? "📍 Location"
-                      : textByMessage[item.conv.last_message.id] ?? "…"
+                      : item.conv.last_message.type === "file"
+                        ? `📎 ${textByMessage[item.conv.last_message.id] ?? "File"}`
+                        : textByMessage[item.conv.last_message.id] ?? "…"
                   : "No messages yet"
               }
               onOpen={() => navigate(`/chat/${item.id}`)}

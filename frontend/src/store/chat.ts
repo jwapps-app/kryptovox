@@ -4,7 +4,13 @@ import { cacheUserKeys, gatherRecipients, getUserPublicKey } from "../lib/keys";
 import { syncBadge } from "../lib/badge";
 import { syncAvatarKeys } from "../lib/avatars";
 import { decryptMessage, encryptMessage } from "../crypto/messaging";
-import { decryptFull, decryptThumb, encryptImage } from "../crypto/media";
+import {
+  decryptFileBlob,
+  decryptFull,
+  decryptThumb,
+  encryptFile,
+  encryptImage,
+} from "../crypto/media";
 import { fetchMedia, uploadMedia } from "../lib/media";
 import { useAuth } from "./auth";
 import type { Conversation, Message, MessagePage, WsEvent } from "../lib/types";
@@ -37,6 +43,8 @@ interface ChatState {
     replyToId?: string | null
   ) => Promise<void>;
   sendImage: (conversationId: string, file: File, memberIds: string[]) => Promise<void>;
+  sendFile: (conversationId: string, file: File, memberIds: string[]) => Promise<void>;
+  loadFile: (message: Message) => Promise<string>;
   sendLocation: (
     conversationId: string,
     coords: { lat: number; lng: number; acc: number },
@@ -264,6 +272,48 @@ export const useChat = create<ChatState>((set, get) => ({
         thumbByMessage: { ...s.thumbByMessage, [msg.id]: localUrl },
       };
     });
+  },
+
+  sendFile: async (conversationId, file, memberIds) => {
+    const { identity } = useAuth.getState();
+    if (!identity) throw new Error("No identity");
+    const recipients = await gatherRecipients(memberIds);
+    const enc = await encryptFile(file, recipients, identity.privateKey);
+    const id = await uploadMedia(enc.blob);
+    const msg = await api<Message>(`/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({
+        ciphertext: enc.ciphertext,
+        iv: enc.iv,
+        encrypted_keys: enc.encrypted_keys,
+        type: "file",
+        file: { ...enc.media, id },
+      }),
+    });
+    set((s) => {
+      const existing = s.messagesByConv[conversationId] ?? [];
+      const already = existing.some((m) => m.id === msg.id);
+      return {
+        messagesByConv: {
+          ...s.messagesByConv,
+          [conversationId]: already ? existing : [...existing, msg],
+        },
+        textByMessage: { ...s.textByMessage, [msg.id]: file.name },
+      };
+    });
+  },
+
+  loadFile: async (message) => {
+    const { identity, user } = useAuth.getState();
+    if (!identity || !user || !message.media || !message.sender_id) {
+      throw new Error("Cannot load file");
+    }
+    const wrapped = message.encrypted_keys[user.id];
+    const senderPub = await getUserPublicKey(message.sender_id);
+    if (!wrapped || !senderPub) throw new Error("No key for this file");
+    const cipher = await fetchMedia(message.media.id);
+    const blob = await decryptFileBlob(message.media, cipher, wrapped, senderPub, identity.privateKey);
+    return URL.createObjectURL(blob);
   },
 
   sendLocation: async (conversationId, coords, memberIds) => {

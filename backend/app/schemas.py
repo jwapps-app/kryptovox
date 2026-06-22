@@ -257,14 +257,25 @@ class MediaRef(BaseModel):
     size: int = Field(ge=0)
 
 
+class FileRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(max_length=64)
+    iv: str  # iv for the encrypted blob (filename is the message ciphertext)
+    mime: str = Field(default="application/octet-stream", max_length=128)
+    size: int = Field(ge=0)
+
+
 class MessageCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     ciphertext: str = ""
     iv: str = ""
     encrypted_keys: dict[str, str]  # device_id -> base64url wrapped key
-    type: str = Field(default="text", pattern="^(text|image|reaction|system|location)$")
+    type: str = Field(
+        default="text", pattern="^(text|image|reaction|system|location|file)$"
+    )
     reply_to_id: uuid.UUID | None = None
     media: MediaRef | None = None
+    file: FileRef | None = None
 
 
 class MessageEdit(BaseModel):
