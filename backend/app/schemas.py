@@ -338,10 +338,11 @@ class GuestThreadCreate(BaseModel):
 
 class GuestMessageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    type: str = Field(default="text", pattern="^(text|location|image)$")
+    type: str = Field(default="text", pattern="^(text|location|image|file)$")
     ciphertext: str = Field(default="", max_length=_CIPHER_MAX)
     iv: str = Field(default="", max_length=64)
     media: MediaRef | None = None
+    file: FileRef | None = None
 
 
 class GuestMessageOut(BaseModel):
