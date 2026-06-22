@@ -5,6 +5,7 @@ import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { conversationTitle, userLabel } from "../lib/format";
 import { setBurnPref } from "../lib/burn";
+import { detectKeyChanges, pinKey } from "../lib/keyPins";
 import { safetyNumber } from "../lib/safety";
 import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
@@ -42,6 +43,7 @@ export default function ChatInfo() {
 
   const [conv, setConv] = useState<Conversation | null>(null);
   const [safety, setSafety] = useState<string | null>(null);
+  const [keyChanged, setKeyChanged] = useState<string[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [defaultRetention, setDefaultRetention] = useState(0);
 
@@ -64,6 +66,21 @@ export default function ChatInfo() {
       .filter((k): k is string => !!k);
     safetyNumber(keys).then(setSafety).catch(() => {});
   }, [conv]);
+
+  // Detect contacts whose identity key changed since we pinned it (TOFU).
+  useEffect(() => {
+    if (conv) setKeyChanged(detectKeyChanges(conv.members, user.id));
+  }, [conv, user.id]);
+
+  const trustNewKeys = () => {
+    if (!conv) return;
+    for (const m of conv.members) {
+      if (keyChanged.includes(m.id) && m.identity_public_key) {
+        pinKey(m.id, m.identity_public_key);
+      }
+    }
+    setKeyChanged([]);
+  };
 
   if (!conv) return null;
   const isGroup = conv.type === "group";
@@ -238,6 +255,26 @@ export default function ChatInfo() {
         <h2 className="mb-2 mt-6 text-xs font-semibold uppercase text-gray-400">
           Safety number
         </h2>
+        {keyChanged.length > 0 && (
+          <div className="mb-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+            <div className="font-semibold">⚠️ Safety number changed</div>
+            <p className="mt-1">
+              {conv.members
+                .filter((m) => keyChanged.includes(m.id))
+                .map((m) => userLabel(m))
+                .join(", ")}
+              ’s key is different from the one you last trusted. That usually means
+              a new device or reinstall — but it can also mean someone is
+              intercepting. Compare the number below out-of-band, then trust it.
+            </p>
+            <button
+              className="mt-3 w-full rounded-xl bg-red-500 py-2 font-medium text-white"
+              onClick={trustNewKeys}
+            >
+              I’ve verified — trust the new key
+            </button>
+          </div>
+        )}
         <div className="rounded-2xl bg-white p-4 font-mono text-sm tracking-wide shadow-sm">
           {safety ?? "…"}
         </div>

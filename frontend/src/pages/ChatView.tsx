@@ -6,6 +6,7 @@ import { useChat } from "../store/chat";
 import { conversationTitle, dayLabel } from "../lib/format";
 import { getPrefs } from "../lib/prefs";
 import { burnLabel, getBurnPref, setBurnPref } from "../lib/burn";
+import { detectKeyChanges } from "../lib/keyPins";
 import { cacheUserKeys } from "../lib/keys";
 import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
@@ -40,6 +41,18 @@ export default function ChatView() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
   const [forwarding, setForwarding] = useState<Message | null>(null);
+  const [keyAlerts, setKeyAlerts] = useState<string[]>([]);
+
+  // Surface contacts whose identity key changed since we first saw it (TOFU).
+  useEffect(() => {
+    if (!conv) return setKeyAlerts([]);
+    const changed = detectKeyChanges(conv.members, user.id);
+    setKeyAlerts(
+      conv.members
+        .filter((m) => changed.includes(m.id))
+        .map((m) => m.display_name || m.username)
+    );
+  }, [conv, user.id]);
 
   const doForward = async (target: Conversation) => {
     const m = forwarding;
@@ -325,6 +338,34 @@ export default function ChatView() {
           <span className="h-5 w-5 rounded-full shadow" style={{ background: "#fff" }} />
         </button>
       </div>
+
+      {keyAlerts.length > 0 && (
+        <button
+          onClick={() => navigate(`/chat/${id}/info`)}
+          className="flex w-full items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-left text-sm text-red-600"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className="shrink-0"
+          >
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span>
+            {keyAlerts.join(", ")}’s safety number changed. Tap to verify before
+            trusting.
+          </span>
+        </button>
+      )}
 
       {searchOpen && (
         <div className="border-b border-gray-100 px-3 py-2">
