@@ -39,9 +39,13 @@ export async function enableLock(username: string): Promise<boolean> {
           { type: "public-key", alg: -257 },
         ],
         authenticatorSelection: {
+          // Device-bound, NON-discoverable credential → the built-in platform
+          // authenticator (Face ID / Touch ID) rather than a passkey manager
+          // like Bitwarden, so it unlocks with the biometric, not a passkey UI.
           authenticatorAttachment: "platform",
           userVerification: "required",
-          residentKey: "preferred",
+          residentKey: "discouraged",
+          requireResidentKey: false,
         },
         timeout: 60000,
       },
