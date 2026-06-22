@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useAuth } from "./store/auth";
 import { useChat } from "./store/chat";
@@ -13,8 +13,10 @@ import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import SecretLinkThread from "./pages/SecretLinkThread";
 import NotesList from "./pages/NotesList";
-import NoteEditor from "./pages/NoteEditor";
 import CommandPalette from "./components/CommandPalette";
+
+// The note editor pulls in TipTap (~450KB); load it only when a note is opened.
+const NoteEditor = lazy(() => import("./pages/NoteEditor"));
 
 export default function App() {
   const status = useAuth((s) => s.status);
@@ -100,7 +102,14 @@ export default function App() {
         <Route path="/admin" element={<Admin />} />
         <Route path="/links/:id" element={<SecretLinkThread />} />
         <Route path="/notes" element={<NotesList />} />
-        <Route path="/notes/:id" element={<NoteEditor />} />
+        <Route
+          path="/notes/:id"
+          element={
+            <Suspense fallback={<div className="p-6 text-gray-400">Loading…</div>}>
+              <NoteEditor />
+            </Suspense>
+          }
+        />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
