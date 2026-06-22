@@ -101,7 +101,7 @@ export default function LockGate({ onUnlock }: { onUnlock: () => void }) {
           disabled={busy}
           className="rounded-xl bg-imsg-blue px-6 py-2.5 font-medium text-white active:opacity-70 disabled:opacity-50"
         >
-          {busy ? "Unlocking…" : "Unlock with Face ID"}
+          {busy ? "Unlocking…" : "Unlock with passkey"}
         </button>
       )}
 

@@ -305,7 +305,7 @@ export default function Settings() {
                 [
                   { v: null, label: "Off" },
                   ...(biometricsAvailable()
-                    ? [{ v: "biometric" as const, label: "Face ID" }]
+                    ? [{ v: "biometric" as const, label: "Passkey" }]
                     : []),
                   { v: "pin" as const, label: "PIN" },
                 ] as { v: LockMethod | null; label: string }[]
@@ -325,8 +325,9 @@ export default function Settings() {
             </div>
           </div>
           <p className="px-1 pt-1 text-xs text-gray-400">
-            Locks Kryptovox on launch and after it’s been in the background. A PIN
-            opens without a passkey manager; Face ID uses your device biometric.
+            Locks Kryptovox on launch and after it’s been in the background. PIN
+            opens with a typed code; Passkey uses your device biometric or
+            passkey app (e.g. your password manager).
           </p>
         </Section>
 
