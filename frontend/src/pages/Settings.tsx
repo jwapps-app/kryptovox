@@ -5,6 +5,12 @@ import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { buildAvatar } from "../crypto/avatar";
 import { invalidateAvatar } from "../lib/avatars";
+import {
+  biometricsAvailable,
+  disableLock,
+  enableLock,
+  isLockEnabled,
+} from "../lib/appLock";
 import type { RecipientKey } from "../crypto/messaging";
 import { getPrefs, setPref } from "../lib/prefs";
 import { applyTheme } from "../lib/theme";
@@ -31,6 +37,22 @@ export default function Settings() {
   const avatarFileRef = useRef<HTMLInputElement>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarVer, setAvatarVer] = useState(0); // bump to re-render my avatar
+  const [lockOn, setLockOn] = useState(isLockEnabled());
+
+  const toggleLock = async () => {
+    if (lockOn) {
+      disableLock();
+      setLockOn(false);
+      return;
+    }
+    const ok = await enableLock(user.username);
+    setLockOn(ok);
+    if (!ok) {
+      alert(
+        "Couldn't enable app lock. Your device may not support Face ID / Touch ID, or the prompt was cancelled."
+      );
+    }
+  };
 
   const [displayName, setDisplayName] = useState(user.display_name ?? "");
   const [saved, setSaved] = useState(false);
@@ -261,6 +283,20 @@ export default function Settings() {
             onClick={() => toggle("typingIndicators")}
           />
         </Section>
+
+        {biometricsAvailable() && (
+          <Section title="App Lock">
+            <Toggle
+              label="Require Face ID to open"
+              on={lockOn}
+              onClick={() => void toggleLock()}
+            />
+            <p className="px-1 pt-1 text-xs text-gray-400">
+              Locks Kryptovox behind your device biometric on launch and after it’s
+              been in the background.
+            </p>
+          </Section>
+        )}
 
         <Section title="Location">
           <div className="flex items-center justify-between py-1">
