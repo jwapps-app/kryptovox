@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +35,9 @@ class User(Base):
     backup_codes: Mapped[list] = mapped_column(
         JSONB, nullable=False, server_default="[]", default=list
     )
+    has_passkey: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
     # Account recovery: the identity private key wrapped under a recovery key, plus
     # a verifier (hash of the recovery key). The server never sees the recovery key
     # itself, so it can authorize a reset but cannot decrypt the blob.
@@ -60,11 +63,32 @@ class User(Base):
 
     @property
     def twofa_enabled(self) -> bool:
-        return self.totp_enabled
+        return self.totp_enabled or self.has_passkey
 
     @property
     def has_recovery(self) -> bool:
         return self.recovery_verifier is not None
+
+
+class WebauthnCredential(Base):
+    """A registered passkey used as a 2FA method. Stores the public key + sign
+    count; the private key never leaves the authenticator."""
+
+    __tablename__ = "webauthn_credentials"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    credential_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    public_key: Mapped[str] = mapped_column(Text, nullable=False)
+    sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class AvatarKey(Base):

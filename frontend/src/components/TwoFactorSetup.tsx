@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/api";
+import { registerPasskey } from "../lib/passkey";
 
 // TOTP enrollment flow: setup → show secret → verify a code → show backup codes.
 // Calls onEnabled once 2FA is active. Reused in Settings and the forced gate.
@@ -16,6 +17,20 @@ export default function TwoFactorSetup({
   const [codes, setCodes] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const addPasskey = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const c = await registerPasskey("Passkey");
+      if (c.length) setCodes(c);
+      else onEnabled();
+    } catch {
+      setErr("Couldn't add a passkey. Your device or browser may not support it.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const start = async () => {
     setBusy(true);
@@ -109,20 +124,38 @@ export default function TwoFactorSetup({
     );
   }
 
-  // Step 1: intro.
+  // Step 1: choose a method.
   return (
     <div className="space-y-3">
       <p className="text-sm text-gray-500">
-        Protect your account with a second factor — a rotating code from an
-        authenticator app or your password manager.
+        Add a second factor to protect your account. Choose a method:
       </p>
       {err && <p className="text-sm text-red-500">{err}</p>}
       <button
+        onClick={() => void addPasskey()}
+        disabled={busy}
+        className="flex w-full items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-left active:bg-gray-50 disabled:opacity-50"
+      >
+        <span>
+          <span className="block font-medium">Passkey</span>
+          <span className="block text-xs text-gray-400">
+            Face ID / Touch ID or your password manager
+          </span>
+        </span>
+        <span className="text-gray-300">›</span>
+      </button>
+      <button
         onClick={() => void start()}
         disabled={busy}
-        className="w-full rounded-xl bg-imsg-blue py-2.5 font-medium text-white active:opacity-70 disabled:opacity-50"
+        className="flex w-full items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-left active:bg-gray-50 disabled:opacity-50"
       >
-        {busy ? "…" : "Set up two-factor"}
+        <span>
+          <span className="block font-medium">Authenticator app</span>
+          <span className="block text-xs text-gray-400">
+            A rotating code (works with your password manager)
+          </span>
+        </span>
+        <span className="text-gray-300">›</span>
       </button>
       {onCancel && (
         <button onClick={onCancel} className="w-full text-center text-sm text-gray-400">
