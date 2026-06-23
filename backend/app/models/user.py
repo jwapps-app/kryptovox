@@ -1,7 +1,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +41,8 @@ class User(Base):
     totp_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false", default=False
     )
+    # Timestep of the last accepted TOTP code; a replay must exceed it.
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     backup_codes: Mapped[list] = mapped_column(
         JSONB, nullable=False, server_default="[]", default=list
     )

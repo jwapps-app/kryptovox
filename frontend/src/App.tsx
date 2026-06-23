@@ -22,6 +22,11 @@ import { api } from "./lib/api";
 // The note editor pulls in TipTap (~450KB); load it only when a note is opened.
 const NoteEditor = lazy(() => import("./pages/NoteEditor"));
 
+// Deep-link targets must be in-app paths; reject absolute / protocol-relative
+// URLs so a hostile push payload can't redirect the app off-site.
+const internalPath = (u: unknown): u is string =>
+  typeof u === "string" && u.startsWith("/") && !u.startsWith("//");
+
 export default function App() {
   const status = useAuth((s) => s.status);
   const user = useAuth((s) => s.user);
@@ -70,7 +75,7 @@ export default function App() {
   // Deep-link from a tapped push notification (fast path while the app is open).
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      if (e.data?.type === "kv-navigate" && typeof e.data.url === "string") {
+      if (e.data?.type === "kv-navigate" && internalPath(e.data.url)) {
         navigate(e.data.url);
       }
     };
@@ -88,12 +93,12 @@ export default function App() {
       if (useAuth.getState().status !== "authed") return;
       void useChat.getState().loadGuestUnread(); // refresh secret-link badge on resume
       const pend = await takePendingNav();
-      if (pend) {
+      if (internalPath(pend)) {
         navigate(pend);
         return;
       }
       const recent = await takeRecentPush();
-      if (recent) navigate(recent);
+      if (internalPath(recent)) navigate(recent);
     };
     void check();
     document.addEventListener("visibilitychange", check);
