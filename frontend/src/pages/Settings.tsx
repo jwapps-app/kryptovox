@@ -29,6 +29,7 @@ import { clockTime } from "../lib/format";
 import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
 import TwoFactorSetup from "../components/TwoFactorSetup";
+import RecoveryKeySetup from "../components/RecoveryKeySetup";
 import type { Device, User } from "../lib/types";
 
 export default function Settings() {
@@ -44,6 +45,13 @@ export default function Settings() {
   const [setup2fa, setSetup2fa] = useState(false);
   const [regenCodes, setRegenCodes] = useState<string[] | null>(null);
   const [adminRequire2fa, setAdminRequire2fa] = useState(false);
+  const [recoverySetup, setRecoverySetup] = useState(false);
+
+  const removeRecovery = async () => {
+    if (!confirm("Remove your recovery key? You won't be able to recover a lost password.")) return;
+    await api("/recovery/setup", { method: "DELETE" }).catch(() => {});
+    useAuth.setState({ user: { ...user, has_recovery: false } });
+  };
 
   const disable2fa = async () => {
     if (!confirm("Turn off two-factor authentication?")) return;
@@ -413,6 +421,45 @@ export default function Settings() {
               Set up two-factor
             </button>
           )}
+        </Section>
+
+        <Section title="Account Recovery">
+          {recoverySetup ? (
+            <RecoveryKeySetup
+              onDone={() => setRecoverySetup(false)}
+              onCancel={() => setRecoverySetup(false)}
+            />
+          ) : user.has_recovery ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between py-1">
+                <span className="text-[15px]">Recovery key</span>
+                <span className="text-sm font-medium text-green-600">On ✓</span>
+              </div>
+              <button
+                className="text-sm text-imsg-blue"
+                onClick={() => setRecoverySetup(true)}
+              >
+                Replace recovery key
+              </button>
+              <button
+                className="block text-sm text-red-500"
+                onClick={() => void removeRecovery()}
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <button
+              className="w-full rounded-xl border border-gray-200 py-2 text-imsg-blue"
+              onClick={() => setRecoverySetup(true)}
+            >
+              Set up recovery key
+            </button>
+          )}
+          <p className="px-1 pt-1 text-xs text-gray-400">
+            Lets you reset your password and keep your message history if you’re ever
+            locked out. Without it, a forgotten password can’t be recovered.
+          </p>
         </Section>
 
         <Section title="Location">

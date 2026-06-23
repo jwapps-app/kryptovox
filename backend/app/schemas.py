@@ -42,6 +42,32 @@ class IdentitySet(BaseModel):
     encrypted_private_key: EncryptedKeyBlob
 
 
+# ---------- Account recovery (recovery key) ----------
+class RecoverySetupIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    recovery_key_blob: EncryptedKeyBlob  # private key wrapped under the recovery key
+    recovery_verifier: str = Field(min_length=16, max_length=128)
+
+
+class RecoverBeginIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    username: str
+    recovery_verifier: str = Field(min_length=16, max_length=128)
+
+
+class RecoverBeginOut(BaseModel):
+    recovery_key_blob: EncryptedKeyBlob
+    identity_public_key: str
+
+
+class RecoverFinishIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    username: str
+    recovery_verifier: str = Field(min_length=16, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+    encrypted_private_key: EncryptedKeyBlob  # re-wrapped under the new password
+
+
 class TokenResponse(BaseModel):
     access_token: str
     # Long-lived refresh token; the client persists this (survives PWA
@@ -104,6 +130,7 @@ class UserOut(BaseModel):
     identity_public_key: str | None = None
     has_avatar: bool = False  # true when an encrypted profile photo is set
     twofa_enabled: bool = False
+    has_recovery: bool = False  # account recovery key is set up
 
 
 class SetupStatus(BaseModel):

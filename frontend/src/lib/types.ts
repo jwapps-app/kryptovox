@@ -7,6 +7,7 @@ export interface User {
   identity_public_key?: string | null;
   has_avatar?: boolean;
   twofa_enabled?: boolean;
+  has_recovery?: boolean;
 }
 
 export interface AdminUser {

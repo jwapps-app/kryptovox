@@ -35,6 +35,11 @@ class User(Base):
     backup_codes: Mapped[list] = mapped_column(
         JSONB, nullable=False, server_default="[]", default=list
     )
+    # Account recovery: the identity private key wrapped under a recovery key, plus
+    # a verifier (hash of the recovery key). The server never sees the recovery key
+    # itself, so it can authorize a reset but cannot decrypt the blob.
+    recovery_key_blob: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    recovery_verifier: Mapped[str | None] = mapped_column(String, nullable=True)
     # E2EE profile photo: the image is AES-GCM encrypted with a per-user avatar
     # key K. The server stores only ciphertext. K is wrapped to the owner
     # (avatar_self_key, self-ECDH) and to each contact (avatar_keys table).
@@ -56,6 +61,10 @@ class User(Base):
     @property
     def twofa_enabled(self) -> bool:
         return self.totp_enabled
+
+    @property
+    def has_recovery(self) -> bool:
+        return self.recovery_verifier is not None
 
 
 class AvatarKey(Base):
