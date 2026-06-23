@@ -12,9 +12,11 @@ import {
 export default function TwoFactorSetup({
   onEnabled,
   onCancel,
+  forceTotp,
 }: {
   onEnabled: () => void;
   onCancel?: () => void;
+  forceTotp?: boolean; // skip the choice, go straight to authenticator setup
 }) {
   const [secret, setSecret] = useState<string | null>(null);
   const [uri, setUri] = useState("");
@@ -24,10 +26,15 @@ export default function TwoFactorSetup({
   const [busy, setBusy] = useState(false);
   const [regOpts, setRegOpts] = useState<PasskeyOptions | null>(null);
 
-  // Preload so the WebAuthn call fires immediately on tap (iOS Safari).
   useEffect(() => {
-    preloadPasskeyRegisterOptions().then(setRegOpts).catch(() => {});
-  }, []);
+    if (forceTotp) {
+      void start();
+    } else {
+      // Preload so the WebAuthn call fires immediately on tap (iOS Safari).
+      preloadPasskeyRegisterOptions().then(setRegOpts).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forceTotp]);
 
   const addPasskey = async () => {
     if (!regOpts) return;
@@ -78,7 +85,9 @@ export default function TwoFactorSetup({
         method: "POST",
         body: JSON.stringify({ code: code.trim() }),
       });
-      setCodes(r.codes);
+      if (r.codes.length) setCodes(r.codes);
+      else onEnabled(); // adding a second method — no new backup codes to show
+      return;
     } catch {
       setErr("That code didn't match. Wait for the next one and try again.");
     } finally {
@@ -141,6 +150,24 @@ export default function TwoFactorSetup({
         >
           {busy ? "…" : "Verify & enable"}
         </button>
+      </div>
+    );
+  }
+
+  // forceTotp: start() is fetching the secret; don't flash the choice screen.
+  if (forceTotp) {
+    return (
+      <div className="space-y-2">
+        {err ? (
+          <p className="text-sm text-red-500">{err}</p>
+        ) : (
+          <p className="text-sm text-gray-400">Setting up…</p>
+        )}
+        {onCancel && (
+          <button onClick={onCancel} className="text-sm text-gray-400">
+            Cancel
+          </button>
+        )}
       </div>
     );
   }

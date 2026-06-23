@@ -93,7 +93,10 @@ async def totp_verify(
     if not pyotp.TOTP(current.totp_secret).verify(body.code.strip(), valid_window=1):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That code didn't match")
     current.totp_enabled = True
-    return BackupCodesOut(codes=_new_backup_codes(current))
+    # Only issue codes if this is the first 2FA method; don't clobber existing ones.
+    if not current.backup_codes:
+        return BackupCodesOut(codes=_new_backup_codes(current))
+    return BackupCodesOut(codes=[])
 
 
 @router.post("/backup/regenerate", response_model=BackupCodesOut)
