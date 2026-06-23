@@ -50,6 +50,23 @@ async def get_current_user(
     return identity.user
 
 
+async def require_enrolled(
+    identity: CurrentIdentity = Depends(get_current_identity),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """When the admin has turned on "require 2FA", block content access for any
+    account that hasn't set up a second factor yet — enforced server-side, not
+    just in the UI. The /2fa enrollment endpoints deliberately omit this
+    dependency, so a fresh session can still enrol (and /auth, /users/me work)."""
+    from app.services.app_settings import get_require_2fa
+
+    if not identity.user.twofa_enabled and await get_require_2fa(db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Two-factor enrollment required",
+        )
+
+
 async def get_current_admin(
     user: User = Depends(get_current_user),
 ) -> User:

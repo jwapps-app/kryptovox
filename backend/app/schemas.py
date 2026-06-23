@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ---------- Auth ----------
@@ -166,6 +166,18 @@ class UserOut(BaseModel):
     has_avatar: bool = False  # true when an encrypted profile photo is set
     twofa_enabled: bool = False
     has_recovery: bool = False  # account recovery key is set up
+
+
+class PublicUserOut(BaseModel):
+    """What other users may see — no is_admin / twofa_enabled / has_recovery,
+    which would leak another account's security posture (recon)."""
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    username: str
+    display_name: str | None = None
+    avatar_url: str | None = None
+    identity_public_key: str | None = None
+    has_avatar: bool = False
 
 
 class SetupStatus(BaseModel):
@@ -357,12 +369,28 @@ class NoteOut(BaseModel):
 
 
 # ---------- Messages ----------
+# Bounds for inline (DB-stored) message fields — the encrypted bytes are base64,
+# so these are generous but keep a single row from exhausting storage/memory.
+_MSG_CT_MAX = 262_144  # 256 KB of ciphertext (text/location); media/files go to blobs
+_THUMB_MAX = 262_144  # inline encrypted thumbnail
+_IV_MAX = 64
+
+
+def _validate_keys(v: dict[str, str]) -> dict[str, str]:
+    if len(v) > 512:
+        raise ValueError("too many recipient keys")
+    for val in v.values():
+        if len(val) > 1024:
+            raise ValueError("wrapped key too long")
+    return v
+
+
 class MediaRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(max_length=64)
-    iv: str
-    thumb: str  # base64url encrypted thumbnail
-    thumb_iv: str
+    iv: str = Field(max_length=_IV_MAX)
+    thumb: str = Field(max_length=_THUMB_MAX)  # base64url encrypted thumbnail
+    thumb_iv: str = Field(max_length=_IV_MAX)
     w: int = Field(ge=1, le=20000)
     h: int = Field(ge=1, le=20000)
     mime: str = Field(max_length=64)
@@ -372,15 +400,15 @@ class MediaRef(BaseModel):
 class FileRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(max_length=64)
-    iv: str  # iv for the encrypted blob (filename is the message ciphertext)
+    iv: str = Field(max_length=_IV_MAX)  # iv for the encrypted blob (filename is ciphertext)
     mime: str = Field(default="application/octet-stream", max_length=128)
     size: int = Field(ge=0)
 
 
 class MessageCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ciphertext: str = ""
-    iv: str = ""
+    ciphertext: str = Field(default="", max_length=_MSG_CT_MAX)
+    iv: str = Field(default="", max_length=_IV_MAX)
     encrypted_keys: dict[str, str]  # device_id -> base64url wrapped key
     type: str = Field(
         default="text", pattern="^(text|image|reaction|system|location|file)$"
@@ -389,12 +417,16 @@ class MessageCreate(BaseModel):
     media: MediaRef | None = None
     file: FileRef | None = None
 
+    _ck = field_validator("encrypted_keys")(_validate_keys)
+
 
 class MessageEdit(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ciphertext: str
-    iv: str
+    ciphertext: str = Field(max_length=_MSG_CT_MAX)
+    iv: str = Field(max_length=_IV_MAX)
     encrypted_keys: dict[str, str]
+
+    _ck = field_validator("encrypted_keys")(_validate_keys)
 
 
 class ReactionOut(BaseModel):

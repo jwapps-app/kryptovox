@@ -2,13 +2,14 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import settings
+from app.deps import require_enrolled
 from app.ratelimit import limiter
 from app.redis_client import redis
 from app.routers import (
@@ -74,19 +75,24 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+# Content routers are gated by require_enrolled: when the admin requires 2FA,
+# an un-enrolled session is blocked here until it sets up a second factor (the
+# /2fa, /auth, /users, /recovery, /config routers stay open so enrolment works).
+_enrolled = [Depends(require_enrolled)]
+
 api.include_router(auth.router)
 api.include_router(twofa.router)
 api.include_router(recovery.router)
 api.include_router(admin.router)
 api.include_router(users.router)
 api.include_router(devices.router)
-api.include_router(conversations.router)
-api.include_router(messages.router)
-api.include_router(notes.router)
-api.include_router(push.router)
-api.include_router(media.router)
+api.include_router(conversations.router, dependencies=_enrolled)
+api.include_router(messages.router, dependencies=_enrolled)
+api.include_router(notes.router, dependencies=_enrolled)
+api.include_router(push.router, dependencies=_enrolled)
+api.include_router(media.router, dependencies=_enrolled)
 api.include_router(config.router)
-api.include_router(links.router)
+api.include_router(links.router, dependencies=_enrolled)
 api.include_router(guest.router)
 api.include_router(ws_router)  # WS /api/ws
 
