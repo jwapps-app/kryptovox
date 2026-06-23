@@ -38,6 +38,7 @@ export interface TokenResponse {
 export interface LoginResponse {
   twofa_required: boolean;
   pending_token: string | null;
+  methods?: string[];
   tokens: TokenResponse | null;
 }
 

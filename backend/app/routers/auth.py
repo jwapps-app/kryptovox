@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -6,21 +7,39 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from jwt import InvalidTokenError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from webauthn import (
+    generate_authentication_options,
+    options_to_json,
+    verify_authentication_response,
+)
+from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
+from webauthn.helpers.structs import (
+    PublicKeyCredentialDescriptor,
+    UserVerificationRequirement,
+)
 
 from app.config import settings
 from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity
-from app.models import AuthToken, Device, User
+from app.models import AuthToken, Device, User, WebauthnCredential
 from app.ratelimit import limiter
 from app.schemas import (
     LoginRequest,
     LoginResponse,
+    PasskeyLoginOptionsIn,
+    PasskeyLoginVerify,
+    PasskeyOptionsOut,
     RefreshRequest,
     RegisterRequest,
     SetupStatus,
     TokenResponse,
     TwoFAComplete,
     UserOut,
+)
+from app.services.webauthn_svc import (
+    create_challenge_token,
+    decode_challenge_token,
+    rp_and_origin,
 )
 from app.security import (
     create_access_token,
@@ -153,9 +172,16 @@ async def login(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
     # 2FA enrolled → don't issue a session yet; require the second factor.
-    if user.totp_enabled:
+    if user.twofa_enabled:
+        methods = []
+        if user.totp_enabled:
+            methods.append("totp")
+        if user.has_passkey:
+            methods.append("passkey")
         return LoginResponse(
-            twofa_required=True, pending_token=create_pending_2fa_token(user.id)
+            twofa_required=True,
+            pending_token=create_pending_2fa_token(user.id),
+            methods=methods,
         )
 
     tokens = await _login_device(db, response, user, body.device_name)
@@ -175,7 +201,7 @@ async def complete_2fa(
     except InvalidTokenError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
     user = await db.get(User, user_id)
-    if user is None or not user.totp_enabled:
+    if user is None or not user.twofa_enabled:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
 
     code = body.code.replace(" ", "").replace("-", "")
@@ -196,6 +222,78 @@ async def complete_2fa(
     if not ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid code")
 
+    tokens = await _login_device(db, response, user, body.device_name)
+    return LoginResponse(tokens=tokens)
+
+
+@router.post("/2fa/passkey/options", response_model=PasskeyOptionsOut)
+@limiter.limit("20/minute")
+async def passkey_login_options(
+    request: Request,
+    body: PasskeyLoginOptionsIn,
+    db: AsyncSession = Depends(get_db),
+) -> PasskeyOptionsOut:
+    try:
+        user_id = decode_pending_2fa_token(body.pending_token)
+    except InvalidTokenError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
+    rows = await db.execute(
+        select(WebauthnCredential).where(WebauthnCredential.user_id == user_id)
+    )
+    creds = list(rows.scalars().all())
+    if not creds:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No passkeys")
+    rp_id, _ = rp_and_origin(request)
+    options = generate_authentication_options(
+        rp_id=rp_id,
+        allow_credentials=[
+            PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id))
+            for c in creds
+        ],
+        user_verification=UserVerificationRequirement.PREFERRED,
+    )
+    token = create_challenge_token(user_id, bytes_to_base64url(options.challenge))
+    return PasskeyOptionsOut(options=json.loads(options_to_json(options)), challenge_token=token)
+
+
+@router.post("/2fa/passkey/verify", response_model=LoginResponse)
+@limiter.limit("20/minute")
+async def passkey_login_verify(
+    request: Request,
+    body: PasskeyLoginVerify,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    try:
+        uid_a = decode_pending_2fa_token(body.pending_token)
+        uid_b, challenge_b64 = decode_challenge_token(body.challenge_token)
+    except InvalidTokenError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
+    if uid_a != uid_b:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
+    cred_id = body.credential.get("id") or body.credential.get("rawId")
+    cred = await db.scalar(
+        select(WebauthnCredential).where(
+            WebauthnCredential.user_id == uid_a,
+            WebauthnCredential.credential_id == cred_id,
+        )
+    )
+    if cred is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unknown passkey")
+    rp_id, origin = rp_and_origin(request)
+    try:
+        v = verify_authentication_response(
+            credential=json.dumps(body.credential),
+            expected_challenge=base64url_to_bytes(challenge_b64),
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+            credential_public_key=base64url_to_bytes(cred.public_key),
+            credential_current_sign_count=cred.sign_count,
+        )
+    except Exception:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Passkey check failed")
+    cred.sign_count = v.new_sign_count
+    user = await db.get(User, uid_a)
     tokens = await _login_device(db, response, user, body.device_name)
     return LoginResponse(tokens=tokens)
 

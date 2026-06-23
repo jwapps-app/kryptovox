@@ -30,6 +30,7 @@ import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
 import TwoFactorSetup from "../components/TwoFactorSetup";
 import RecoveryKeySetup from "../components/RecoveryKeySetup";
+import { registerPasskey } from "../lib/passkey";
 import type { Device, User } from "../lib/types";
 
 export default function Settings() {
@@ -54,10 +55,19 @@ export default function Settings() {
   };
 
   const disable2fa = async () => {
-    if (!confirm("Turn off two-factor authentication?")) return;
-    await api("/2fa/totp", { method: "DELETE" }).catch(() => {});
+    if (!confirm("Turn off two-factor authentication (including passkeys)?")) return;
+    await api("/2fa", { method: "DELETE" }).catch(() => {});
     useAuth.setState({ user: { ...user, twofa_enabled: false } });
     setRegenCodes(null);
+  };
+
+  const addPasskey = async () => {
+    try {
+      await registerPasskey("Passkey");
+      alert("Passkey added.");
+    } catch {
+      alert("Couldn't add a passkey. Your device or browser may not support it.");
+    }
   };
 
   const regenBackup = async () => {
@@ -395,7 +405,10 @@ export default function Settings() {
                   ))}
                 </div>
               )}
-              <button className="text-sm text-imsg-blue" onClick={() => void regenBackup()}>
+              <button className="block text-sm text-imsg-blue" onClick={() => void addPasskey()}>
+                Add a passkey
+              </button>
+              <button className="block text-sm text-imsg-blue" onClick={() => void regenBackup()}>
                 Show new backup codes
               </button>
               <button
