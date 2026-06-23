@@ -26,6 +26,15 @@ class User(Base):
     # password (PBKDF2). The server never sees the plaintext private key.
     identity_public_key: Mapped[str | None] = mapped_column(String, nullable=True)
     encrypted_private_key: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Two-factor auth (TOTP). totp_secret is base32; active only once verified
+    # (totp_enabled). backup_codes is a list of {hash, used} one-time codes.
+    totp_secret: Mapped[str | None] = mapped_column(String, nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    backup_codes: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default="[]", default=list
+    )
     # E2EE profile photo: the image is AES-GCM encrypted with a per-user avatar
     # key K. The server stores only ciphertext. K is wrapped to the owner
     # (avatar_self_key, self-ECDH) and to each contact (avatar_keys table).
@@ -43,6 +52,10 @@ class User(Base):
     @property
     def has_avatar(self) -> bool:
         return self.avatar_ciphertext is not None
+
+    @property
+    def twofa_enabled(self) -> bool:
+        return self.totp_enabled
 
 
 class AvatarKey(Base):

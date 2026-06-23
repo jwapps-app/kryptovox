@@ -18,3 +18,4 @@ python-multipart==0.0.31
 email-validator==2.2.0
 pywebpush==2.0.0
 slowapi==0.1.9
+pyotp==2.9.0
