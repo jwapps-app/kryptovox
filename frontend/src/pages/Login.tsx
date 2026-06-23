@@ -204,8 +204,9 @@ export default function Login() {
     let credential: unknown;
     try {
       credential = await assertPasskey(passkeyOpts.options); // must be first await
-    } catch {
-      setTwofaErr("Passkey was cancelled or isn't available on this device.");
+    } catch (e) {
+      const name = (e as Error)?.name || "Error";
+      setTwofaErr(`Passkey failed — ${name}. Cancelled, or none available here.`);
       return;
     }
     setBusy(true);
