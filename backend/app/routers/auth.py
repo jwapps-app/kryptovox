@@ -243,7 +243,7 @@ async def passkey_login_options(
     creds = list(rows.scalars().all())
     if not creds:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No passkeys")
-    rp_id, _ = rp_and_origin(request)
+    rp_id, _ = rp_and_origin()
     options = generate_authentication_options(
         rp_id=rp_id,
         allow_credentials=[
@@ -280,7 +280,7 @@ async def passkey_login_verify(
     )
     if cred is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unknown passkey")
-    rp_id, origin = rp_and_origin(request)
+    rp_id, origin = rp_and_origin()
     try:
         v = verify_authentication_response(
             credential=json.dumps(body.credential),
@@ -289,6 +289,7 @@ async def passkey_login_verify(
             expected_origin=origin,
             credential_public_key=base64url_to_bytes(cred.public_key),
             credential_current_sign_count=cred.sign_count,
+            require_user_verification=False,
         )
     except Exception:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Passkey check failed")

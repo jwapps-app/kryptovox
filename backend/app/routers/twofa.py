@@ -136,7 +136,7 @@ async def passkey_register_options(
     current: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PasskeyOptionsOut:
-    rp_id, _ = rp_and_origin(request)
+    rp_id, _ = rp_and_origin()
     # No exclude_credentials: synced passkey managers (Bitwarden, iCloud) treat an
     # already-synced credential as "excluded" and refuse to register, even on a new
     # device. Allowing a second passkey is harmless — both are valid 2FA factors.
@@ -161,7 +161,7 @@ async def passkey_register_verify(
     current: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> BackupCodesOut:
-    rp_id, origin = rp_and_origin(request)
+    rp_id, origin = rp_and_origin()
     user_id, challenge_b64 = decode_challenge_token(body.challenge_token)
     if user_id != current.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Bad challenge")
@@ -171,6 +171,7 @@ async def passkey_register_verify(
             expected_challenge=base64url_to_bytes(challenge_b64),
             expected_rp_id=rp_id,
             expected_origin=origin,
+            require_user_verification=False,
         )
     except Exception:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Passkey registration failed")

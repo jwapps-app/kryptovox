@@ -1,29 +1,17 @@
-"""WebAuthn (passkey) helpers: relying-party info derived from the request, and
-short-lived challenge tokens so the ceremony stays stateless."""
+"""WebAuthn (passkey) helpers: the relying-party id/origin come from explicit
+config (set to your real domain) — deriving them from request headers is fragile
+behind a reverse proxy / tunnel. Challenge tokens keep the ceremony stateless."""
 import uuid
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlparse
 
 import jwt
-from fastapi import Request
 from jwt import InvalidTokenError
 
 from app.config import settings
 
 
-def rp_and_origin(request: Request) -> tuple[str, str]:
-    """rp_id + origin from the browser-set Origin header (validated against the
-    configured CORS origins when present). The Origin header can't be forged by
-    page JS, so it's a safe basis behind the Cloudflare tunnel."""
-    origin = request.headers.get("origin") or ""
-    allowed = settings.cors_origins
-    if origin and allowed and origin not in allowed:
-        # Fall back to the configured origin rather than trust an unexpected one.
-        origin = allowed[0]
-    if not origin:
-        origin = allowed[0] if allowed else "https://localhost"
-    rp_id = urlparse(origin).hostname or "localhost"
-    return rp_id, origin
+def rp_and_origin() -> tuple[str, str]:
+    return settings.webauthn_rp_id, settings.webauthn_origin
 
 
 def create_challenge_token(user_id: uuid.UUID, challenge_b64: str) -> str:
