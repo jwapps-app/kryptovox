@@ -13,6 +13,7 @@ from app.schemas import (
     AvatarUpload,
     IdentityOut,
     IdentitySet,
+    PublicUserOut,
     UserOut,
     UserUpdate,
 )
@@ -20,7 +21,7 @@ from app.schemas import (
 router = APIRouter(tags=["users"])
 
 
-@router.get("/users/search", response_model=list[UserOut])
+@router.get("/users/search", response_model=list[PublicUserOut])
 async def search_users(
     q: str = Query(min_length=1, max_length=32),
     current: User = Depends(get_current_user),
@@ -166,7 +167,7 @@ async def get_avatar(
     )
 
 
-@router.get("/users/{user_id}", response_model=UserOut)
+@router.get("/users/{user_id}", response_model=PublicUserOut)
 async def get_user(
     user_id: uuid.UUID,
     current: User = Depends(get_current_user),
