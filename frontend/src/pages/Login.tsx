@@ -22,8 +22,11 @@ export default function Login() {
   const [displayName, setDisplayName] = useState("");
   const [deviceName, setDeviceName] = useState(defaultDeviceName());
   const [busy, setBusy] = useState(false);
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [code, setCode] = useState("");
 
   const login = useAuth((s) => s.login);
+  const complete2fa = useAuth((s) => s.complete2fa);
   const register = useAuth((s) => s.register);
   const error = useAuth((s) => s.error);
 
@@ -40,7 +43,8 @@ export default function Login() {
       if (needsSetup) {
         await register(username.trim(), password, displayName.trim(), deviceName.trim());
       } else {
-        await login(username.trim(), password, deviceName.trim());
+        const res = await login(username.trim(), password, deviceName.trim());
+        if (res.twofaRequired && res.pendingToken) setPendingToken(res.pendingToken);
       }
     } catch {
       /* error shown from store */
@@ -48,6 +52,60 @@ export default function Login() {
       setBusy(false);
     }
   };
+
+  const submit2fa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingToken) return;
+    setBusy(true);
+    try {
+      await complete2fa(pendingToken, code.trim(), password, deviceName.trim());
+    } catch {
+      /* error shown from store */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (pendingToken) {
+    return (
+      <div className="flex h-full items-center justify-center bg-gray-50 px-6">
+        <form onSubmit={submit2fa} className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm">
+          <h1 className="mb-1 text-center text-2xl font-semibold">Two-factor</h1>
+          <p className="mb-6 text-center text-sm text-gray-500">
+            Enter the code from your authenticator app, or a backup code.
+          </p>
+          <input
+            autoFocus
+            className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-center text-[17px] tracking-widest outline-none focus:border-imsg-blue"
+            placeholder="123456"
+            autoCapitalize="none"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            required
+          />
+          {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+          <button
+            type="submit"
+            disabled={busy || !code.trim()}
+            className="w-full rounded-xl bg-imsg-blue py-3 text-[17px] font-medium text-white disabled:opacity-50"
+          >
+            {busy ? "…" : "Verify"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPendingToken(null);
+              setCode("");
+            }}
+            className="mt-3 w-full text-center text-sm text-gray-400"
+          >
+            Back
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full items-center justify-center bg-gray-50 px-6">

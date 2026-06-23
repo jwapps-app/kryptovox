@@ -28,6 +28,7 @@ import {
 import { clockTime } from "../lib/format";
 import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
+import TwoFactorSetup from "../components/TwoFactorSetup";
 import type { Device, User } from "../lib/types";
 
 export default function Settings() {
@@ -40,6 +41,34 @@ export default function Settings() {
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarVer, setAvatarVer] = useState(0); // bump to re-render my avatar
   const [lock, setLock] = useState<LockMethod | null>(lockMethod());
+  const [setup2fa, setSetup2fa] = useState(false);
+  const [regenCodes, setRegenCodes] = useState<string[] | null>(null);
+  const [adminRequire2fa, setAdminRequire2fa] = useState(false);
+
+  const disable2fa = async () => {
+    if (!confirm("Turn off two-factor authentication?")) return;
+    await api("/2fa/totp", { method: "DELETE" }).catch(() => {});
+    useAuth.setState({ user: { ...user, twofa_enabled: false } });
+    setRegenCodes(null);
+  };
+
+  const regenBackup = async () => {
+    try {
+      const r = await api<{ codes: string[] }>("/2fa/backup/regenerate", { method: "POST" });
+      setRegenCodes(r.codes);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const toggleRequire2fa = async () => {
+    const next = !adminRequire2fa;
+    setAdminRequire2fa(next);
+    await api("/config", {
+      method: "PUT",
+      body: JSON.stringify({ require_2fa: next }),
+    }).catch(() => setAdminRequire2fa(!next));
+  };
 
   const chooseLock = async (method: LockMethod | null) => {
     if (method === null) {
@@ -78,7 +107,12 @@ export default function Settings() {
   useEffect(() => {
     api<Device[]>("/devices").then(setDevices).catch(() => {});
     getPushState().then(setPush).catch(() => {});
-  }, []);
+    if (user.is_admin) {
+      api<{ require_2fa: boolean }>("/config")
+        .then((c) => setAdminRequire2fa(c.require_2fa))
+        .catch(() => {});
+    }
+  }, [user.is_admin]);
 
   const togglePush = async () => {
     if (pushBusy) return;
@@ -281,6 +315,14 @@ export default function Settings() {
               <span>Manage users</span>
               <span className="text-gray-300">›</span>
             </button>
+            <Toggle
+              label="Require two-factor for everyone"
+              on={adminRequire2fa}
+              onClick={() => void toggleRequire2fa()}
+            />
+            <p className="px-1 pt-1 text-xs text-gray-400">
+              When on, every user must set up two-factor after their next sign-in.
+            </p>
           </Section>
         )}
 
@@ -329,6 +371,48 @@ export default function Settings() {
             opens with a typed code; Passkey uses your device biometric or
             passkey app (e.g. your password manager).
           </p>
+        </Section>
+
+        <Section title="Two-Factor Authentication">
+          {user.twofa_enabled ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between py-1">
+                <span className="text-[15px]">Authenticator</span>
+                <span className="text-sm font-medium text-green-600">On ✓</span>
+              </div>
+              {regenCodes && (
+                <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-3 font-mono text-sm">
+                  {regenCodes.map((c) => (
+                    <span key={c}>{c}</span>
+                  ))}
+                </div>
+              )}
+              <button className="text-sm text-imsg-blue" onClick={() => void regenBackup()}>
+                Show new backup codes
+              </button>
+              <button
+                className="block text-sm text-red-500"
+                onClick={() => void disable2fa()}
+              >
+                Turn off two-factor
+              </button>
+            </div>
+          ) : setup2fa ? (
+            <TwoFactorSetup
+              onEnabled={() => {
+                useAuth.setState({ user: { ...user, twofa_enabled: true } });
+                setSetup2fa(false);
+              }}
+              onCancel={() => setSetup2fa(false)}
+            />
+          ) : (
+            <button
+              className="w-full rounded-xl border border-gray-200 py-2 text-imsg-blue"
+              onClick={() => setSetup2fa(true)}
+            >
+              Set up two-factor
+            </button>
+          )}
         </Section>
 
         <Section title="Location">

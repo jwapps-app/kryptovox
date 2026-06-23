@@ -6,6 +6,7 @@ export interface User {
   is_admin?: boolean;
   identity_public_key?: string | null;
   has_avatar?: boolean;
+  twofa_enabled?: boolean;
 }
 
 export interface AdminUser {
@@ -31,6 +32,12 @@ export interface TokenResponse {
   expires_in: number;
   user: User;
   device_id: string;
+}
+
+export interface LoginResponse {
+  twofa_required: boolean;
+  pending_token: string | null;
+  tokens: TokenResponse | null;
 }
 
 export interface Reaction {

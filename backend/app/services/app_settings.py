@@ -9,6 +9,21 @@ from app.config import settings
 from app.models import AppSetting
 
 _DEFAULT_RETENTION_KEY = "default_retention_days"
+_REQUIRE_2FA_KEY = "require_2fa"
+
+
+async def get_require_2fa(db: AsyncSession) -> bool:
+    row = await db.get(AppSetting, _REQUIRE_2FA_KEY)
+    return row is not None and row.value == "1"
+
+
+async def set_require_2fa(db: AsyncSession, value: bool) -> None:
+    row = await db.get(AppSetting, _REQUIRE_2FA_KEY)
+    if row is None:
+        db.add(AppSetting(key=_REQUIRE_2FA_KEY, value="1" if value else "0"))
+    else:
+        row.value = "1" if value else "0"
+    await db.commit()
 
 
 async def get_default_retention_days(db: AsyncSession) -> int:

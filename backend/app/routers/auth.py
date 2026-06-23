@@ -1,7 +1,9 @@
 import uuid
 from datetime import UTC, datetime
 
+import pyotp
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from jwt import InvalidTokenError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,15 +14,20 @@ from app.models import AuthToken, Device, User
 from app.ratelimit import limiter
 from app.schemas import (
     LoginRequest,
+    LoginResponse,
     RefreshRequest,
     RegisterRequest,
     SetupStatus,
     TokenResponse,
+    TwoFAComplete,
     UserOut,
 )
 from app.security import (
     create_access_token,
+    create_pending_2fa_token,
+    decode_pending_2fa_token,
     generate_refresh_token,
+    hash_backup_code,
     hash_password,
     hash_refresh_token,
     refresh_token_expiry,
@@ -120,29 +127,77 @@ async def register(
     return await _issue_tokens(db, response, user, device)
 
 
-@router.post("/login", response_model=TokenResponse)
+async def _login_device(db: AsyncSession, response: Response, user: User, name: str | None):
+    # Each login establishes a fresh device row (browser). The client recovers
+    # the shared identity key separately via GET/PUT /users/me/identity.
+    device = Device(
+        user_id=user.id,
+        device_name=name,
+        public_key=user.identity_public_key,
+    )
+    db.add(device)
+    await db.flush()
+    return await _issue_tokens(db, response, user, device)
+
+
+@router.post("/login", response_model=LoginResponse)
 @limiter.limit("10/minute")
 async def login(
     request: Request,
     body: LoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-) -> TokenResponse:
+) -> LoginResponse:
     user = await db.scalar(select(User).where(User.username == body.username))
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
-    # Each login establishes a fresh device row (browser). The client recovers
-    # the shared identity key separately via GET/PUT /users/me/identity.
-    device = Device(
-        user_id=user.id,
-        device_name=body.device_name,
-        public_key=user.identity_public_key,
-    )
-    db.add(device)
-    await db.flush()
+    # 2FA enrolled → don't issue a session yet; require the second factor.
+    if user.totp_enabled:
+        return LoginResponse(
+            twofa_required=True, pending_token=create_pending_2fa_token(user.id)
+        )
 
-    return await _issue_tokens(db, response, user, device)
+    tokens = await _login_device(db, response, user, body.device_name)
+    return LoginResponse(tokens=tokens)
+
+
+@router.post("/2fa", response_model=LoginResponse)
+@limiter.limit("10/minute")
+async def complete_2fa(
+    request: Request,
+    body: TwoFAComplete,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    try:
+        user_id = decode_pending_2fa_token(body.pending_token)
+    except InvalidTokenError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
+    user = await db.get(User, user_id)
+    if user is None or not user.totp_enabled:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
+
+    code = body.code.replace(" ", "").replace("-", "")
+    ok = False
+    if user.totp_secret and code.isdigit():
+        ok = pyotp.TOTP(user.totp_secret).verify(code, valid_window=1)
+    if not ok:
+        # Try a one-time backup code.
+        h = hash_backup_code(body.code)
+        codes = list(user.backup_codes or [])
+        for entry in codes:
+            if not entry.get("used") and entry.get("hash") == h:
+                entry["used"] = True
+                ok = True
+                break
+        if ok:
+            user.backup_codes = codes  # reassign so JSONB change is tracked
+    if not ok:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid code")
+
+    tokens = await _login_device(db, response, user, body.device_name)
+    return LoginResponse(tokens=tokens)
 
 
 @router.post("/refresh", response_model=TokenResponse)

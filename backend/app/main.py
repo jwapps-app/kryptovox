@@ -23,6 +23,7 @@ from app.routers import (
     messages,
     notes,
     push,
+    twofa,
     users,
 )
 from app.services.retention import retention_loop
@@ -73,6 +74,7 @@ async def health() -> dict[str, str]:
 
 
 api.include_router(auth.router)
+api.include_router(twofa.router)
 api.include_router(admin.router)
 api.include_router(users.router)
 api.include_router(devices.router)

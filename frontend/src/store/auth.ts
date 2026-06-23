@@ -7,7 +7,7 @@ import {
   recoverIdentity,
 } from "../crypto/identity";
 import type { EncryptedKeyBlob, Identity } from "../crypto/identity";
-import type { TokenResponse, User } from "../lib/types";
+import type { LoginResponse, TokenResponse, User } from "../lib/types";
 
 type Status = "loading" | "authed" | "anon";
 
@@ -30,7 +30,17 @@ interface AuthState {
     displayName: string,
     deviceName: string
   ) => Promise<void>;
-  login: (username: string, password: string, deviceName: string) => Promise<void>;
+  login: (
+    username: string,
+    password: string,
+    deviceName: string
+  ) => Promise<{ twofaRequired: boolean; pendingToken?: string }>;
+  complete2fa: (
+    pendingToken: string,
+    code: string,
+    password: string,
+    deviceName: string
+  ) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -58,6 +68,24 @@ async function ensureIdentity(password: string): Promise<Identity> {
     return recoverIdentity(saved.identity_public_key, saved.encrypted_private_key, password);
   }
   return identity;
+}
+
+// Apply a successful token response: store tokens, recover the identity, go authed.
+async function applyTokens(
+  set: (partial: Partial<AuthState>) => void,
+  tok: TokenResponse,
+  password: string
+): Promise<void> {
+  setAccessToken(tok.access_token);
+  setRefreshToken(tok.refresh_token);
+  const identity = await ensureIdentity(password);
+  set({
+    status: "authed",
+    user: { ...tok.user, identity_public_key: identity.publicKeyB64 },
+    deviceId: tok.device_id,
+    identity,
+    needsReauth: false,
+  });
 }
 
 export const useAuth = create<AuthState>((set, get) => ({
@@ -144,24 +172,33 @@ export const useAuth = create<AuthState>((set, get) => ({
   login: async (username, password, deviceName) => {
     set({ error: null });
     try {
-      const tok = await api<TokenResponse>("/auth/login", {
+      const res = await api<LoginResponse>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password, device_name: deviceName || null }),
+      });
+      if (res.twofa_required && res.pending_token) {
+        return { twofaRequired: true, pendingToken: res.pending_token };
+      }
+      if (res.tokens) await applyTokens(set, res.tokens, password);
+      return { twofaRequired: false };
+    } catch (e) {
+      set({ error: (e as Error).message });
+      throw e;
+    }
+  },
+
+  complete2fa: async (pendingToken, code, password, deviceName) => {
+    set({ error: null });
+    try {
+      const res = await api<LoginResponse>("/auth/2fa", {
         method: "POST",
         body: JSON.stringify({
-          username,
-          password,
+          pending_token: pendingToken,
+          code,
           device_name: deviceName || null,
         }),
       });
-      setAccessToken(tok.access_token);
-      setRefreshToken(tok.refresh_token);
-      const identity = await ensureIdentity(password);
-      set({
-        status: "authed",
-        user: { ...tok.user, identity_public_key: identity.publicKeyB64 },
-        deviceId: tok.device_id,
-        identity,
-        needsReauth: false,
-      });
+      if (res.tokens) await applyTokens(set, res.tokens, password);
     } catch (e) {
       set({ error: (e as Error).message });
       throw e;
