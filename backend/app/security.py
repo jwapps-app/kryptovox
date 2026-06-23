@@ -1,9 +1,12 @@
 import hashlib
+import hmac
 import secrets
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import jwt
+import pyotp
 from jwt import InvalidTokenError
 from passlib.context import CryptContext
 
@@ -56,30 +59,55 @@ def refresh_token_expiry() -> datetime:
 # ---------- Two-factor: pending-login token + backup codes ----------
 def create_pending_2fa_token(user_id: uuid.UUID) -> str:
     """Short-lived token issued after a correct password, redeemable only by
-    completing the second factor. Grants no access on its own."""
+    completing the second factor. Grants no access on its own. The jti lets the
+    server mark it consumed so it can't mint a second session after success."""
     now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "type": "pending_2fa",
+        "jti": secrets.token_urlsafe(9),
         "iat": now,
         "exp": now + timedelta(minutes=5),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
-def decode_pending_2fa_token(token: str) -> uuid.UUID:
+def decode_pending_2fa_token(token: str) -> tuple[uuid.UUID, str]:
+    """Returns (user_id, jti). Raises InvalidTokenError on a bad token."""
     claims = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
     if claims.get("type") != "pending_2fa":
         raise InvalidTokenError("not a pending-2fa token")
-    return uuid.UUID(claims["sub"])
+    return uuid.UUID(claims["sub"]), claims.get("jti", "")
+
+
+def consume_totp(user, code: str) -> bool:
+    """Verify a TOTP code with replay protection: the matched timestep must be
+    strictly newer than the last one accepted for this user. Mutates
+    user.totp_last_step on success (caller's session commits it)."""
+    if not user.totp_secret or not code.isdigit():
+        return False
+    totp = pyotp.TOTP(user.totp_secret)
+    now = time.time()
+    matched: int | None = None
+    for offset in (-1, 0, 1):  # ±1 step of clock skew, same window as before
+        t = now + offset * totp.interval
+        if hmac.compare_digest(totp.at(t), code):
+            matched = int(t // totp.interval)
+            break
+    if matched is None:
+        return False
+    if user.totp_last_step is not None and matched <= user.totp_last_step:
+        return False  # already-used (or older) code — replay
+    user.totp_last_step = matched
+    return True
 
 
 def generate_backup_codes(n: int = 10) -> list[str]:
-    # 10 chars of base32-ish, grouped for readability (e.g. abcde-fghij).
+    # 16 hex chars (64 bits) grouped for readability (e.g. abcd-efgh-ijkl-mnop).
     out = []
     for _ in range(n):
-        raw = secrets.token_hex(5)  # 10 hex chars
-        out.append(f"{raw[:5]}-{raw[5:]}")
+        raw = secrets.token_hex(8)
+        out.append("-".join(raw[i : i + 4] for i in range(0, len(raw), 4)))
     return out
 
 

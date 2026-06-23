@@ -2,7 +2,6 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-import pyotp
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from jwt import InvalidTokenError
 from sqlalchemy import func, select
@@ -42,6 +41,7 @@ from app.services.webauthn_svc import (
     rp_and_origin,
 )
 from app.security import (
+    consume_totp,
     create_access_token,
     create_pending_2fa_token,
     decode_pending_2fa_token,
@@ -51,6 +51,13 @@ from app.security import (
     hash_refresh_token,
     refresh_token_expiry,
     verify_password,
+)
+from app.services.twofa_guard import (
+    assert_not_locked,
+    assert_pending_unused,
+    clear_failures,
+    consume_pending,
+    record_failure,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -197,17 +204,17 @@ async def complete_2fa(
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     try:
-        user_id = decode_pending_2fa_token(body.pending_token)
+        user_id, jti = decode_pending_2fa_token(body.pending_token)
     except InvalidTokenError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
     user = await db.get(User, user_id)
     if user is None or not user.twofa_enabled:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
+    await assert_not_locked(user_id)
+    await assert_pending_unused(jti)
 
     code = body.code.replace(" ", "").replace("-", "")
-    ok = False
-    if user.totp_secret and code.isdigit():
-        ok = pyotp.TOTP(user.totp_secret).verify(code, valid_window=1)
+    ok = consume_totp(user, code)  # replay-resistant (tracks last timestep)
     if not ok:
         # Try a one-time backup code.
         h = hash_backup_code(body.code)
@@ -220,8 +227,11 @@ async def complete_2fa(
         if ok:
             user.backup_codes = codes  # reassign so JSONB change is tracked
     if not ok:
+        await record_failure(user_id)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid code")
 
+    await clear_failures(user_id)
+    await consume_pending(jti)
     tokens = await _login_device(db, response, user, body.device_name)
     return LoginResponse(tokens=tokens)
 
@@ -234,7 +244,7 @@ async def passkey_login_options(
     db: AsyncSession = Depends(get_db),
 ) -> PasskeyOptionsOut:
     try:
-        user_id = decode_pending_2fa_token(body.pending_token)
+        user_id, _ = decode_pending_2fa_token(body.pending_token)
     except InvalidTokenError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
     rows = await db.execute(
@@ -265,12 +275,14 @@ async def passkey_login_verify(
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     try:
-        uid_a = decode_pending_2fa_token(body.pending_token)
+        uid_a, jti = decode_pending_2fa_token(body.pending_token)
         uid_b, challenge_b64 = decode_challenge_token(body.challenge_token)
     except InvalidTokenError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
     if uid_a != uid_b:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
+    await assert_not_locked(uid_a)
+    await assert_pending_unused(jti)
     cred_id = body.credential.get("id") or body.credential.get("rawId")
     cred = await db.scalar(
         select(WebauthnCredential).where(
@@ -292,8 +304,11 @@ async def passkey_login_verify(
             require_user_verification=False,
         )
     except Exception:
+        await record_failure(uid_a)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Passkey check failed")
     cred.sign_count = v.new_sign_count
+    await clear_failures(uid_a)
+    await consume_pending(jti)
     user = await db.get(User, uid_a)
     tokens = await _login_device(db, response, user, body.device_name)
     return LoginResponse(tokens=tokens)

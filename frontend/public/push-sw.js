@@ -9,6 +9,13 @@
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
+// Only ever navigate to in-app paths. Rejects absolute URLs and protocol-
+// relative "//host" so a malformed/hostile push payload can't open-redirect via
+// clients.openWindow().
+function safePath(u) {
+  return typeof u === "string" && u.startsWith("/") && !u.startsWith("//") ? u : "/";
+}
+
 function stashLastPush(url) {
   return new Promise((resolve) => {
     let open;
@@ -44,7 +51,7 @@ self.addEventListener("push", (event) => {
     /* non-JSON payload — fall back to defaults */
   }
   const title = data.title || "Kryptovox";
-  const url = data.url || "/";
+  const url = safePath(data.url);
   event.waitUntil(
     (async () => {
       const tasks = [
@@ -111,7 +118,7 @@ function savePendingNav(url) {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
+  const url = safePath(event.notification.data && event.notification.data.url);
   event.waitUntil(
     (async () => {
       // Always stash the target: iOS resumes the already-loaded PWA without
