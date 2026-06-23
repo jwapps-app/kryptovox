@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
+import {
+  type EncryptedKeyBlob,
+  normalizeRecoveryKey,
+  recoverIdentity,
+  recoveryVerifier,
+  wrapPrivateKey,
+} from "../crypto/identity";
 
 const defaultDeviceName = (): string => {
   const ua = navigator.userAgent;
@@ -24,6 +31,10 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryKey, setRecoveryKey] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [recoverErr, setRecoverErr] = useState<string | null>(null);
 
   const login = useAuth((s) => s.login);
   const complete2fa = useAuth((s) => s.complete2fa);
@@ -65,6 +76,107 @@ export default function Login() {
       setBusy(false);
     }
   };
+
+  const submitRecovery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setRecoverErr(null);
+    try {
+      const verifier = await recoveryVerifier(recoveryKey);
+      const begin = await api<{
+        recovery_key_blob: EncryptedKeyBlob;
+        identity_public_key: string;
+      }>("/recovery/begin", {
+        method: "POST",
+        body: JSON.stringify({ username: username.trim(), recovery_verifier: verifier }),
+      });
+      const id = await recoverIdentity(
+        begin.identity_public_key,
+        begin.recovery_key_blob,
+        normalizeRecoveryKey(recoveryKey)
+      );
+      const newBlob = await wrapPrivateKey(id.privateKey, newPassword);
+      await api("/recovery/finish", {
+        method: "POST",
+        body: JSON.stringify({
+          username: username.trim(),
+          recovery_verifier: verifier,
+          new_password: newPassword,
+          encrypted_private_key: newBlob,
+        }),
+      });
+      // Sign in with the new password (handles 2FA if it's enabled).
+      setRecovering(false);
+      setPassword(newPassword);
+      const res = await login(username.trim(), newPassword, deviceName.trim());
+      if (res.twofaRequired && res.pendingToken) setPendingToken(res.pendingToken);
+    } catch {
+      setRecoverErr("Couldn't recover. Check your username and recovery key.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (recovering) {
+    return (
+      <div className="flex h-full items-center justify-center bg-gray-50 px-6">
+        <form
+          onSubmit={submitRecovery}
+          className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm"
+        >
+          <h1 className="mb-1 text-center text-2xl font-semibold">Recover account</h1>
+          <p className="mb-6 text-center text-sm text-gray-500">
+            Enter your recovery key and choose a new password.
+          </p>
+          <input
+            className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-none focus:border-imsg-blue"
+            placeholder="Username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+          <input
+            className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 font-mono text-[15px] outline-none focus:border-imsg-blue"
+            placeholder="Recovery key"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            value={recoveryKey}
+            onChange={(e) => setRecoveryKey(e.target.value)}
+            required
+          />
+          <input
+            className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-none focus:border-imsg-blue"
+            placeholder="New password"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            minLength={8}
+          />
+          {recoverErr && <p className="mb-3 text-sm text-red-500">{recoverErr}</p>}
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full rounded-xl bg-imsg-blue py-3 text-[17px] font-medium text-white disabled:opacity-50"
+          >
+            {busy ? "…" : "Recover & sign in"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRecovering(false);
+              setRecoverErr(null);
+            }}
+            className="mt-3 w-full text-center text-sm text-gray-400"
+          >
+            Back
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   if (pendingToken) {
     return (
@@ -164,9 +276,18 @@ export default function Login() {
         </button>
 
         {!needsSetup && (
-          <p className="mt-4 text-center text-xs text-gray-400">
-            Registration is by invitation. Ask an admin to create your account.
-          </p>
+          <>
+            <button
+              type="button"
+              onClick={() => setRecovering(true)}
+              className="mt-4 w-full text-center text-sm text-imsg-blue"
+            >
+              Forgot password?
+            </button>
+            <p className="mt-3 text-center text-xs text-gray-400">
+              Registration is by invitation. Ask an admin to create your account.
+            </p>
+          </>
         )}
       </form>
     </div>

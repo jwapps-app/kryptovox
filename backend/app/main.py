@@ -23,6 +23,7 @@ from app.routers import (
     messages,
     notes,
     push,
+    recovery,
     twofa,
     users,
 )
@@ -75,6 +76,7 @@ async def health() -> dict[str, str]:
 
 api.include_router(auth.router)
 api.include_router(twofa.router)
+api.include_router(recovery.router)
 api.include_router(admin.router)
 api.include_router(users.router)
 api.include_router(devices.router)

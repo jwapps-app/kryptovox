@@ -146,6 +146,28 @@ async function deriveWrapKey(
   );
 }
 
+// ---------- account recovery key ----------
+// A human-friendly, high-entropy key (120 bits) the user saves out-of-band.
+export function generateRecoveryKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(15));
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return hex.toUpperCase().replace(/(.{5})(?=.)/g, "$1-"); // 6 groups of 5
+}
+
+export function normalizeRecoveryKey(key: string): string {
+  return key.replace(/[\s-]/g, "").toUpperCase();
+}
+
+// Server-side verifier: a hash of the recovery key, proving possession without
+// revealing it (the server can't derive the PBKDF2 wrapping key from this).
+export async function recoveryVerifier(recoveryKey: string): Promise<string> {
+  const h = await crypto.subtle.digest(
+    "SHA-256",
+    utf8Encode(normalizeRecoveryKey(recoveryKey))
+  );
+  return bytesToBase64url(new Uint8Array(h));
+}
+
 export async function wrapPrivateKey(
   privateKey: CryptoKey,
   password: string
