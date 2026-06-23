@@ -149,6 +149,15 @@ export interface NoteListItem {
   updated_at: string;
 }
 
+export interface NoteAttachment {
+  media_id: string;
+  name_ciphertext: string;
+  name_iv: string;
+  iv: string;
+  mime: string;
+  size: number;
+}
+
 export interface Note {
   id: string;
   wrapped_key: string;
@@ -156,6 +165,7 @@ export interface Note {
   title_iv: string;
   body_ciphertext: string;
   body_iv: string;
+  attachments: NoteAttachment[];
   created_at: string;
   updated_at: string;
 }

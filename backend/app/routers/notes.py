@@ -1,14 +1,16 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Note, User
 from app.schemas import NoteCreate, NoteListItem, NoteOut, NoteUpdate
+from app.services import media_store
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -18,6 +20,10 @@ async def _own_note(db: AsyncSession, note_id: uuid.UUID, user_id: uuid.UUID) ->
     if note is None or note.owner_id != user_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Note not found")
     return note
+
+
+def _media_ids(attachments: list) -> set[str]:
+    return {a.get("media_id") for a in (attachments or []) if a.get("media_id")}
 
 
 @router.get("", response_model=list[NoteListItem])
@@ -44,6 +50,7 @@ async def create_note(
         title_iv=body.title_iv,
         body_ciphertext=body.body_ciphertext,
         body_iv=body.body_iv,
+        attachments=[a.model_dump() for a in body.attachments],
     )
     db.add(note)
     await db.flush()
@@ -69,10 +76,15 @@ async def update_note(
     db: AsyncSession = Depends(get_db),
 ) -> Note:
     note = await _own_note(db, note_id, current.id)
+    new_attachments = [a.model_dump() for a in body.attachments]
+    # Delete blobs for attachments that were removed.
+    for mid in _media_ids(note.attachments) - _media_ids(new_attachments):
+        media_store.delete(mid)
     note.title_ciphertext = body.title_ciphertext
     note.title_iv = body.title_iv
     note.body_ciphertext = body.body_ciphertext
     note.body_iv = body.body_iv
+    note.attachments = new_attachments
     note.updated_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(note)
@@ -86,5 +98,43 @@ async def delete_note(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     note = await _own_note(db, note_id, current.id)
+    for mid in _media_ids(note.attachments):
+        media_store.delete(mid)
     await db.delete(note)
     await db.commit()
+
+
+@router.post("/{note_id}/media", status_code=201)
+async def upload_note_media(
+    note_id: uuid.UUID,
+    request: Request,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    await _own_note(db, note_id, current.id)
+    blob = await request.body()
+    if not blob:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty body")
+    if len(blob) > settings.max_media_bytes:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Too large")
+    return {"id": media_store.save(blob)}
+
+
+@router.get("/{note_id}/media/{media_id}")
+async def get_note_media(
+    note_id: uuid.UUID,
+    media_id: str,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    note = await _own_note(db, note_id, current.id)
+    if media_id not in _media_ids(note.attachments):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    data = media_store.load(media_id)
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )

@@ -204,6 +204,16 @@ class DisappearingUpdate(BaseModel):
 _NOTE_MAX = 1_000_000  # generous cap for an encrypted note body
 
 
+class NoteAttachment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    media_id: str = Field(max_length=64)
+    name_ciphertext: str = Field(max_length=8192)
+    name_iv: str = Field(max_length=64)
+    iv: str = Field(max_length=64)  # iv for the encrypted blob
+    mime: str = Field(default="application/octet-stream", max_length=128)
+    size: int = Field(ge=0)
+
+
 class NoteCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     wrapped_key: str = Field(max_length=512)
@@ -211,6 +221,7 @@ class NoteCreate(BaseModel):
     title_iv: str = Field(default="", max_length=64)
     body_ciphertext: str = Field(default="", max_length=_NOTE_MAX)
     body_iv: str = Field(default="", max_length=64)
+    attachments: list[NoteAttachment] = []
 
 
 class NoteUpdate(BaseModel):
@@ -219,6 +230,7 @@ class NoteUpdate(BaseModel):
     title_iv: str = Field(default="", max_length=64)
     body_ciphertext: str = Field(default="", max_length=_NOTE_MAX)
     body_iv: str = Field(default="", max_length=64)
+    attachments: list[NoteAttachment] = []
 
 
 class NoteListItem(BaseModel):
@@ -240,6 +252,7 @@ class NoteOut(BaseModel):
     title_iv: str
     body_ciphertext: str
     body_iv: str
+    attachments: list[NoteAttachment] = []
     created_at: datetime
     updated_at: datetime
 
