@@ -7,6 +7,7 @@ import {
   recoverIdentity,
 } from "../crypto/identity";
 import type { EncryptedKeyBlob, Identity } from "../crypto/identity";
+import { loginWithPasskey } from "../lib/passkey";
 import type { LoginResponse, TokenResponse, User } from "../lib/types";
 
 type Status = "loading" | "authed" | "anon";
@@ -34,10 +35,15 @@ interface AuthState {
     username: string,
     password: string,
     deviceName: string
-  ) => Promise<{ twofaRequired: boolean; pendingToken?: string }>;
+  ) => Promise<{ twofaRequired: boolean; pendingToken?: string; methods?: string[] }>;
   complete2fa: (
     pendingToken: string,
     code: string,
+    password: string,
+    deviceName: string
+  ) => Promise<void>;
+  complete2faPasskey: (
+    pendingToken: string,
     password: string,
     deviceName: string
   ) => Promise<void>;
@@ -177,10 +183,25 @@ export const useAuth = create<AuthState>((set, get) => ({
         body: JSON.stringify({ username, password, device_name: deviceName || null }),
       });
       if (res.twofa_required && res.pending_token) {
-        return { twofaRequired: true, pendingToken: res.pending_token };
+        return {
+          twofaRequired: true,
+          pendingToken: res.pending_token,
+          methods: res.methods,
+        };
       }
       if (res.tokens) await applyTokens(set, res.tokens, password);
       return { twofaRequired: false };
+    } catch (e) {
+      set({ error: (e as Error).message });
+      throw e;
+    }
+  },
+
+  complete2faPasskey: async (pendingToken, password, deviceName) => {
+    set({ error: null });
+    try {
+      const res = await loginWithPasskey(pendingToken, deviceName);
+      if (res.tokens) await applyTokens(set, res.tokens, password);
     } catch (e) {
       set({ error: (e as Error).message });
       throw e;

@@ -85,9 +85,10 @@ class RefreshRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    # Either tokens (no 2FA) or a 2FA challenge (complete via /auth/2fa).
+    # Either tokens (no 2FA) or a 2FA challenge (complete via /auth/2fa[/passkey]).
     twofa_required: bool = False
     pending_token: str | None = None
+    methods: list[str] = []  # which second factors are available: totp, passkey
     tokens: "TokenResponse | None" = None
 
 
@@ -109,6 +110,40 @@ class BackupCodesOut(BaseModel):
 class TwoFAStatus(BaseModel):
     totp_enabled: bool
     backup_codes_remaining: int
+    passkey_count: int = 0
+
+
+# ---------- Passkeys (WebAuthn 2FA) ----------
+class PasskeyOptionsOut(BaseModel):
+    options: dict  # PublicKeyCredential*OptionsJSON for @simplewebauthn/browser
+    challenge_token: str
+
+
+class PasskeyRegisterVerify(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    challenge_token: str
+    credential: dict
+    name: str | None = Field(default=None, max_length=64)
+
+
+class PasskeyLoginOptionsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    pending_token: str
+
+
+class PasskeyLoginVerify(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    pending_token: str
+    challenge_token: str
+    credential: dict
+    device_name: str | None = Field(default=None, max_length=64)
+
+
+class PasskeyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    name: str | None = None
+    created_at: datetime
 
 
 class TwoFAComplete(BaseModel):

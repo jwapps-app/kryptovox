@@ -30,6 +30,7 @@ export default function Login() {
   const [deviceName, setDeviceName] = useState(defaultDeviceName());
   const [busy, setBusy] = useState(false);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [methods, setMethods] = useState<string[]>([]);
   const [code, setCode] = useState("");
   const [recovering, setRecovering] = useState(false);
   const [recoveryKey, setRecoveryKey] = useState("");
@@ -38,6 +39,7 @@ export default function Login() {
 
   const login = useAuth((s) => s.login);
   const complete2fa = useAuth((s) => s.complete2fa);
+  const complete2faPasskey = useAuth((s) => s.complete2faPasskey);
   const register = useAuth((s) => s.register);
   const error = useAuth((s) => s.error);
 
@@ -55,7 +57,10 @@ export default function Login() {
         await register(username.trim(), password, displayName.trim(), deviceName.trim());
       } else {
         const res = await login(username.trim(), password, deviceName.trim());
-        if (res.twofaRequired && res.pendingToken) setPendingToken(res.pendingToken);
+        if (res.twofaRequired && res.pendingToken) {
+          setPendingToken(res.pendingToken);
+          setMethods(res.methods ?? []);
+        }
       }
     } catch {
       /* error shown from store */
@@ -178,14 +183,40 @@ export default function Login() {
     );
   }
 
+  const usePasskey = async () => {
+    if (!pendingToken) return;
+    setBusy(true);
+    try {
+      await complete2faPasskey(pendingToken, password, deviceName.trim());
+    } catch {
+      /* error from store */
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (pendingToken) {
     return (
       <div className="flex h-full items-center justify-center bg-gray-50 px-6">
         <form onSubmit={submit2fa} className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm">
           <h1 className="mb-1 text-center text-2xl font-semibold">Two-factor</h1>
           <p className="mb-6 text-center text-sm text-gray-500">
-            Enter the code from your authenticator app, or a backup code.
+            {methods.includes("passkey") && methods.includes("totp")
+              ? "Use your passkey, or enter a code."
+              : methods.includes("passkey")
+                ? "Use your passkey, or a backup code."
+                : "Enter the code from your authenticator app, or a backup code."}
           </p>
+          {methods.includes("passkey") && (
+            <button
+              type="button"
+              onClick={() => void usePasskey()}
+              disabled={busy}
+              className="mb-4 w-full rounded-xl bg-imsg-blue py-3 text-[17px] font-medium text-white disabled:opacity-50"
+            >
+              {busy ? "…" : "Use passkey"}
+            </button>
+          )}
           <input
             autoFocus
             className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-center text-[17px] tracking-widest outline-none focus:border-imsg-blue"
