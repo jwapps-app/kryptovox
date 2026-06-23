@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     # CORS — comma-separated list of allowed origins
     allowed_origins: str = "https://localhost:5173"
 
+    # WebAuthn (passkeys). Passkeys are cryptographically bound to rp_id, and the
+    # browser origin must match `webauthn_origin` exactly. Set these to your real
+    # domain in production: WEBAUTHN_RP_ID=chat.example.com and
+    # WEBAUTHN_ORIGIN=https://chat.example.com
+    webauthn_rp_id: str = "localhost"
+    webauthn_origin: str = "http://localhost:5173"
+
     # Web Push (Phase 6). If keys aren't provided they're generated once and
     # persisted to vapid_key_path so subscriptions survive restarts.
     vapid_private_key: str = ""
