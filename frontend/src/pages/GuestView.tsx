@@ -300,6 +300,29 @@ export default function GuestView() {
           <input ref={attachRef} type="file" className="hidden" onChange={onPickFile} />
           <button
             onMouseDown={(e) => e.preventDefault()}
+            onClick={shareLocation}
+            disabled={locating}
+            aria-label="Share location"
+            title="Share location"
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center text-imsg-blue active:opacity-60 disabled:opacity-40"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+          </button>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => attachRef.current?.click()}
             aria-label="Attach file"
             title="Attach file"
@@ -340,29 +363,6 @@ export default function GuestView() {
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
               <circle cx="8.5" cy="8.5" r="1.5" />
               <polyline points="21 15 16 10 5 21" />
-            </svg>
-          </button>
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={shareLocation}
-            disabled={locating}
-            aria-label="Share location"
-            title="Share location"
-            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center text-imsg-blue active:opacity-60 disabled:opacity-40"
-          >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-              <circle cx="12" cy="10" r="3" />
             </svg>
           </button>
           <textarea
