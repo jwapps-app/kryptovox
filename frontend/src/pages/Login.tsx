@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import {
+  assertPasskey,
+  preloadPasskeyLoginOptions,
+  type PasskeyOptions,
+} from "../lib/passkey";
+import {
   type EncryptedKeyBlob,
   normalizeRecoveryKey,
   recoverIdentity,
@@ -31,6 +36,8 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [methods, setMethods] = useState<string[]>([]);
+  const [passkeyOpts, setPasskeyOpts] = useState<PasskeyOptions | null>(null);
+  const [twofaErr, setTwofaErr] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [recovering, setRecovering] = useState(false);
   const [recoveryKey, setRecoveryKey] = useState("");
@@ -183,13 +190,35 @@ export default function Login() {
     );
   }
 
+  // Preload passkey options so the WebAuthn call can fire immediately on tap
+  // (iOS Safari drops the user gesture across an awaited network request).
+  useEffect(() => {
+    if (pendingToken && methods.includes("passkey") && !passkeyOpts) {
+      preloadPasskeyLoginOptions(pendingToken).then(setPasskeyOpts).catch(() => {});
+    }
+  }, [pendingToken, methods, passkeyOpts]);
+
   const usePasskey = async () => {
-    if (!pendingToken) return;
+    if (!pendingToken || !passkeyOpts) return;
+    setTwofaErr(null);
+    let credential: unknown;
+    try {
+      credential = await assertPasskey(passkeyOpts.options); // must be first await
+    } catch {
+      setTwofaErr("Passkey was cancelled or isn't available on this device.");
+      return;
+    }
     setBusy(true);
     try {
-      await complete2faPasskey(pendingToken, password, deviceName.trim());
+      await complete2faPasskey(
+        pendingToken,
+        passkeyOpts.challenge_token,
+        credential,
+        password,
+        deviceName.trim()
+      );
     } catch {
-      /* error from store */
+      setTwofaErr("Passkey sign-in failed. Try again, or use a code.");
     } finally {
       setBusy(false);
     }
@@ -211,12 +240,13 @@ export default function Login() {
             <button
               type="button"
               onClick={() => void usePasskey()}
-              disabled={busy}
+              disabled={busy || !passkeyOpts}
               className="mb-4 w-full rounded-xl bg-imsg-blue py-3 text-[17px] font-medium text-white disabled:opacity-50"
             >
-              {busy ? "…" : "Use passkey"}
+              {!passkeyOpts ? "…" : busy ? "…" : "Use passkey"}
             </button>
           )}
+          {twofaErr && <p className="mb-3 text-sm text-red-500">{twofaErr}</p>}
           <input
             autoFocus
             className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-center text-[17px] tracking-widest outline-none focus:border-imsg-blue"

@@ -7,7 +7,7 @@ import {
   recoverIdentity,
 } from "../crypto/identity";
 import type { EncryptedKeyBlob, Identity } from "../crypto/identity";
-import { loginWithPasskey } from "../lib/passkey";
+import { verifyPasskeyLogin } from "../lib/passkey";
 import type { LoginResponse, TokenResponse, User } from "../lib/types";
 
 type Status = "loading" | "authed" | "anon";
@@ -44,6 +44,8 @@ interface AuthState {
   ) => Promise<void>;
   complete2faPasskey: (
     pendingToken: string,
+    challengeToken: string,
+    credential: unknown,
     password: string,
     deviceName: string
   ) => Promise<void>;
@@ -197,10 +199,10 @@ export const useAuth = create<AuthState>((set, get) => ({
     }
   },
 
-  complete2faPasskey: async (pendingToken, password, deviceName) => {
+  complete2faPasskey: async (pendingToken, challengeToken, credential, password, deviceName) => {
     set({ error: null });
     try {
-      const res = await loginWithPasskey(pendingToken, deviceName);
+      const res = await verifyPasskeyLogin(pendingToken, challengeToken, credential, deviceName);
       if (res.tokens) await applyTokens(set, res.tokens, password);
     } catch (e) {
       set({ error: (e as Error).message });

@@ -30,7 +30,12 @@ import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
 import TwoFactorSetup from "../components/TwoFactorSetup";
 import RecoveryKeySetup from "../components/RecoveryKeySetup";
-import { registerPasskey } from "../lib/passkey";
+import {
+  attestPasskey,
+  preloadPasskeyRegisterOptions,
+  verifyPasskeyRegister,
+  type PasskeyOptions,
+} from "../lib/passkey";
 import type { Device, User } from "../lib/types";
 
 export default function Settings() {
@@ -61,12 +66,25 @@ export default function Settings() {
     setRegenCodes(null);
   };
 
+  const [pkRegOpts, setPkRegOpts] = useState<PasskeyOptions | null>(null);
+
   const addPasskey = async () => {
+    if (!pkRegOpts) return;
+    let credential: unknown;
     try {
-      await registerPasskey("Passkey");
+      credential = await attestPasskey(pkRegOpts.options); // must be first await
+    } catch {
+      alert("Couldn't add a passkey. Your device may not support it, or it was cancelled.");
+      return;
+    }
+    try {
+      await verifyPasskeyRegister(pkRegOpts.challenge_token, credential, "Passkey");
       alert("Passkey added.");
     } catch {
-      alert("Couldn't add a passkey. Your device or browser may not support it.");
+      alert("Passkey registration failed.");
+    } finally {
+      // Refresh options for a possible next add.
+      preloadPasskeyRegisterOptions().then(setPkRegOpts).catch(() => {});
     }
   };
 
@@ -130,7 +148,11 @@ export default function Settings() {
         .then((c) => setAdminRequire2fa(c.require_2fa))
         .catch(() => {});
     }
-  }, [user.is_admin]);
+    if (user.twofa_enabled) {
+      preloadPasskeyRegisterOptions().then(setPkRegOpts).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.is_admin, user.twofa_enabled]);
 
   const togglePush = async () => {
     if (pushBusy) return;
