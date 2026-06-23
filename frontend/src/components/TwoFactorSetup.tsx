@@ -1,6 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { registerPasskey } from "../lib/passkey";
+import {
+  attestPasskey,
+  preloadPasskeyRegisterOptions,
+  verifyPasskeyRegister,
+  type PasskeyOptions,
+} from "../lib/passkey";
 
 // TOTP enrollment flow: setup → show secret → verify a code → show backup codes.
 // Calls onEnabled once 2FA is active. Reused in Settings and the forced gate.
@@ -17,16 +22,30 @@ export default function TwoFactorSetup({
   const [codes, setCodes] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [regOpts, setRegOpts] = useState<PasskeyOptions | null>(null);
+
+  // Preload so the WebAuthn call fires immediately on tap (iOS Safari).
+  useEffect(() => {
+    preloadPasskeyRegisterOptions().then(setRegOpts).catch(() => {});
+  }, []);
 
   const addPasskey = async () => {
-    setBusy(true);
+    if (!regOpts) return;
     setErr(null);
+    let credential: unknown;
     try {
-      const c = await registerPasskey("Passkey");
+      credential = await attestPasskey(regOpts.options); // must be first await
+    } catch {
+      setErr("Couldn't add a passkey. Your device may not support it, or it was cancelled.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const c = await verifyPasskeyRegister(regOpts.challenge_token, credential, "Passkey");
       if (c.length) setCodes(c);
       else onEnabled();
     } catch {
-      setErr("Couldn't add a passkey. Your device or browser may not support it.");
+      setErr("Passkey registration failed.");
     } finally {
       setBusy(false);
     }
@@ -133,7 +152,7 @@ export default function TwoFactorSetup({
       {err && <p className="text-sm text-red-500">{err}</p>}
       <button
         onClick={() => void addPasskey()}
-        disabled={busy}
+        disabled={busy || !regOpts}
         className="flex w-full items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-left active:bg-gray-50 disabled:opacity-50"
       >
         <span>
