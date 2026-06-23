@@ -62,6 +62,11 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-90}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      # Passkeys (WebAuthn). RP_ID = the domain passkeys bind to (can be the
+      # registrable parent, e.g. example.com); ORIGIN = the full https origin the
+      # app is served from. Required for passkey 2FA to work.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:5173}
       # Default message retention (days) for NEW conversations; 0 = keep forever.
       DEFAULT_RETENTION_DAYS: ${DEFAULT_RETENTION_DAYS:-0}
       VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@example.com}
