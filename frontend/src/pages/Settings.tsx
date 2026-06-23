@@ -49,7 +49,17 @@ export default function Settings() {
   const [avatarVer, setAvatarVer] = useState(0); // bump to re-render my avatar
   const [lock, setLock] = useState<LockMethod | null>(lockMethod());
   const [setup2fa, setSetup2fa] = useState(false);
+  const [setupTotp, setSetupTotp] = useState(false);
+  const [twofaStatus, setTwofaStatus] = useState<{
+    totp_enabled: boolean;
+    passkey_count: number;
+  } | null>(null);
   const [regenCodes, setRegenCodes] = useState<string[] | null>(null);
+
+  const loadTwofaStatus = () =>
+    api<{ totp_enabled: boolean; passkey_count: number }>("/2fa/status")
+      .then(setTwofaStatus)
+      .catch(() => {});
   const [adminRequire2fa, setAdminRequire2fa] = useState(false);
   const [recoverySetup, setRecoverySetup] = useState(false);
 
@@ -83,8 +93,9 @@ export default function Settings() {
     } catch {
       alert("Passkey registration failed.");
     } finally {
-      // Refresh options for a possible next add.
+      // Refresh options for a possible next add, and the method count.
       preloadPasskeyRegisterOptions().then(setPkRegOpts).catch(() => {});
+      void loadTwofaStatus();
     }
   };
 
@@ -150,6 +161,7 @@ export default function Settings() {
     }
     if (user.twofa_enabled) {
       preloadPasskeyRegisterOptions().then(setPkRegOpts).catch(() => {});
+      void loadTwofaStatus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.is_admin, user.twofa_enabled]);
@@ -415,31 +427,62 @@ export default function Settings() {
 
         <Section title="Two-Factor Authentication">
           {user.twofa_enabled ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between py-1">
-                <span className="text-[15px]">Authenticator</span>
-                <span className="text-sm font-medium text-green-600">On ✓</span>
-              </div>
-              {regenCodes && (
-                <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-3 font-mono text-sm">
-                  {regenCodes.map((c) => (
-                    <span key={c}>{c}</span>
-                  ))}
+            setupTotp ? (
+              <TwoFactorSetup
+                forceTotp
+                onEnabled={() => {
+                  setSetupTotp(false);
+                  void loadTwofaStatus();
+                }}
+                onCancel={() => setSetupTotp(false)}
+              />
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-[15px]">Two-factor</span>
+                  <span className="text-sm font-medium text-green-600">On ✓</span>
                 </div>
-              )}
-              <button className="block text-sm text-imsg-blue" onClick={() => void addPasskey()}>
-                Add a passkey
-              </button>
-              <button className="block text-sm text-imsg-blue" onClick={() => void regenBackup()}>
-                Show new backup codes
-              </button>
-              <button
-                className="block text-sm text-red-500"
-                onClick={() => void disable2fa()}
-              >
-                Turn off two-factor
-              </button>
-            </div>
+                {twofaStatus && (
+                  <p className="text-xs text-gray-400">
+                    {[
+                      twofaStatus.totp_enabled ? "Authenticator" : null,
+                      twofaStatus.passkey_count > 0
+                        ? `${twofaStatus.passkey_count} passkey${twofaStatus.passkey_count === 1 ? "" : "s"}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
+                {regenCodes && (
+                  <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-3 font-mono text-sm">
+                    {regenCodes.map((c) => (
+                      <span key={c}>{c}</span>
+                    ))}
+                  </div>
+                )}
+                {twofaStatus && !twofaStatus.totp_enabled && (
+                  <button
+                    className="block text-sm text-imsg-blue"
+                    onClick={() => setSetupTotp(true)}
+                  >
+                    Add authenticator app
+                  </button>
+                )}
+                <button className="block text-sm text-imsg-blue" onClick={() => void addPasskey()}>
+                  Add a passkey
+                </button>
+                <button className="block text-sm text-imsg-blue" onClick={() => void regenBackup()}>
+                  Show new backup codes
+                </button>
+                <button
+                  className="block text-sm text-red-500"
+                  onClick={() => void disable2fa()}
+                >
+                  Turn off two-factor
+                </button>
+              </div>
+            )
           ) : setup2fa ? (
             <TwoFactorSetup
               onEnabled={() => {
