@@ -69,3 +69,19 @@ export async function fetchThreadMediaGuest(threadId: string, id: string): Promi
   if (!res.ok) throw new Error("Image download failed");
   return new Uint8Array(await res.arrayBuffer());
 }
+
+// Note attachments (owner-only).
+export async function uploadNoteMedia(noteId: string, bytes: Uint8Array): Promise<string> {
+  const res = await authedFetch(`/notes/${noteId}/media`, {
+    method: "POST",
+    body: blobBody(bytes),
+  });
+  if (!res.ok) throw new Error("Attachment upload failed");
+  return ((await res.json()) as { id: string }).id;
+}
+
+export async function fetchNoteMedia(noteId: string, id: string): Promise<Uint8Array> {
+  const res = await authedFetch(`/notes/${noteId}/media/${id}`, { method: "GET" });
+  if (!res.ok) throw new Error("Attachment download failed");
+  return new Uint8Array(await res.arrayBuffer());
+}
