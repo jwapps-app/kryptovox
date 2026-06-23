@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import get_db
+from app.http_util import read_capped_body
 from app.models import GuestMessage, GuestThread
 from app.ratelimit import limiter
 from app.schemas import GuestMessageIn, GuestMessageOut, PublicThreadOut
@@ -106,11 +106,7 @@ async def guest_upload_media(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     await _active_thread(db, thread_id)
-    body = await request.body()
-    if not body:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty body")
-    if len(body) > settings.max_media_bytes:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Too large")
+    body = await read_capped_body(request)
     return {"id": media_store.save(body)}
 
 

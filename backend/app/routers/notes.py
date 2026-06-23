@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
+from app.http_util import read_capped_body
 from app.models import Note, User
 from app.schemas import NoteCreate, NoteListItem, NoteOut, NoteUpdate
 from app.services import media_store
@@ -112,11 +112,7 @@ async def upload_note_media(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     await _own_note(db, note_id, current.id)
-    blob = await request.body()
-    if not blob:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty body")
-    if len(blob) > settings.max_media_bytes:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Too large")
+    blob = await read_capped_body(request)
     return {"id": media_store.save(blob)}
 
 

@@ -226,6 +226,13 @@ async def mark_read(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     member = await _require_member(db, conversation_id, identity.user.id)
+
+    # Bind the message to this conversation — don't let a member stamp a read
+    # receipt on a message that lives in a conversation they're not part of.
+    read_msg = await db.get(Message, message_id)
+    if read_msg is None or read_msg.conversation_id != conversation_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+
     member.last_read_message_id = message_id
     member.marked_unread = False
 
@@ -250,7 +257,6 @@ async def mark_read(
     # that someone else sent and that hasn't started yet.
     started_at: datetime | None = None
     up_to_iso: str | None = None
-    read_msg = await db.get(Message, message_id)
     if read_msg is not None:
         # Only messages that were themselves sent as ephemeral (disappear_seconds
         # > 0) get a clock — older permanent messages are never affected.

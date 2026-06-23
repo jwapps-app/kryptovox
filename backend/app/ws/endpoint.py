@@ -6,8 +6,9 @@ from jwt import PyJWTError as JWTError
 from sqlalchemy import select
 
 from app.database import SessionLocal
-from app.models import ConversationMember, Device
+from app.models import ConversationMember, Device, User
 from app.security import decode_access_token
+from app.services.app_settings import get_require_2fa
 from app.services.fanout import fanout_conversation
 from app.services.presence import mark_offline, mark_online
 from app.ws.events import (
@@ -48,6 +49,17 @@ async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
     except (JWTError, KeyError, ValueError):
         await websocket.close(code=4401)
         return
+
+    # Same enrolment gate the content routers enforce: if the admin requires 2FA
+    # and this account hasn't set it up, don't open the live message stream.
+    async with SessionLocal() as db:
+        user = await db.get(User, user_id)
+        if user is None:
+            await websocket.close(code=4401)
+            return
+        if not user.twofa_enabled and await get_require_2fa(db):
+            await websocket.close(code=4403)
+            return
 
     await websocket.accept()
     conversation_ids = await _conversation_ids(user_id)
@@ -96,9 +108,15 @@ async def _handle_client_event(
     if event_type in (TYPING_START, TYPING_STOP):
         await mark_online(device_id)
         async with SessionLocal() as db:
+            # Only fan out to a conversation the sender actually belongs to —
+            # otherwise a client could spoof typing into any conversation and
+            # probe for its existence.
+            conv_uuid = uuid.UUID(conversation_id)
+            if await db.get(ConversationMember, (conv_uuid, user_id)) is None:
+                return
             await fanout_conversation(
                 db,
-                uuid.UUID(conversation_id),
+                conv_uuid,
                 envelope(
                     event_type,
                     {

@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity
+from app.http_util import read_capped_body
 from app.models import ConversationMember, Message
 from app.services import media_store
 
@@ -17,11 +17,7 @@ async def upload_media(
     identity: CurrentIdentity = Depends(get_current_identity),
 ) -> dict[str, str]:
     """Store an encrypted blob (raw ciphertext body) and return its id."""
-    body = await request.body()
-    if not body:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty body")
-    if len(body) > settings.max_media_bytes:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Too large")
+    body = await read_capped_body(request)
     return {"id": media_store.save(body)}
 
 
