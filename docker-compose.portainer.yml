@@ -143,6 +143,8 @@ volumes:
 #   POSTGRES_DB             kryptovox
 #   SECRET_KEY              <64-char random hex>
 #   ALLOWED_ORIGINS         https://chat.yourdomain.com
+#   WEBAUTHN_RP_ID          yourdomain.com          (passkeys; registrable parent domain)
+#   WEBAUTHN_ORIGIN         https://chat.yourdomain.com  (full https origin)
 #   VAPID_EMAIL             mailto:you@yourdomain.com
 #   WEB_PORT                8095         (host port nginx is published on)
 #   BACKEND_WORKERS         4            (optional)
