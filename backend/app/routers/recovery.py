@@ -15,6 +15,7 @@ from app.schemas import (
     RecoverySetupIn,
 )
 from app.security import hash_password
+from app.services.push import notify_user
 
 router = APIRouter(prefix="/recovery", tags=["recovery"])
 
@@ -79,3 +80,20 @@ async def finish_recovery(
     user = _verify(user, body.recovery_verifier)
     user.password_hash = hash_password(body.new_password)
     user.encrypted_private_key = body.encrypted_private_key.model_dump()
+    await db.flush()
+    # Alert the account's devices — a recovery-key reset bypasses 2FA, so the
+    # owner should hear about it in case the recovery key was stolen. Strictly
+    # best-effort: a notification problem must never undo the password reset.
+    try:
+        await notify_user(
+            db,
+            user.id,
+            {
+                "title": "Kryptovox security alert",
+                "body": "Your password was just reset with your recovery key. "
+                "If this wasn't you, sign in and change it immediately.",
+                "url": "/settings",
+            },
+        )
+    except Exception:  # noqa: BLE001
+        pass

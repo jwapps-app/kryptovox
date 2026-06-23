@@ -30,7 +30,7 @@ from app.schemas import (
     TotpVerifyIn,
     TwoFAStatus,
 )
-from app.security import generate_backup_codes, hash_backup_code
+from app.security import consume_totp, generate_backup_codes, hash_backup_code
 from app.services.webauthn_svc import (
     create_challenge_token,
     decode_challenge_token,
@@ -90,7 +90,7 @@ async def totp_verify(
 ) -> BackupCodesOut:
     if not current.totp_secret:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Run setup first")
-    if not pyotp.TOTP(current.totp_secret).verify(body.code.strip(), valid_window=1):
+    if not consume_totp(current, body.code.strip()):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That code didn't match")
     current.totp_enabled = True
     # Only issue codes if this is the first 2FA method; don't clobber existing ones.

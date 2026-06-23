@@ -17,10 +17,15 @@ const DEFAULTS: Prefs = {
 
 // Build an "Open in Maps" URL for the viewer's chosen maps app.
 export function mapsUrl(lat: number, lng: number): string {
+  // Coordinates come from decrypted, attacker-influenceable message JSON. Coerce
+  // to finite numbers so nothing arbitrary can be interpolated into the href.
+  const a = Number(lat);
+  const o = Number(lng);
+  if (!Number.isFinite(a) || !Number.isFinite(o)) return "#";
   if (getPrefs().mapsProvider === "google") {
-    return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    return `https://www.google.com/maps/search/?api=1&query=${a},${o}`;
   }
-  return `https://maps.apple.com/?ll=${lat},${lng}&q=Shared%20Location`;
+  return `https://maps.apple.com/?ll=${a},${o}&q=Shared%20Location`;
 }
 
 export function getPrefs(): Prefs {
