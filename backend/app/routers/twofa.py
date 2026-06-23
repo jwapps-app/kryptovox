@@ -137,16 +137,14 @@ async def passkey_register_options(
     db: AsyncSession = Depends(get_db),
 ) -> PasskeyOptionsOut:
     rp_id, _ = rp_and_origin(request)
-    existing = await _user_passkeys(db, current.id)
+    # No exclude_credentials: synced passkey managers (Bitwarden, iCloud) treat an
+    # already-synced credential as "excluded" and refuse to register, even on a new
+    # device. Allowing a second passkey is harmless — both are valid 2FA factors.
     options = generate_registration_options(
         rp_id=rp_id,
         rp_name="Kryptovox",
         user_name=current.username,
         user_id=str(current.id).encode(),
-        exclude_credentials=[
-            PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id))
-            for c in existing
-        ],
         authenticator_selection=AuthenticatorSelectionCriteria(
             user_verification=UserVerificationRequirement.PREFERRED,
             resident_key=ResidentKeyRequirement.DISCOURAGED,
