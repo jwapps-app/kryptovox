@@ -35,8 +35,10 @@ export default function TwoFactorSetup({
     let credential: unknown;
     try {
       credential = await attestPasskey(regOpts.options); // must be first await
-    } catch {
-      setErr("Couldn't add a passkey. Your device may not support it, or it was cancelled.");
+    } catch (e) {
+      const name = (e as Error)?.name || "Error";
+      const msg = (e as Error)?.message || "";
+      setErr(`Couldn't add a passkey — ${name}${msg ? `: ${msg}` : ""}`);
       return;
     }
     setBusy(true);
