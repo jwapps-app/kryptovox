@@ -15,17 +15,29 @@ import SecretLinkThread from "./pages/SecretLinkThread";
 import NotesList from "./pages/NotesList";
 import CommandPalette from "./components/CommandPalette";
 import LockGate from "./components/LockGate";
+import ForceTwoFactor from "./components/ForceTwoFactor";
 import { isLockEnabled } from "./lib/appLock";
+import { api } from "./lib/api";
 
 // The note editor pulls in TipTap (~450KB); load it only when a note is opened.
 const NoteEditor = lazy(() => import("./pages/NoteEditor"));
 
 export default function App() {
   const status = useAuth((s) => s.status);
+  const user = useAuth((s) => s.user);
   const bootstrap = useAuth((s) => s.bootstrap);
   const loadGuestUnread = useChat((s) => s.loadGuestUnread);
   const navigate = useNavigate();
   const [locked, setLocked] = useState(() => isLockEnabled());
+  const [require2fa, setRequire2fa] = useState(false);
+
+  // Whether the admin requires 2FA (gates the app until the user enrolls).
+  useEffect(() => {
+    if (status !== "authed") return;
+    api<{ require_2fa: boolean }>("/config")
+      .then((c) => setRequire2fa(c.require_2fa))
+      .catch(() => {});
+  }, [status]);
   const hiddenAt = useRef<number | null>(null);
 
   // Re-lock when the app returns to the foreground after being away a while.
@@ -121,6 +133,14 @@ export default function App() {
           hiddenAt.current = null;
           setLocked(false);
         }}
+      />
+    );
+  }
+
+  if (require2fa && user && !user.twofa_enabled) {
+    return (
+      <ForceTwoFactor
+        onDone={() => useAuth.setState({ user: { ...user, twofa_enabled: true } })}
       />
     );
   }

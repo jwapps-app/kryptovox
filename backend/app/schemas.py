@@ -58,6 +58,40 @@ class RefreshRequest(BaseModel):
     refresh_token: str | None = None
 
 
+class LoginResponse(BaseModel):
+    # Either tokens (no 2FA) or a 2FA challenge (complete via /auth/2fa).
+    twofa_required: bool = False
+    pending_token: str | None = None
+    tokens: "TokenResponse | None" = None
+
+
+# ---------- Two-factor auth ----------
+class TotpSetupOut(BaseModel):
+    secret: str
+    provisioning_uri: str
+
+
+class TotpVerifyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=4, max_length=10)
+
+
+class BackupCodesOut(BaseModel):
+    codes: list[str]
+
+
+class TwoFAStatus(BaseModel):
+    totp_enabled: bool
+    backup_codes_remaining: int
+
+
+class TwoFAComplete(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    pending_token: str
+    code: str = Field(min_length=4, max_length=20)
+    device_name: str | None = Field(default=None, max_length=64)
+
+
 # ---------- Users / Devices ----------
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -69,6 +103,7 @@ class UserOut(BaseModel):
     # Public identity key for E2EE wrapping (null until the user establishes it).
     identity_public_key: str | None = None
     has_avatar: bool = False  # true when an encrypted profile photo is set
+    twofa_enabled: bool = False
 
 
 class SetupStatus(BaseModel):
@@ -160,11 +195,13 @@ class RetentionUpdate(BaseModel):
 
 class AppConfigOut(BaseModel):
     default_retention_days: int
+    require_2fa: bool = False
 
 
 class AppConfigUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    default_retention_days: int = Field(ge=0, le=3650)
+    default_retention_days: int | None = Field(default=None, ge=0, le=3650)
+    require_2fa: bool | None = None
 
 
 class ConversationMemberOut(BaseModel):
@@ -404,4 +441,5 @@ class PublicThreadOut(BaseModel):
 
 
 TokenResponse.model_rebuild()
+LoginResponse.model_rebuild()
 ConversationOut.model_rebuild()

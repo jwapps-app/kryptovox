@@ -51,3 +51,37 @@ def hash_refresh_token(token: str) -> str:
 
 def refresh_token_expiry() -> datetime:
     return datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
+
+
+# ---------- Two-factor: pending-login token + backup codes ----------
+def create_pending_2fa_token(user_id: uuid.UUID) -> str:
+    """Short-lived token issued after a correct password, redeemable only by
+    completing the second factor. Grants no access on its own."""
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "type": "pending_2fa",
+        "iat": now,
+        "exp": now + timedelta(minutes=5),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decode_pending_2fa_token(token: str) -> uuid.UUID:
+    claims = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+    if claims.get("type") != "pending_2fa":
+        raise InvalidTokenError("not a pending-2fa token")
+    return uuid.UUID(claims["sub"])
+
+
+def generate_backup_codes(n: int = 10) -> list[str]:
+    # 10 chars of base32-ish, grouped for readability (e.g. abcde-fghij).
+    out = []
+    for _ in range(n):
+        raw = secrets.token_hex(5)  # 10 hex chars
+        out.append(f"{raw[:5]}-{raw[5:]}")
+    return out
+
+
+def hash_backup_code(code: str) -> str:
+    return hashlib.sha256(code.replace("-", "").lower().encode()).hexdigest()
