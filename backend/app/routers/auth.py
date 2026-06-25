@@ -1,5 +1,4 @@
 import json
-import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
