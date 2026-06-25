@@ -3,6 +3,8 @@ import { sendTyping } from "../hooks/useWebSocket";
 import { getDraft, setDraft } from "../lib/drafts";
 import { getPrefs } from "../lib/prefs";
 
+const MAX_ATTACH_BYTES = 25 * 1024 * 1024; // matches the server's media cap
+
 interface Props {
   conversationId: string;
   onSend: (text: string) => Promise<void>;
@@ -71,10 +73,16 @@ export default function InputBar({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    // The server caps the encrypted blob at 25 MB; reject early with a clear
+    // message instead of letting the upload fail silently.
+    if (file.size > MAX_ATTACH_BYTES) {
+      alert("That file is too large to send (max 25 MB).");
+      return;
+    }
     try {
       await onSendFile(file);
     } catch {
-      /* best-effort */
+      alert("Couldn’t send that file. Please try again.");
     }
   };
 
@@ -83,9 +91,9 @@ export default function InputBar({
     e.target.value = ""; // let the same file be picked again later
     if (!file) return;
     try {
-      await onSendImage(file);
+      await onSendImage(file); // images are downscaled before encryption
     } catch {
-      /* best-effort; failures are non-fatal */
+      alert("Couldn’t send that image. Please try again.");
     }
   };
 

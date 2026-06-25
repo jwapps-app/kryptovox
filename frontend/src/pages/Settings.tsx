@@ -44,7 +44,49 @@ export default function Settings() {
   const identity = useAuth((s) => s.identity);
   const currentDeviceId = useAuth((s) => s.deviceId);
   const logout = useAuth((s) => s.logout);
+  const changePassword = useAuth((s) => s.changePassword);
+  const deleteAccount = useAuth((s) => s.deleteAccount);
   const avatarFileRef = useRef<HTMLInputElement>(null);
+
+  // Change password
+  const [pwOpen, setPwOpen] = useState(false);
+  const [curPw, setCurPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [pwMsg, setPwMsg] = useState<string | null>(null);
+  const [pwBusy, setPwBusy] = useState(false);
+  // Delete account
+  const [delOpen, setDelOpen] = useState(false);
+  const [delPw, setDelPw] = useState("");
+  const [delErr, setDelErr] = useState<string | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+
+  const submitPasswordChange = async () => {
+    setPwMsg(null);
+    setPwBusy(true);
+    try {
+      await changePassword(curPw, newPw);
+      setPwOpen(false);
+      setCurPw("");
+      setNewPw("");
+      setPwMsg("Password changed.");
+    } catch {
+      setPwMsg("Couldn't change password — check your current password.");
+    } finally {
+      setPwBusy(false);
+    }
+  };
+
+  const submitDelete = async () => {
+    setDelErr(null);
+    setDelBusy(true);
+    try {
+      await deleteAccount(delPw);
+      navigate("/"); // store is now anon → the app routes to the login screen
+    } catch {
+      setDelErr("Couldn't delete account — check your password.");
+      setDelBusy(false);
+    }
+  };
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarVer, setAvatarVer] = useState(0); // bump to re-render my avatar
   const [lock, setLock] = useState<LockMethod | null>(lockMethod());
@@ -620,6 +662,109 @@ export default function Settings() {
               )}
             </div>
           ))}
+        </Section>
+
+        <Section title="Password">
+          {!pwOpen ? (
+            <button
+              className="text-sm text-imsg-blue"
+              onClick={() => {
+                setPwOpen(true);
+                setPwMsg(null);
+              }}
+            >
+              Change password
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <input
+                type="password"
+                placeholder="Current password"
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-none focus:border-imsg-blue"
+                value={curPw}
+                onChange={(e) => setCurPw(e.target.value)}
+              />
+              <input
+                type="password"
+                placeholder="New password (at least 8 characters)"
+                autoComplete="new-password"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-none focus:border-imsg-blue"
+                value={newPw}
+                onChange={(e) => setNewPw(e.target.value)}
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  className="rounded-xl bg-imsg-blue px-4 py-2 text-sm text-white disabled:opacity-50"
+                  disabled={pwBusy || !curPw || newPw.length < 8}
+                  onClick={() => void submitPasswordChange()}
+                >
+                  {pwBusy ? "…" : "Save"}
+                </button>
+                <button
+                  className="text-sm text-gray-400"
+                  onClick={() => {
+                    setPwOpen(false);
+                    setCurPw("");
+                    setNewPw("");
+                    setPwMsg(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {pwMsg && <p className="mt-2 text-xs text-gray-500">{pwMsg}</p>}
+        </Section>
+
+        <Section title="Danger zone">
+          {!delOpen ? (
+            <button
+              className="text-sm text-red-500"
+              onClick={() => {
+                setDelOpen(true);
+                setDelErr(null);
+              }}
+            >
+              Delete account
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">
+                Permanently deletes your account, devices, notes, and recovery key.
+                Messages you’ve already sent stay in others’ chats. This can’t be undone.
+              </p>
+              <input
+                type="password"
+                placeholder="Confirm your password"
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-none focus:border-imsg-blue"
+                value={delPw}
+                onChange={(e) => setDelPw(e.target.value)}
+              />
+              {delErr && <p className="text-xs text-red-500">{delErr}</p>}
+              <div className="flex items-center gap-3">
+                <button
+                  className="rounded-xl bg-red-500 px-4 py-2 text-sm text-white disabled:opacity-50"
+                  disabled={delBusy || !delPw}
+                  onClick={() => void submitDelete()}
+                >
+                  {delBusy ? "…" : "Delete my account"}
+                </button>
+                <button
+                  className="text-sm text-gray-400"
+                  onClick={() => {
+                    setDelOpen(false);
+                    setDelPw("");
+                    setDelErr(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </Section>
 
         <button
