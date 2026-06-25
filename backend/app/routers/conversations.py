@@ -18,10 +18,35 @@ from app.schemas import (
     RetentionUpdate,
     UserOut,
 )
+from app.services import media_store
 from app.services.fanout import fanout_conversation
 from app.ws.events import CONVERSATION_UPDATED, envelope
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+
+async def _cleanup_if_empty(db: AsyncSession, conversation_id: uuid.UUID) -> None:
+    """When the last member leaves, the conversation can never be reached again —
+    free its image/file blobs and delete it (messages cascade), so it doesn't
+    linger forever with orphaned blobs."""
+    remaining = await db.scalar(
+        select(func.count())
+        .select_from(ConversationMember)
+        .where(ConversationMember.conversation_id == conversation_id)
+    )
+    if remaining:
+        return
+    media_ids = await db.execute(
+        select(Message.media["id"].astext).where(
+            Message.conversation_id == conversation_id, Message.media.isnot(None)
+        )
+    )
+    for mid in media_ids.scalars().all():
+        if mid:
+            media_store.delete(mid)
+    conv = await db.get(Conversation, conversation_id)
+    if conv is not None:
+        await db.delete(conv)
 
 
 async def _members(db: AsyncSession, conversation_id: uuid.UUID) -> list[User]:
@@ -351,6 +376,7 @@ async def remove_member(
     )
     await db.delete(target)
     await db.flush()
+    await _cleanup_if_empty(db, conversation_id)
 
 
 @router.post("/{conversation_id}/leave", status_code=204)
@@ -367,3 +393,4 @@ async def leave_conversation(
     )
     await db.delete(member)
     await db.flush()
+    await _cleanup_if_empty(db, conversation_id)

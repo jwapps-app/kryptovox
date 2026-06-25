@@ -30,6 +30,7 @@ from app.routers import (
     twofa,
     users,
 )
+from app.services.blob_gc import blob_gc_loop
 from app.services.retention import retention_loop
 from app.ws.endpoint import router as ws_router
 from app.ws.hub import hub
@@ -47,8 +48,10 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         log.warning("Redis ping failed: %s", exc)
     sweeper = asyncio.create_task(retention_loop())
+    blob_gc = asyncio.create_task(blob_gc_loop())
     yield
     sweeper.cancel()
+    blob_gc.cancel()
     await hub.stop()
     await redis.aclose()
 
