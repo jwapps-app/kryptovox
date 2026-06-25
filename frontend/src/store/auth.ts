@@ -2,9 +2,11 @@ import { create } from "zustand";
 import { api, setAccessToken, setOnAuthLost } from "../lib/api";
 import { getRefreshToken, setRefreshToken } from "../lib/session";
 import {
+  clearIdentity,
   createIdentity,
   loadIdentity,
   recoverIdentity,
+  wrapPrivateKey,
 } from "../crypto/identity";
 import type { EncryptedKeyBlob, Identity } from "../crypto/identity";
 import { verifyPasskeyLogin } from "../lib/passkey";
@@ -49,6 +51,8 @@ interface AuthState {
     password: string,
     deviceName: string
   ) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -226,6 +230,33 @@ export const useAuth = create<AuthState>((set, get) => ({
       set({ error: (e as Error).message });
       throw e;
     }
+  },
+
+  changePassword: async (currentPassword, newPassword) => {
+    const identity = get().identity;
+    if (!identity) throw new Error("No identity loaded on this device");
+    // Re-wrap the identity key under the new password client-side; the server
+    // never sees the plaintext key.
+    const blob = await wrapPrivateKey(identity.privateKey, newPassword);
+    await api("/users/me/password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+        encrypted_private_key: blob,
+      }),
+    });
+  },
+
+  deleteAccount: async (password) => {
+    await api("/users/me", {
+      method: "DELETE",
+      body: JSON.stringify({ password }),
+    });
+    await clearIdentity();
+    setAccessToken(null);
+    setRefreshToken(null);
+    set({ status: "anon", user: null, deviceId: null, identity: null, needsReauth: false });
   },
 
   logout: async () => {

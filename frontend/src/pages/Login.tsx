@@ -49,6 +49,7 @@ export default function Login() {
   const complete2faPasskey = useAuth((s) => s.complete2faPasskey);
   const register = useAuth((s) => s.register);
   const error = useAuth((s) => s.error);
+  const needsReauth = useAuth((s) => s.needsReauth);
 
   useEffect(() => {
     api<{ needs_setup: boolean }>("/auth/setup-status")
@@ -291,7 +292,9 @@ export default function Login() {
         <p className="mb-6 text-center text-sm text-gray-500">
           {needsSetup
             ? "Set up your server — this account will be the admin"
-            : "End-to-end encrypted messaging"}
+            : needsReauth
+              ? "Enter your password to unlock this device"
+              : "End-to-end encrypted messaging"}
         </p>
 
         <input
