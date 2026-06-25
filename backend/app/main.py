@@ -2,13 +2,15 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from sqlalchemy import text
 
 from app.config import settings
+from app.database import SessionLocal
 from app.deps import require_enrolled
 from app.ratelimit import limiter
 from app.redis_client import redis
@@ -71,8 +73,25 @@ api = APIRouter(prefix="/api")
 
 
 @api.get("/health", tags=["health"])
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict[str, object]:
+    """Readiness probe. Postgres is essential → 503 if it's unreachable. Redis is
+    now degraded-tolerant (rate limiting, lockout, presence fail open), so a Redis
+    outage is reported but doesn't fail the check."""
+    db_ok = True
+    try:
+        async with SessionLocal() as db:
+            await db.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001
+        db_ok = False
+    redis_ok = True
+    try:
+        await redis.ping()
+    except Exception:  # noqa: BLE001
+        redis_ok = False
+    body = {"status": "ok" if db_ok else "degraded", "db": db_ok, "redis": redis_ok}
+    if not db_ok:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=body)
+    return body
 
 
 # Content routers are gated by require_enrolled: when the admin requires 2FA,
