@@ -5,6 +5,7 @@ client before upload and decrypted on the recipient's device. Files are named by
 a random id and live flat under settings.media_dir.
 """
 import os
+import time
 import uuid
 
 from app.config import settings
@@ -47,3 +48,22 @@ def delete(media_id: str) -> None:
         os.remove(path)
     except OSError:
         pass
+
+
+def list_ids(min_age_seconds: float = 0.0) -> list[str]:
+    """Ids of stored blobs whose file is at least `min_age_seconds` old. The age
+    floor keeps the orphan GC from reaping a blob that was just uploaded but whose
+    referencing row hasn't been written yet (uploads precede the message insert)."""
+    d = settings.media_dir
+    if not os.path.isdir(d):
+        return []
+    cutoff = time.time() - min_age_seconds
+    out: list[str] = []
+    for name in os.listdir(d):
+        path = os.path.join(d, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) <= cutoff:
+                out.append(name)
+        except OSError:
+            continue
+    return out
