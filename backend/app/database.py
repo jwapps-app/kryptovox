@@ -12,7 +12,11 @@ from app.config import settings
 engine = create_async_engine(
     settings.database_url,
     echo=False,
-    pool_pre_ping=True,
+    pool_pre_ping=True,  # transparently drop connections the DB closed under us
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_recycle=1800,  # recycle every 30 min to avoid stale server-side timeouts
+    pool_timeout=30,
 )
 
 SessionLocal = async_sessionmaker(

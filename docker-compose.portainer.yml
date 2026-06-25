@@ -78,6 +78,16 @@ services:
       # VAPID key; /media holds encrypted image blobs.
       - kryptovox-vapid:/data
       - kryptovox-media:/media
+    healthcheck:
+      # Readiness: /api/health probes Postgres (503 if down). start_period covers
+      # the alembic migration on boot so the container isn't killed mid-upgrade.
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=4).status==200 else 1)"
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,14 +100,18 @@ services:
     logging: *default-logging
     mem_limit: 64m
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     # Published on the NAS so your existing Cloudflare Tunnel (or Synology
     # reverse proxy) can reach it at http://<NAS-IP>:${WEB_PORT}. Pick any free
     # host port. Cloudflare still serves the site over HTTPS at the edge.
     ports:
       - "${WEB_PORT:-8095}:80"
 
-  # Nightly pg_dump into /volume1/Backup/kryptovox, keeping the last 14 days.
+  # Nightly backup into /volume1/Backup/kryptovox, keeping the last 14 days.
+  # Backs up ALL the durable state: the Postgres dump AND the encrypted media
+  # blobs AND the VAPID key. A DB-only backup would restore with every image
+  # broken (rows point at missing blobs) and push dead (lost signing key).
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -112,6 +126,8 @@ services:
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
     volumes:
       - /volume1/Backup/kryptovox:/backup
+      - kryptovox-media:/media:ro
+      - kryptovox-vapid:/vapid:ro
     entrypoint:
       - sh
       - -c
@@ -120,9 +136,15 @@ services:
           ts=$$(date +%Y%m%d_%H%M%S)
           pg_dump -h postgres -U "$${POSTGRES_USER}" "$${POSTGRES_DB}" \
             | gzip > "/backup/kryptovox_$${ts}.sql.gz" \
-            && echo "backup written: kryptovox_$${ts}.sql.gz" \
-            || echo "backup FAILED at $${ts}"
+            && echo "db backup written: kryptovox_$${ts}.sql.gz" \
+            || echo "db backup FAILED at $${ts}"
+          tar czf "/backup/media_$${ts}.tar.gz" -C /media . \
+            && echo "media backup written: media_$${ts}.tar.gz" \
+            || echo "media backup FAILED at $${ts}"
+          cp /vapid/vapid_private.pem /backup/vapid_private.pem 2>/dev/null \
+            && echo "vapid key copied" || echo "vapid key not found (yet)"
           find /backup -name 'kryptovox_*.sql.gz' -mtime +$${BACKUP_RETENTION_DAYS} -delete
+          find /backup -name 'media_*.tar.gz' -mtime +$${BACKUP_RETENTION_DAYS} -delete
           sleep 86400
         done
     depends_on:

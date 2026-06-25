@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # Core infra
     database_url: str = "postgresql+asyncpg://kryptovox:kryptovox@postgres:5432/kryptovox"
     redis_url: str = "redis://redis:6379/0"
+    # Per-worker connection pool. With N gunicorn workers the ceiling is
+    # N * (pool_size + max_overflow); keep it well under Postgres max_connections.
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
 
     # Auth / JWT
     secret_key: str = "dev-secret-change-me"

@@ -100,7 +100,13 @@ class Hub:
         if self._redis is None:
             log.warning("Hub not started; dropping publish to %s", channel)
             return
-        await self._redis.publish(channel, json.dumps(envelope, default=str))
+        # Best-effort: a Redis blip drops the real-time fanout for this event but
+        # must not fail the request that triggered it (the message is already
+        # persisted; clients reconcile on reconnect / next fetch).
+        try:
+            await self._redis.publish(channel, json.dumps(envelope, default=str))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Hub publish to %s failed (Redis): %s", channel, exc)
 
 
 hub = Hub()

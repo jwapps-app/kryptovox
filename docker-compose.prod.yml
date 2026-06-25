@@ -75,6 +75,14 @@ services:
       resources:
         limits:
           memory: 512m
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=4).status==200 else 1)"
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,7 +101,8 @@ services:
         limits:
           memory: 64m
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     # No host ports — Cloudflare Tunnel connects to kryptovox_nginx:80 internally.
     expose:
       - "80"
@@ -108,7 +117,9 @@ services:
     depends_on:
       - nginx
 
-  # Nightly pg_dump into /volume1/Backup/kryptovox, keeping the last 14 days.
+  # Nightly backup into /volume1/Backup/kryptovox, keeping the last 14 days.
+  # Captures ALL durable state — Postgres dump + encrypted media blobs + VAPID
+  # key — so a restore comes back whole (a DB-only backup loses images & push).
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -124,6 +135,8 @@ services:
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
     volumes:
       - /volume1/Backup/kryptovox:/backup
+      - kryptovox-media:/media:ro
+      - kryptovox-vapid:/vapid:ro
     entrypoint:
       - sh
       - -c
@@ -132,10 +145,16 @@ services:
           ts=$$(date +%Y%m%d_%H%M%S)
           pg_dump -h postgres -U "$${POSTGRES_USER}" "$${POSTGRES_DB}" \
             | gzip > "/backup/kryptovox_$${ts}.sql.gz" \
-            && echo "backup written: kryptovox_$${ts}.sql.gz" \
-            || echo "backup FAILED at $${ts}"
-          # Prune dumps older than BACKUP_RETENTION_DAYS.
+            && echo "db backup written: kryptovox_$${ts}.sql.gz" \
+            || echo "db backup FAILED at $${ts}"
+          tar czf "/backup/media_$${ts}.tar.gz" -C /media . \
+            && echo "media backup written: media_$${ts}.tar.gz" \
+            || echo "media backup FAILED at $${ts}"
+          cp /vapid/vapid_private.pem /backup/vapid_private.pem 2>/dev/null \
+            && echo "vapid key copied" || echo "vapid key not found (yet)"
+          # Prune dumps + media archives older than BACKUP_RETENTION_DAYS.
           find /backup -name 'kryptovox_*.sql.gz' -mtime +$${BACKUP_RETENTION_DAYS} -delete
+          find /backup -name 'media_*.tar.gz' -mtime +$${BACKUP_RETENTION_DAYS} -delete
           sleep 86400
         done
     depends_on:

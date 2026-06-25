@@ -22,4 +22,8 @@ def client_ip(request: Request) -> str:
 
 
 # Single shared limiter, Redis-backed so limits hold across worker processes.
-limiter = Limiter(key_func=client_ip, storage_uri=settings.redis_url)
+# swallow_errors: if Redis is unreachable, fail OPEN (allow the request) rather
+# than 500 every rate-limited endpoint — availability of login beats the limit.
+limiter = Limiter(
+    key_func=client_ip, storage_uri=settings.redis_url, swallow_errors=True
+)
