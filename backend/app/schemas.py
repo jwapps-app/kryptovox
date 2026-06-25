@@ -68,6 +68,21 @@ class RecoverFinishIn(BaseModel):
     encrypted_private_key: EncryptedKeyBlob  # re-wrapped under the new password
 
 
+# ---------- Self-service account control ----------
+class PasswordChangeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+    # Identity private key re-wrapped under the new password (the server can't do
+    # this — it never has the plaintext key).
+    encrypted_private_key: EncryptedKeyBlob
+
+
+class AccountDeleteIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    password: str = Field(min_length=1, max_length=128)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     # Long-lived refresh token; the client persists this (survives PWA
