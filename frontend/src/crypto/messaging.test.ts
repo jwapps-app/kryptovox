@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bytesToBase64url } from "./base64";
+import { bytesToBase64url, base64urlToBytes } from "./base64";
 import { encryptMessage, decryptMessage, type RecipientKey } from "./messaging";
 
 // Generate an X25519 identity the way createIdentity does, without touching the
@@ -84,9 +84,10 @@ describe("message E2EE round-trip", () => {
       [{ userId: "bob", publicKeyB64: bob.publicKeyB64 }],
       alice.pair.privateKey
     );
-    // Flip a character in the base64url ciphertext.
-    const tampered =
-      enc.ciphertext.slice(0, -1) + (enc.ciphertext.endsWith("A") ? "B" : "A");
+    // Flip a real byte (not a base64 padding bit) so the GCM tag must reject it.
+    const bytes = base64urlToBytes(enc.ciphertext);
+    bytes[0] ^= 0xff;
+    const tampered = bytesToBase64url(bytes);
     await expect(
       decryptMessage(
         tampered,
