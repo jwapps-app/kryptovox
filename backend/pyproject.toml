@@ -10,3 +10,4 @@ line-length = 100
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["."]  # so `app` imports under the `pytest` console script (not just `python -m pytest`)
