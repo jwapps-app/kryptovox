@@ -1,20 +1,79 @@
 name: Build & publish images
 
-# Builds the backend and frontend (nginx) images and pushes them to the GitHub
-# Container Registry (GHCR). The Synology NAS then just pulls these — it never
-# compiles anything itself.
+# Runs the test/lint/typecheck gates, then builds the backend and frontend
+# (nginx) images and pushes them to GHCR. The build job only runs if the checks
+# pass, so a regression can never reach an image. The Synology NAS just pulls.
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
+  backend-checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kryptovox
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      ENVIRONMENT: test
+      SECRET_KEY: ci-test-secret-key-0123456789abcdef0123456789
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/kryptovox
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r backend/requirements-dev.txt
+      - name: Lint (ruff)
+        run: ruff check backend/app backend/tests
+      - name: Unit tests (pytest)
+        working-directory: backend
+        run: pytest
+      - name: Migrations apply cleanly on a fresh DB
+        working-directory: backend
+        run: alembic upgrade head
+
+  frontend-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Typecheck + build
+        working-directory: frontend
+        run: npm run build
+      - name: Unit tests (vitest)
+        working-directory: frontend
+        run: npm test
+
   build:
+    needs: [backend-checks, frontend-checks]
+    # Publish images only from main / tags, never from PRs.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
