@@ -30,14 +30,16 @@ export default function CallOverlay() {
   const inCall = status === "connecting" || status === "connected";
   const label =
     status === "incoming"
-      ? `${peerName} is calling…`
+      ? `${peerName || "Someone"} is calling…`
       : status === "calling"
-        ? `Calling ${peerName}…`
+        ? peerName
+          ? `Calling ${peerName}…`
+          : "Calling…"
         : status === "connecting"
           ? "Connecting…"
-          : peerName;
+          : peerName || "On a call";
 
-  const initial = (peerName || "?").trim().charAt(0).toUpperCase();
+  const initial = (peerName || "•").trim().charAt(0).toUpperCase();
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-between bg-gray-900 text-white">

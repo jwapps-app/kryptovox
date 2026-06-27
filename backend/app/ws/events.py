@@ -29,5 +29,11 @@ def user_channel(user_id: str) -> str:
     return f"user:{user_id}"
 
 
+def thread_channel(thread_id: str) -> str:
+    # Secret-link threads: a public, link-scoped channel both the host and the
+    # anonymous guest subscribe to (used for call signaling).
+    return f"thread:{thread_id}"
+
+
 def envelope(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {"type": event_type, "payload": payload}
