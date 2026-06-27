@@ -16,7 +16,7 @@ import redis.asyncio as aioredis
 from fastapi import WebSocket
 
 from app.config import settings
-from app.ws.events import conv_channel, user_channel
+from app.ws.events import conv_channel, thread_channel, user_channel
 
 log = logging.getLogger("kryptovox.ws")
 
@@ -25,6 +25,7 @@ class Hub:
     def __init__(self) -> None:
         self._conv_subs: dict[str, set[WebSocket]] = defaultdict(set)
         self._user_subs: dict[str, set[WebSocket]] = defaultdict(set)
+        self._thread_subs: dict[str, set[WebSocket]] = defaultdict(set)
         self._redis: aioredis.Redis | None = None
         self._listener: asyncio.Task | None = None
 
@@ -43,7 +44,7 @@ class Hub:
     async def _listen(self) -> None:
         assert self._redis is not None
         pubsub = self._redis.pubsub()
-        await pubsub.psubscribe("conv:*", "user:*")
+        await pubsub.psubscribe("conv:*", "user:*", "thread:*")
         try:
             async for msg in pubsub.listen():
                 if msg.get("type") != "pmessage":
@@ -63,9 +64,16 @@ class Hub:
             targets = list(self._conv_subs.get(channel[5:], ()))
         elif channel.startswith("user:"):
             targets = list(self._user_subs.get(channel[5:], ()))
+        elif channel.startswith("thread:"):
+            targets = list(self._thread_subs.get(channel[7:], ()))
         else:
             return
+        # A thread envelope carries `_src` (the originating connection id) so the
+        # sender's own socket can skip its echo.
+        src = envelope.get("_src")
         for ws in targets:
+            if src is not None and getattr(ws, "_kv_src", None) == src:
+                continue
             try:
                 await ws.send_json(envelope)
             except Exception:  # noqa: BLE001 — drop dead sockets silently
@@ -82,6 +90,12 @@ class Hub:
     def add_conversation(self, ws: WebSocket, conversation_id: str) -> None:
         self._conv_subs[conversation_id].add(ws)
 
+    def register_thread(self, ws: WebSocket, thread_id: str) -> None:
+        self._thread_subs[thread_id].add(ws)
+
+    def unregister_thread(self, ws: WebSocket, thread_id: str) -> None:
+        self._thread_subs.get(thread_id, set()).discard(ws)
+
     def unregister(
         self, ws: WebSocket, user_id: str, conversation_ids: list[str]
     ) -> None:
@@ -95,6 +109,9 @@ class Hub:
 
     async def publish_user(self, user_id: str, envelope: dict[str, Any]) -> None:
         await self._publish(user_channel(user_id), envelope)
+
+    async def publish_thread(self, thread_id: str, envelope: dict[str, Any]) -> None:
+        await self._publish(thread_channel(thread_id), envelope)
 
     async def _publish(self, channel: str, envelope: dict[str, Any]) -> None:
         if self._redis is None:

@@ -17,6 +17,7 @@ import CommandPalette from "./components/CommandPalette";
 import LockGate from "./components/LockGate";
 import ForceTwoFactor from "./components/ForceTwoFactor";
 import CallOverlay from "./components/CallOverlay";
+import IncomingCallBanner from "./components/IncomingCallBanner";
 import { CALLS_ENABLED } from "./lib/features";
 import { isLockEnabled } from "./lib/appLock";
 import { api } from "./lib/api";
@@ -175,6 +176,7 @@ export default function App() {
       </Routes>
       <CommandPalette />
       {CALLS_ENABLED && <CallOverlay />}
+      {CALLS_ENABLED && <IncomingCallBanner />}
     </>
   );
 }
