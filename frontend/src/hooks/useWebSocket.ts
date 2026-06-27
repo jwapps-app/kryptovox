@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import { getAccessToken } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
+import { useCalls } from "../store/calls";
+import { CALLS_ENABLED } from "../lib/features";
 import type { WsEvent } from "../lib/types";
 
 let activeSocket: WebSocket | null = null;
@@ -46,6 +48,11 @@ export function useWebSocket(): void {
       ws.onmessage = (e) => {
         try {
           const event = JSON.parse(e.data) as WsEvent;
+          // Call signaling is routed to the (isolated) calls store.
+          if (CALLS_ENABLED && typeof event.type === "string" && event.type.startsWith("call.")) {
+            void useCalls.getState().onSignal(event);
+            return;
+          }
           void handleWsEvent(event);
         } catch {
           /* ignore malformed frames */
@@ -101,4 +108,13 @@ export function sendTyping(conversationId: string, typing: boolean): void {
       })
     );
   }
+}
+
+// Generic best-effort sender over the live socket (used by call signaling).
+export function sendWs(type: string, payload: Record<string, unknown>): boolean {
+  if (activeSocket?.readyState === WebSocket.OPEN) {
+    activeSocket.send(JSON.stringify({ type, payload }));
+    return true;
+  }
+  return false;
 }

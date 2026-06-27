@@ -9,6 +9,7 @@ from app.database import SessionLocal
 from app.models import ConversationMember, Device, User
 from app.security import decode_access_token
 from app.services.app_settings import get_require_2fa
+from app.ws.calls import CALL_EVENTS, relay_call_event
 from app.services.fanout import fanout_conversation
 from app.services.presence import mark_offline, mark_online
 from app.ws.events import (
@@ -90,6 +91,11 @@ async def _handle_client_event(
     keeping persistence in one place. The socket carries ephemeral signals.
     """
     event_type = data.get("type")
+
+    # 1:1 call signaling (WebRTC) — pure relay, isolated in ws/calls.py.
+    if event_type in CALL_EVENTS:
+        await relay_call_event(user_id, data)
+        return
 
     # Presence: foreground => online (push suppressed); backgrounded/hidden =>
     # offline (eligible for push) even though the socket stays connected.
