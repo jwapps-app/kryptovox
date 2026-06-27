@@ -16,6 +16,8 @@ import NotesList from "./pages/NotesList";
 import CommandPalette from "./components/CommandPalette";
 import LockGate from "./components/LockGate";
 import ForceTwoFactor from "./components/ForceTwoFactor";
+import CallOverlay from "./components/CallOverlay";
+import { CALLS_ENABLED } from "./lib/features";
 import { isLockEnabled } from "./lib/appLock";
 import { api } from "./lib/api";
 
@@ -172,6 +174,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <CommandPalette />
+      {CALLS_ENABLED && <CallOverlay />}
     </>
   );
 }
