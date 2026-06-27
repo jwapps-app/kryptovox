@@ -14,6 +14,14 @@ import { fetchThreadMediaGuest, uploadThreadMediaGuest } from "../lib/media";
 import { useViewportHeight } from "../hooks/useViewportHeight";
 import ExpiryBadge from "../components/ExpiryBadge";
 import GuestBubble from "../components/GuestBubble";
+import CallOverlay from "../components/CallOverlay";
+import { useCalls } from "../store/calls";
+import { CALLS_ENABLED } from "../lib/features";
+import {
+  armThreadTransport,
+  connectThreadSocket,
+  disconnectThreadSocket,
+} from "../lib/threadSocket";
 import type { Decoded, PublicThread } from "../lib/types";
 
 // Public page for a secret-link recipient — no account. The decryption key is in
@@ -103,6 +111,13 @@ export default function GuestView() {
       if (timer) clearInterval(timer);
     };
   }, [keyB64, load]);
+
+  // Join the thread's signaling channel so we can place / receive a call.
+  useEffect(() => {
+    if (!CALLS_ENABLED || !id) return;
+    connectThreadSocket(id);
+    return () => disconnectThreadSocket();
+  }, [id]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -247,8 +262,38 @@ export default function GuestView() {
     <div className="mx-auto flex h-full max-w-2xl flex-col">
       <header className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
         <span className="font-semibold">Secret message</span>
-        <span className="ml-auto text-xs text-gray-400">end-to-end encrypted</span>
+        {CALLS_ENABLED && (
+          <span className="ml-auto flex items-center gap-1">
+            <button
+              className="p-1 text-imsg-blue active:opacity-60"
+              aria-label="Voice call"
+              onClick={() => {
+                armThreadTransport();
+                void useCalls.getState().startCall("", "", "", false, "Guest");
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+              </svg>
+            </button>
+            <button
+              className="p-1 text-imsg-blue active:opacity-60"
+              aria-label="Video call"
+              onClick={() => {
+                armThreadTransport();
+                void useCalls.getState().startCall("", "", "", true, "Guest");
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M23 7l-7 5 7 5V7z" />
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+              </svg>
+            </button>
+          </span>
+        )}
+        <span className="text-xs text-gray-400">encrypted</span>
       </header>
+      {CALLS_ENABLED && <CallOverlay />}
 
       {expiresAt && (
         <div className="flex items-center justify-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600">

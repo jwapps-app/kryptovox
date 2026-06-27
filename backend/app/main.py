@@ -33,6 +33,7 @@ from app.routers import (
 from app.services.blob_gc import blob_gc_loop
 from app.services.retention import retention_loop
 from app.ws.endpoint import router as ws_router
+from app.ws.guest_ws import router as guest_ws_router
 from app.ws.hub import hub
 
 logging.basicConfig(level=logging.INFO)
@@ -117,5 +118,6 @@ api.include_router(config.router)
 api.include_router(links.router, dependencies=_enrolled)
 api.include_router(guest.router)
 api.include_router(ws_router)  # WS /api/ws
+api.include_router(guest_ws_router)  # WS /api/guest-ws/{thread_id} (secret-link calls)
 
 app.include_router(api)

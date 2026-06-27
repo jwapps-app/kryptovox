@@ -18,6 +18,14 @@ import { fetchThreadMediaHost, uploadThreadMediaHost } from "../lib/media";
 import BackButton from "../components/BackButton";
 import ExpiryBadge from "../components/ExpiryBadge";
 import GuestBubble from "../components/GuestBubble";
+import { getAccessToken } from "../lib/api";
+import { useCalls } from "../store/calls";
+import { CALLS_ENABLED } from "../lib/features";
+import {
+  armThreadTransport,
+  connectThreadSocket,
+  disconnectThreadSocket,
+} from "../lib/threadSocket";
 import type { Decoded, GuestThreadDetail } from "../lib/types";
 
 export default function SecretLinkThread() {
@@ -112,6 +120,14 @@ export default function SecretLinkThread() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [msgs.length]);
+
+  // Join the thread's signaling channel (as host) so guest calls reach this page
+  // and any call invite buffered while we were away is delivered on connect.
+  useEffect(() => {
+    if (!CALLS_ENABLED || !id) return;
+    connectThreadSocket(id, getAccessToken() ?? undefined);
+    return () => disconnectThreadSocket();
+  }, [id]);
 
   const [locating, setLocating] = useState(false);
 
@@ -263,6 +279,35 @@ export default function SecretLinkThread() {
             className="text-xs text-gray-400"
           />
         </div>
+        {CALLS_ENABLED && (
+          <>
+            <button
+              className="p-1 text-imsg-blue active:opacity-60"
+              aria-label="Voice call"
+              onClick={() => {
+                armThreadTransport();
+                void useCalls.getState().startCall("", "", "Guest", false);
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+              </svg>
+            </button>
+            <button
+              className="p-1 text-imsg-blue active:opacity-60"
+              aria-label="Video call"
+              onClick={() => {
+                armThreadTransport();
+                void useCalls.getState().startCall("", "", "Guest", true);
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M23 7l-7 5 7 5V7z" />
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+              </svg>
+            </button>
+          </>
+        )}
         <button className="text-sm text-imsg-blue" onClick={() => void copyLink()}>
           {copied ? "Copied ✓" : "Copy link"}
         </button>

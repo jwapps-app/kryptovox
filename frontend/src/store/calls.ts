@@ -27,12 +27,17 @@ interface CallState {
   cameraOff: boolean;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  // Doorbell for an incoming secret-link call when we're not on the thread page
+  // (delivered over the main socket); the banner uses it to offer "Answer".
+  linkRing: { threadId: string; name: string } | null;
   startCall: (
     conversationId: string,
     peerId: string,
     peerName: string,
-    video: boolean
+    video: boolean,
+    selfName?: string
   ) => Promise<void>;
+  dismissLinkRing: () => void;
   accept: () => Promise<void>;
   decline: () => void;
   hangup: () => void;
@@ -46,11 +51,25 @@ let pc: RTCPeerConnection | null = null;
 let pendingOffer: RTCSessionDescriptionInit | null = null;
 let pendingCandidates: RTCIceCandidateInit[] = [];
 
-function signal(type: string, extra: Record<string, unknown> = {}): void {
+// Signaling transport is pluggable: 1:1 calls go over the authenticated main
+// socket addressed to a peer; secret-link calls go over the thread socket (set
+// via setCallTransport). `data` is the call-specific payload (sdp/candidate/etc).
+type CallTransport = (type: string, data: Record<string, unknown>) => void;
+let activeTransport: CallTransport | null = null;
+
+export function setCallTransport(t: CallTransport | null): void {
+  activeTransport = t;
+}
+
+function defaultTransport(type: string, data: Record<string, unknown>): void {
   const { peerId, conversationId } = useCalls.getState();
   if (peerId && conversationId) {
-    sendWs(type, { to: peerId, conversation_id: conversationId, ...extra });
+    sendWs(type, { to: peerId, conversation_id: conversationId, ...data });
   }
+}
+
+function signal(type: string, data: Record<string, unknown> = {}): void {
+  (activeTransport ?? defaultTransport)(type, data);
 }
 
 function newPeer(): RTCPeerConnection {
@@ -98,6 +117,7 @@ function teardown(): void {
 
 function reset(): void {
   teardown();
+  activeTransport = null; // back to the default (main-socket) transport
   useCalls.setState({
     status: "idle",
     peerId: null,
@@ -121,8 +141,11 @@ export const useCalls = create<CallState>((set, get) => ({
   cameraOff: false,
   localStream: null,
   remoteStream: null,
+  linkRing: null,
 
-  startCall: async (conversationId, peerId, peerName, video) => {
+  dismissLinkRing: () => set({ linkRing: null }),
+
+  startCall: async (conversationId, peerId, peerName, video, selfName) => {
     if (get().status !== "idle") return;
     set({
       status: "calling",
@@ -131,6 +154,7 @@ export const useCalls = create<CallState>((set, get) => ({
       conversationId,
       withVideo: video,
       remoteStream: null,
+      linkRing: null,
     });
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video });
@@ -139,8 +163,8 @@ export const useCalls = create<CallState>((set, get) => ({
       stream.getTracks().forEach((t) => pc!.addTrack(t, stream));
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      const selfName = useAuth.getState().user?.display_name || "Someone";
-      signal("call.offer", { sdp: offer, video, name: selfName });
+      const name = selfName || useAuth.getState().user?.display_name || "Someone";
+      signal("call.offer", { sdp: offer, video, name });
     } catch {
       alert("Couldn't start the call — check camera/microphone permission.");
       reset();
@@ -192,6 +216,14 @@ export const useCalls = create<CallState>((set, get) => ({
   onSignal: async (event) => {
     const p = (event.payload || {}) as Record<string, unknown>;
     switch (event.type) {
+      case "call.incoming": {
+        // Doorbell over the main socket: a guest is calling on a secret link and
+        // we're not on that thread page. Surface a banner unless already busy.
+        if (get().status === "idle") {
+          set({ linkRing: { threadId: String(p.thread_id), name: String(p.name || "Someone") } });
+        }
+        return;
+      }
       case "call.offer": {
         if (get().status !== "idle") {
           sendWs("call.busy", { to: p.from, conversation_id: p.conversation_id });
