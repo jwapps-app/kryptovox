@@ -7,6 +7,7 @@ import { CALLS_ENABLED } from "./features";
 
 let sock: WebSocket | null = null;
 let curThread: string | null = null;
+let activityCb: (() => void) | null = null;
 
 function threadSend(type: string, data: Record<string, unknown>): void {
   if (sock?.readyState === WebSocket.OPEN) {
@@ -19,8 +20,15 @@ export function armThreadTransport(): void {
   setCallTransport(threadSend);
 }
 
-export function connectThreadSocket(threadId: string, token?: string): void {
+// onActivity fires on a `thread.activity` event (a new message on the thread) so
+// the page can refresh in real time instead of relying on slow polling.
+export function connectThreadSocket(
+  threadId: string,
+  token?: string,
+  onActivity?: () => void
+): void {
   if (!CALLS_ENABLED) return;
+  activityCb = onActivity ?? null;
   if (sock && curThread === threadId && sock.readyState <= WebSocket.OPEN) return;
   disconnectThreadSocket();
   curThread = threadId;
@@ -34,6 +42,8 @@ export function connectThreadSocket(threadId: string, token?: string): void {
       if (typeof event.type === "string" && event.type.startsWith("call.")) {
         setCallTransport(threadSend); // replies go back over this socket
         void useCalls.getState().onSignal(event);
+      } else if (event.type === "thread.activity") {
+        activityCb?.();
       }
     } catch {
       /* ignore malformed frames */
