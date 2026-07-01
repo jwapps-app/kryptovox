@@ -15,8 +15,9 @@ from functools import lru_cache
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException, webpush
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.config import settings
 from app.models import (
@@ -97,27 +98,37 @@ async def _send(subscription: dict, payload: dict, device: Device, db: AsyncSess
 
 async def _unread_total(db: AsyncSession, user_id: uuid.UUID) -> int:
     """Total unread messages for a user across all their conversations — drives
-    the app-icon badge count. Mirrors the per-conversation unread logic."""
+    the app-icon badge. Computed in a SINGLE query (was ~2 per conversation): join
+    each membership to its last-read message for the cutoff time, then count newer
+    inbound messages per conversation, with a +1 for manually marked-unread empty
+    conversations."""
+    m = aliased(Message)
+    lr = aliased(Message)  # the member's last-read message (for its created_at)
     rows = await db.execute(
-        select(ConversationMember).where(ConversationMember.user_id == user_id)
+        select(
+            ConversationMember.marked_unread,
+            func.count(m.id)
+            .filter(
+                and_(
+                    m.sender_id != user_id,
+                    m.deleted_at.is_(None),
+                    or_(lr.created_at.is_(None), m.created_at > lr.created_at),
+                )
+            )
+            .label("unread"),
+        )
+        .select_from(ConversationMember)
+        .outerjoin(lr, lr.id == ConversationMember.last_read_message_id)
+        .outerjoin(m, m.conversation_id == ConversationMember.conversation_id)
+        .where(ConversationMember.user_id == user_id)
+        .group_by(ConversationMember.conversation_id, ConversationMember.marked_unread)
     )
     total = 0
-    for member in rows.scalars().all():
-        after = None
-        if member.last_read_message_id:
-            last_read = await db.get(Message, member.last_read_message_id)
-            after = last_read.created_at if last_read else None
-        stmt = select(func.count(Message.id)).where(
-            Message.conversation_id == member.conversation_id,
-            Message.sender_id != user_id,
-            Message.deleted_at.is_(None),
-        )
-        if after is not None:
-            stmt = stmt.where(Message.created_at > after)
-        count = int(await db.scalar(stmt) or 0)
-        if member.marked_unread and count == 0:
-            count = 1
-        total += count
+    for marked_unread, unread in rows.all():
+        unread = int(unread or 0)
+        if marked_unread and unread == 0:
+            unread = 1
+        total += unread
     return total
 
 

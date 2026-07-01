@@ -5,6 +5,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jwt import PyJWTError as JWTError
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import SessionLocal
 from app.models import ConversationMember, Device, User
 from app.security import decode_access_token
@@ -42,6 +43,13 @@ async def _touch_last_seen(device_id: uuid.UUID) -> None:
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
+    # Reject cross-site socket opens (CSWSH). A missing Origin = non-browser
+    # client (native app); a present one must be allow-listed. The token check
+    # below is the primary defense, but this closes the ambient-open vector.
+    origin = websocket.headers.get("origin")
+    if origin is not None and origin not in settings.cors_origins:
+        await websocket.close(code=4403)
+        return
     # Authenticate before accepting.
     try:
         claims = decode_access_token(token)

@@ -1,11 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_user
+from app.ratelimit import limiter
 from app.models import AvatarKey, User
 from app.schemas import (
     AccountDeleteIn,
@@ -58,7 +59,9 @@ async def update_me(
 
 
 @router.post("/users/me/password", status_code=204)
+@limiter.limit("5/minute")
 async def change_password(
+    request: Request,
     body: PasswordChangeIn,
     current: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -74,7 +77,9 @@ async def change_password(
 
 
 @router.delete("/users/me", status_code=204)
+@limiter.limit("5/minute")
 async def delete_me(
+    request: Request,
     body: AccountDeleteIn,
     current: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
