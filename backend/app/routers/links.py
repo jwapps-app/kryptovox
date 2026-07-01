@@ -9,6 +9,8 @@ from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity
 from app.http_util import read_capped_body
 from app.models import GuestMessage, GuestThread
+from app.ws.events import envelope
+from app.ws.hub import hub
 from app.schemas import (
     GuestMessageIn,
     GuestMessageOut,
@@ -185,6 +187,11 @@ async def host_reply(
     thread.last_message_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(msg)
+    # Nudge a connected guest to refresh in real time (replaces slow polling).
+    try:
+        await hub.publish_thread(str(thread_id), envelope("thread.activity", {}))
+    except Exception:  # noqa: BLE001 — best-effort realtime hint
+        pass
     return GuestMessageOut.model_validate(msg)
 
 

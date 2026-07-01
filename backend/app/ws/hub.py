@@ -69,10 +69,16 @@ class Hub:
         else:
             return
         # A thread envelope carries `_src` (the originating connection id) so the
-        # sender's own socket can skip its echo.
+        # sender skips its own echo, and an optional `_to` (a target connection
+        # id) so a 1:1 call frame reaches only the paired peer — not every other
+        # holder of the secret link.
         src = envelope.get("_src")
+        to = envelope.get("_to")
         for ws in targets:
-            if src is not None and getattr(ws, "_kv_src", None) == src:
+            ws_src = getattr(ws, "_kv_src", None)
+            if src is not None and ws_src == src:
+                continue
+            if to is not None and ws_src != to:
                 continue
             try:
                 await ws.send_json(envelope)

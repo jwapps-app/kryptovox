@@ -104,7 +104,9 @@ export default function GuestView() {
       }
       if (cancelled) return;
       await load();
-      timer = window.setInterval(() => void load(), 5000);
+      // Slow fallback poll — the thread socket delivers host replies in real
+      // time (below), so this only catches anything the socket missed.
+      timer = window.setInterval(() => void load(), 20000);
     })();
     return () => {
       cancelled = true;
@@ -112,12 +114,13 @@ export default function GuestView() {
     };
   }, [keyB64, load]);
 
-  // Join the thread's signaling channel so we can place / receive a call.
+  // Join the thread's signaling channel: enables calls AND real-time refresh on
+  // a new host reply (thread.activity) instead of waiting for the poll.
   useEffect(() => {
     if (!CALLS_ENABLED || !id) return;
-    connectThreadSocket(id);
+    connectThreadSocket(id, undefined, () => void load());
     return () => disconnectThreadSocket();
-  }, [id]);
+  }, [id, load]);
 
   useEffect(() => {
     const el = scrollRef.current;
