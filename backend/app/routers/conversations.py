@@ -1,9 +1,11 @@
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -189,22 +191,122 @@ async def _find_direct(db: AsyncSession, user_ids: list[uuid.UUID]) -> Conversat
     )
 
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
     current: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[ConversationOut]:
-    memberships = await db.execute(
-        select(ConversationMember).where(ConversationMember.user_id == current.id)
+    """Batched to a constant handful of queries regardless of conversation count
+    (was ~5 per conversation: conv fetch + members + last message + unread)."""
+    memberships = list(
+        (
+            await db.execute(
+                select(ConversationMember).where(
+                    ConversationMember.user_id == current.id
+                )
+            )
+        )
+        .scalars()
+        .all()
     )
+    if not memberships:
+        return []
+    conv_ids = [m.conversation_id for m in memberships]
+
+    # Conversations, in one query.
+    convs = {
+        c.id: c
+        for c in (
+            await db.execute(select(Conversation).where(Conversation.id.in_(conv_ids)))
+        ).scalars()
+    }
+
+    # Every member of every conversation, in one query.
+    members_by_conv: dict[uuid.UUID, list[User]] = defaultdict(list)
+    for conv_id, member_user in (
+        await db.execute(
+            select(ConversationMember.conversation_id, User).join(
+                User, User.id == ConversationMember.user_id
+            ).where(ConversationMember.conversation_id.in_(conv_ids))
+        )
+    ).all():
+        members_by_conv[conv_id].append(member_user)
+
+    # Latest message per conversation, in one query (DISTINCT ON).
+    last_by_conv = {
+        m.conversation_id: m
+        for m in (
+            await db.execute(
+                select(Message)
+                .where(Message.conversation_id.in_(conv_ids))
+                .order_by(Message.conversation_id, Message.created_at.desc())
+                .distinct(Message.conversation_id)
+            )
+        ).scalars()
+    }
+
+    # Unread count per conversation, in one aggregate query.
+    m, lr = aliased(Message), aliased(Message)
+    unread_by_conv: dict[uuid.UUID, int] = {}
+    for conv_id, marked_unread, unread in (
+        await db.execute(
+            select(
+                ConversationMember.conversation_id,
+                ConversationMember.marked_unread,
+                func.count(m.id)
+                .filter(
+                    and_(
+                        m.sender_id != current.id,
+                        m.deleted_at.is_(None),
+                        or_(lr.created_at.is_(None), m.created_at > lr.created_at),
+                    )
+                )
+                .label("unread"),
+            )
+            .select_from(ConversationMember)
+            .outerjoin(lr, lr.id == ConversationMember.last_read_message_id)
+            .outerjoin(m, m.conversation_id == ConversationMember.conversation_id)
+            .where(ConversationMember.user_id == current.id)
+            .group_by(
+                ConversationMember.conversation_id, ConversationMember.marked_unread
+            )
+        )
+    ).all():
+        u = int(unread or 0)
+        if marked_unread and u == 0:
+            u = 1
+        unread_by_conv[conv_id] = u
+
     out: list[ConversationOut] = []
-    for member in memberships.scalars().all():
-        conv = await db.get(Conversation, member.conversation_id)
-        if conv:
-            out.append(await _to_out(db, conv, member, current))
-    # Most recent activity first.
+    for member in memberships:
+        conv = convs.get(member.conversation_id)
+        if conv is None:
+            continue
+        last = last_by_conv.get(conv.id)
+        out.append(
+            ConversationOut(
+                id=conv.id,
+                type=conv.type,
+                name=conv.name,
+                avatar_url=conv.avatar_url,
+                members=[
+                    UserOut.model_validate(u) for u in members_by_conv.get(conv.id, [])
+                ],
+                my_role=member.role,
+                last_message=MessageOut.model_validate(last) if last else None,
+                unread_count=unread_by_conv.get(conv.id, 0),
+                retention_days=conv.retention_days,
+                disappear_seconds=conv.disappear_seconds,
+                pinned=member.pinned,
+                muted=member.muted,
+            )
+        )
+    # Most recent activity first (empty conversations sort last).
     out.sort(
-        key=lambda c: c.last_message.created_at if c.last_message else None,
+        key=lambda c: c.last_message.created_at if c.last_message else _EPOCH,
         reverse=True,
     )
     return out
