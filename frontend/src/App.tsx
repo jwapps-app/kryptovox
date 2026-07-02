@@ -9,10 +9,6 @@ import Login from "./pages/Login";
 import ConversationList from "./pages/ConversationList";
 import ChatView from "./pages/ChatView";
 import ChatInfo from "./pages/ChatInfo";
-import Settings from "./pages/Settings";
-import Admin from "./pages/Admin";
-import SecretLinkThread from "./pages/SecretLinkThread";
-import NotesList from "./pages/NotesList";
 import CommandPalette from "./components/CommandPalette";
 import LockGate from "./components/LockGate";
 import ForceTwoFactor from "./components/ForceTwoFactor";
@@ -24,6 +20,11 @@ import { api } from "./lib/api";
 
 // The note editor pulls in TipTap (~450KB); load it only when a note is opened.
 const NoteEditor = lazy(() => import("./pages/NoteEditor"));
+// Non-core routes: code-split so the initial chat load stays lean.
+const Settings = lazy(() => import("./pages/Settings"));
+const Admin = lazy(() => import("./pages/Admin"));
+const SecretLinkThread = lazy(() => import("./pages/SecretLinkThread"));
+const NotesList = lazy(() => import("./pages/NotesList"));
 
 // Deep-link targets must be in-app paths; reject absolute / protocol-relative
 // URLs so a hostile push payload can't redirect the app off-site.
@@ -155,25 +156,20 @@ export default function App() {
 
   return (
     <>
-      <Routes>
-        <Route path="/" element={<ConversationList />} />
-        <Route path="/chat/:id" element={<ChatView />} />
-        <Route path="/chat/:id/info" element={<ChatInfo />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/admin" element={<Admin />} />
-        <Route path="/links/:id" element={<SecretLinkThread />} />
-        <Route path="/notes" element={<NotesList />} />
-        <Route
-          path="/notes/:id"
-          element={
-            <Suspense fallback={<div className="p-6 text-gray-400">Loading…</div>}>
-              <NoteEditor />
-            </Suspense>
-          }
-        />
-        <Route path="/login" element={<Navigate to="/" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense fallback={<div className="p-6 text-gray-400">Loading…</div>}>
+        <Routes>
+          <Route path="/" element={<ConversationList />} />
+          <Route path="/chat/:id" element={<ChatView />} />
+          <Route path="/chat/:id/info" element={<ChatInfo />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/links/:id" element={<SecretLinkThread />} />
+          <Route path="/notes" element={<NotesList />} />
+          <Route path="/notes/:id" element={<NoteEditor />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
       <CommandPalette />
       {CALLS_ENABLED && <CallOverlay />}
       {CALLS_ENABLED && <IncomingCallBanner />}
