@@ -48,6 +48,15 @@ async def lifespan(app: FastAPI):
         log.info("Connected to Redis")
     except Exception as exc:  # noqa: BLE001
         log.warning("Redis ping failed: %s", exc)
+    # Surface APNs config at boot so "no push" is diagnosable without a message.
+    from app.services.push import apns_enabled
+
+    if apns_enabled():
+        log.info("APNs push ENABLED (relay=%s)", settings.push_relay_url)
+    else:
+        log.warning(
+            "APNs push DISABLED — set PUSH_RELAY_URL and PUSH_RELAY_API_KEY to enable"
+        )
     sweeper = asyncio.create_task(retention_loop())
     blob_gc = asyncio.create_task(blob_gc_loop())
     yield
