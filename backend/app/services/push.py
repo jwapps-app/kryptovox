@@ -209,17 +209,33 @@ async def user_badge_total(db: AsyncSession, user_id: uuid.UUID) -> int:
     return total
 
 
-async def notify_user(db: AsyncSession, user_id: uuid.UUID, payload: dict) -> None:
-    """Push a payload to a user's offline, subscribed devices (used for secret-
-    link replies, which aren't tied to a conversation)."""
+async def notify_user(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    payload: dict,
+    *,
+    ignore_presence: bool = False,
+) -> None:
+    """Push a payload to a user's subscribed devices (used for secret-link replies
+    and call rings, which aren't tied to a conversation).
+
+    By default skips devices with a live socket. `ignore_presence=True` pushes to
+    every subscribed device regardless: for a time-sensitive call ring, a just
+    force-closed app can linger "online" (presence TTL) and silently swallow the
+    push — the same lag that used to drop message pushes. A foregrounded app rings
+    from the live WS offer, so the extra banner is a tolerable trade for not
+    missing a call."""
     rows = await db.execute(
         select(Device).where(
             Device.user_id == user_id, Device.push_subscription.isnot(None)
         )
     )
     seen_endpoints: set[str] = set()
+    considered = online = pushed = 0
     for device in rows.scalars().all():
-        if await is_online(device.id):
+        considered += 1
+        if not ignore_presence and await is_online(device.id):
+            online += 1
             continue
         endpoint = (device.push_subscription or {}).get("endpoint")
         if endpoint and endpoint in seen_endpoints:
@@ -227,6 +243,15 @@ async def notify_user(db: AsyncSession, user_id: uuid.UUID, payload: dict) -> No
         if endpoint:
             seen_endpoints.add(endpoint)
         await _send(device.push_subscription, payload, device, db)
+        pushed += 1
+    log.info(
+        "notify_user user=%s: %d device(s), %d online-skipped, %d pushed (ignore_presence=%s)",
+        user_id,
+        considered,
+        online,
+        pushed,
+        ignore_presence,
+    )
 
 
 async def send_test_to_user(db: AsyncSession, user_id: uuid.UUID) -> dict:
@@ -501,7 +526,9 @@ async def ring_call(
     voip = alert = skipped = 0
     try:
         async with SessionLocal() as db:
-            await notify_user(db, callee_id, payload)  # web push (per-device skip)
+            # Ring every subscribed device — don't let presence lag on a just
+            # force-closed PWA swallow the call banner (messages already do this).
+            await notify_user(db, callee_id, payload, ignore_presence=True)
             if apns_enabled():
                 # The VoIP push carries only enough to wake the app and ring
                 # CallKit. The SDP offer is deliberately NOT included: a video
