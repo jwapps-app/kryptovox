@@ -282,19 +282,22 @@ def apns_enabled() -> bool:
 async def _post_notify(
     client: httpx.AsyncClient,
     token: ApnsToken,
-    badge: int,
     conversation_id: uuid.UUID,
     sandbox: bool,
+    title: str,
+    body_text: str,
+    badge: int | None,
 ) -> httpx.Response | None:
     body = {
         "bundle_id": settings.apns_bundle_id,
         "device_token": token.apns_token,
-        "title": "Kryptovox",
-        "body": "New message",  # content is E2EE — never included
+        "title": title,
+        "body": body_text,  # content is E2EE — never the message text
         "custom_data": {"conversation_id": str(conversation_id)},
-        "badge": int(badge),
         "sandbox": sandbox,
     }
+    if badge is not None:
+        body["badge"] = int(badge)  # calls omit badge so they don't reset it
     try:
         return await client.post(
             f"{settings.push_relay_url.rstrip('/')}/notify",
@@ -310,8 +313,11 @@ async def _send_apns_one(
     client: httpx.AsyncClient,
     db: AsyncSession,
     token: ApnsToken,
-    badge: int,
     conversation_id: uuid.UUID,
+    *,
+    title: str = "Kryptovox",
+    body_text: str = "New message",
+    badge: int | None = None,
 ) -> bool:
     """Send one notification. `sandbox` is derived from the stored environment,
     but if Apple returns BadDeviceToken (the classic env/flag mismatch) we retry
@@ -319,7 +325,9 @@ async def _send_apns_one(
     so a mislabeled token (e.g. a production token registered as 'sandbox') still
     delivers and self-heals."""
     prefer_sandbox = (token.environment or "").strip().lower() == "sandbox"
-    resp = await _post_notify(client, token, badge, conversation_id, prefer_sandbox)
+    resp = await _post_notify(
+        client, token, conversation_id, prefer_sandbox, title, body_text, badge
+    )
     if resp is None:
         return False
     if resp.status_code == 200:
@@ -333,7 +341,7 @@ async def _send_apns_one(
     if resp.status_code == 502 and "BadDeviceToken" in resp.text:
         # Wrong environment flag → retry flipped and learn the right value.
         retry = await _post_notify(
-            client, token, badge, conversation_id, not prefer_sandbox
+            client, token, conversation_id, not prefer_sandbox, title, body_text, badge
         )
         if retry is not None and retry.status_code == 200:
             token.environment = "production" if prefer_sandbox else "sandbox"
@@ -392,7 +400,9 @@ async def notify_offline_apns(
                 badge = await _unread_total(db, uid)
                 for token in tokens:
                     tokens_total += 1
-                    if await _send_apns_one(client, db, token, badge, conversation_id):
+                    if await _send_apns_one(
+                        client, db, token, conversation_id, badge=badge
+                    ):
                         sent += 1
             await db.commit()  # persist any stale-token deletions
         log.info(
@@ -400,3 +410,44 @@ async def notify_offline_apns(
         )
     except Exception as exc:  # noqa: BLE001 — best-effort, must not raise into the caller
         log.warning("APNs message fanout failed for conv=%s: %s", conversation_id, exc)
+
+
+async def notify_call(
+    callee_id: uuid.UUID, caller_name: str, conversation_id: uuid.UUID
+) -> None:
+    """Ring a callee's offline/background devices about an incoming 1:1 call —
+    web push AND APNs. A device that's foreground gets the call.offer over its
+    live socket instead (notify_user skips online web devices)."""
+    body_text = f"{caller_name or 'Someone'} is calling"
+    payload = {
+        "title": "Kryptovox",
+        "body": body_text,
+        "url": f"/chat/{conversation_id}",
+        "type": "call",
+    }
+    try:
+        async with SessionLocal() as db:
+            await notify_user(db, callee_id, payload)  # web push (skips online)
+            if apns_enabled():
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    tokens = list(
+                        (
+                            await db.execute(
+                                select(ApnsToken).where(ApnsToken.user_id == callee_id)
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
+                    for token in tokens:
+                        await _send_apns_one(
+                            client,
+                            db,
+                            token,
+                            conversation_id,
+                            title="Incoming call",
+                            body_text=body_text,
+                        )
+                    await db.commit()
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        log.warning("call notify failed for callee=%s: %s", callee_id, exc)
