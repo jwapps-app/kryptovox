@@ -12,6 +12,7 @@ import os
 import uuid
 from functools import lru_cache
 
+import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException, webpush
@@ -20,7 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.config import settings
+from app.database import SessionLocal
 from app.models import (
+    ApnsToken,
     ConversationMember,
     Device,
     GuestMessage,
@@ -267,3 +270,82 @@ async def send_test_to_user(db: AsyncSession, user_id: uuid.UUID) -> dict:
         "pruned": pruned,
         "results": results,
     }
+
+
+# ---------- Native iOS push via the push-relay (APNs) ----------
+# Entirely separate from the web-push path above (VAPID / Device.push_subscription).
+# Disabled unless PUSH_RELAY_URL + PUSH_RELAY_API_KEY are configured.
+def apns_enabled() -> bool:
+    return bool(settings.push_relay_url and settings.push_relay_api_key)
+
+
+async def _send_apns_one(
+    client: httpx.AsyncClient,
+    db: AsyncSession,
+    token: ApnsToken,
+    badge: int,
+    conversation_id: uuid.UUID,
+) -> None:
+    body = {
+        "bundle_id": settings.apns_bundle_id,
+        "device_token": token.apns_token,
+        "title": "Kryptovox",
+        "body": "New message",  # content is E2EE — never included
+        "custom_data": {"conversation_id": str(conversation_id)},
+        "badge": int(badge),
+        "sandbox": token.environment == "sandbox",
+    }
+    try:
+        resp = await client.post(
+            f"{settings.push_relay_url.rstrip('/')}/notify",
+            json=body,
+            headers={"X-API-Key": settings.push_relay_api_key},
+        )
+    except Exception as exc:  # noqa: BLE001 — relay is best-effort
+        log.warning("APNs relay call failed: %s", exc)
+        return
+    if resp.status_code == 502 and (
+        "BadDeviceToken" in resp.text or "Unregistered" in resp.text
+    ):
+        await db.delete(token)  # stale token — drop it
+    elif resp.status_code == 403:
+        log.error("push-relay 403: API key mismatch for %s", settings.apns_bundle_id)
+    elif resp.status_code >= 400:
+        log.warning("push-relay %s: %s", resp.status_code, resp.text[:200])
+
+
+async def notify_offline_apns(
+    conversation_id: uuid.UUID, sender_user_id: uuid.UUID
+) -> None:
+    """Fire-and-forget APNs fanout for a new message. Runs in its OWN session (so
+    it never touches the request's transaction or delays the sender's response)."""
+    if not apns_enabled():
+        return
+    try:
+        async with SessionLocal() as db, httpx.AsyncClient(timeout=5.0) as client:
+            for uid in await conversation_member_ids(db, conversation_id):
+                if uid == sender_user_id:
+                    continue
+                member = await db.get(ConversationMember, (conversation_id, uid))
+                if member is not None and member.muted:
+                    continue
+                tokens = list(
+                    (
+                        await db.execute(
+                            select(ApnsToken).where(ApnsToken.user_id == uid)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                if not tokens:
+                    continue
+                badge = await _unread_total(db, uid)
+                for token in tokens:
+                    # Don't banner a device that's foreground (WS online).
+                    if token.device_id and await is_online(token.device_id):
+                        continue
+                    await _send_apns_one(client, db, token, badge, conversation_id)
+            await db.commit()  # persist any stale-token deletions
+    except Exception as exc:  # noqa: BLE001 — best-effort, must not raise into the caller
+        log.warning("APNs message fanout failed for conv=%s: %s", conversation_id, exc)

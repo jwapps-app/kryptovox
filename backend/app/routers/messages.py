@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,7 +25,7 @@ from app.schemas import (
 )
 from app.services import media_store
 from app.services.fanout import fanout_conversation, fanout_user
-from app.services.push import notify_offline
+from app.services.push import notify_offline, notify_offline_apns
 from app.ws.events import (
     CONVERSATION_UPDATED,
     MESSAGE_DELETE,
@@ -113,6 +113,7 @@ async def get_messages(
 async def send_message(
     conversation_id: uuid.UUID,
     body: MessageCreate,
+    background_tasks: BackgroundTasks,
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
 ) -> MessageOut:
@@ -151,6 +152,9 @@ async def send_message(
     # Push to recipients whose devices are offline (best-effort).
     sender_name = identity.user.display_name or identity.user.username
     await notify_offline(db, conversation_id, identity.user.id, sender_name)
+    # Native iOS (APNs) fanout — runs after the response is sent (own DB session),
+    # so a slow relay never delays the sender.
+    background_tasks.add_task(notify_offline_apns, conversation_id, identity.user.id)
     return out
 
 

@@ -1,3 +1,4 @@
+from app.models.apns_token import ApnsToken
 from app.models.app_setting import AppSetting
 from app.models.auth_token import AuthToken
 from app.models.conversation import Conversation, ConversationMember
@@ -8,6 +9,7 @@ from app.models.note import Note
 from app.models.user import AvatarKey, User, WebauthnCredential
 
 __all__ = [
+    "ApnsToken",
     "User",
     "AvatarKey",
     "WebauthnCredential",

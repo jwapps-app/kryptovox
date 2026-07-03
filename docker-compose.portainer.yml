@@ -72,6 +72,11 @@ services:
       VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@example.com}
       VAPID_KEY_PATH: /data/vapid_private.pem
       MEDIA_DIR: /media
+      # Native iOS push via the self-hosted push-relay (APNs). Leave URL/key
+      # blank to disable APNs — web push (VAPID) is unaffected either way.
+      PUSH_RELAY_URL: ${PUSH_RELAY_URL:-}
+      PUSH_RELAY_API_KEY: ${PUSH_RELAY_API_KEY:-}
+      APNS_BUNDLE_ID: ${APNS_BUNDLE_ID:-com.jworthington.kryptovox}
     volumes:
       # Named volumes (not /volume1 bind mounts): they inherit the image's `app`
       # ownership, so the non-root backend can write them. /data persists the
