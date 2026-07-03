@@ -31,7 +31,7 @@ from app.models import (
     Message,
 )
 from app.services.fanout import conversation_member_ids
-from app.services.presence import is_online, user_online
+from app.services.presence import is_online
 
 log = logging.getLogger("kryptovox.push")
 
@@ -494,17 +494,18 @@ async def ring_call(
         "url": f"/chat/{conversation_id}",
         "type": "call",
     }
+    voip = alert = skipped = 0
     try:
         async with SessionLocal() as db:
-            online = await user_online(db, callee_id)
-            await notify_user(db, callee_id, payload)  # web push (skips online)
-            if apns_enabled() and not online:
+            await notify_user(db, callee_id, payload)  # web push (per-device skip)
+            if apns_enabled():
+                sdp = offer.get("sdp")
                 voip_custom = {
                     "from": str(offer.get("from") or ""),
                     "conversation_id": str(conversation_id),
                     "name": caller_name or "Someone",
                     "video": bool(offer.get("video")),
-                    "sdp": offer.get("sdp"),
+                    "sdp": sdp,
                 }
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     tokens = list(
@@ -517,17 +518,34 @@ async def ring_call(
                         .all()
                     )
                     for token in tokens:
-                        if token.voip_token and voip_custom["sdp"] is not None:
-                            await _send_voip_one(client, db, token, voip_custom)
-                        else:
-                            await _send_apns_one(
-                                client,
-                                db,
-                                token,
-                                conversation_id,
-                                title="Incoming call",
-                                body_text=body_text,
-                            )
+                        # Only skip a device whose OWN session holds a live socket
+                        # (it rings from the WS offer). Presence is per-device, so
+                        # another device being online — e.g. a browser tab left
+                        # open — never suppresses a closed phone's wake-up push.
+                        if token.device_id is not None and await is_online(
+                            token.device_id
+                        ):
+                            skipped += 1
+                            continue
+                        if token.voip_token and sdp is not None:
+                            if await _send_voip_one(client, db, token, voip_custom):
+                                voip += 1
+                        elif await _send_apns_one(
+                            client,
+                            db,
+                            token,
+                            conversation_id,
+                            title="Incoming call",
+                            body_text=body_text,
+                        ):
+                            alert += 1
                     await db.commit()
+        log.info(
+            "call ring callee=%s: %d voip, %d alert, %d skipped(online)",
+            callee_id,
+            voip,
+            alert,
+            skipped,
+        )
     except Exception as exc:  # noqa: BLE001 — best-effort
         log.warning("call ring failed for callee=%s: %s", callee_id, exc)
