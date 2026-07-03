@@ -263,6 +263,13 @@ class DeviceOut(BaseModel):
     created_at: datetime
 
 
+class ApnsTokenIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    apns_token: str = Field(min_length=32, max_length=256)
+    environment: str = Field(default="production", pattern="^(sandbox|production)$")
+    device_name: str | None = Field(default=None, max_length=128)
+
+
 # ---------- Conversations ----------
 class ConversationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")

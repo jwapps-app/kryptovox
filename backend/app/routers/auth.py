@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from jwt import InvalidTokenError
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from webauthn import (
     generate_authentication_options,
@@ -19,7 +19,7 @@ from webauthn.helpers.structs import (
 from app.config import settings
 from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity
-from app.models import AuthToken, Device, User, WebauthnCredential
+from app.models import ApnsToken, AuthToken, Device, User, WebauthnCredential
 from app.ratelimit import limiter
 from app.schemas import (
     LoginRequest,
@@ -388,5 +388,7 @@ async def logout(
         )
         if record:
             record.revoked = True
+    # Drop this session's APNs token so the logged-out phone stops receiving push.
+    await db.execute(delete(ApnsToken).where(ApnsToken.device_id == identity.device.id))
     response.delete_cookie(REFRESH_COOKIE, path=COOKIE_PATH)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
