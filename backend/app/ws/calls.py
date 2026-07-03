@@ -18,7 +18,6 @@ from app.database import SessionLocal
 from app.models import ConversationMember, User
 from app.redis_client import redis
 from app.services.fanout import fanout_user
-from app.services.presence import user_online
 from app.services.push import ring_call
 from app.ws.events import envelope
 
@@ -89,7 +88,6 @@ async def relay_call_event(from_user_id: uuid.UUID, data: dict) -> None:
         if await db.get(ConversationMember, (conv_uuid, to_uuid)) is None:
             return
         caller = await db.get(User, from_user_id) if event_type == "call.offer" else None
-        online = await user_online(db, to_uuid)
 
     out = dict(payload)
     out["from"] = str(from_user_id)
@@ -97,8 +95,13 @@ async def relay_call_event(from_user_id: uuid.UUID, data: dict) -> None:
     # Deliver ONLY to the callee's live socket(s); never back to the caller.
     await fanout_user(to_uuid, env)
 
-    # Buffer for a callee who's offline (their app is waking from the push).
-    if not online and event_type not in _CLEAR_EVENTS:
+    # Buffer every signaling frame so a callee waking from a push gets the offer +
+    # any ICE that arrived during the wake-up, flushed in order on WS connect.
+    # Buffering unconditionally (not gated on presence) is deliberate: presence is
+    # per-device, so a second online session must not stop a closed device's flush.
+    # It's harmless when the callee is already connected — they don't reconnect
+    # mid-call, and the client dedupes a replayed offer. Cleared when the call ends.
+    if event_type not in _CLEAR_EVENTS:
         await _queue_event(to_uuid, env)
 
     if event_type == "call.offer":
