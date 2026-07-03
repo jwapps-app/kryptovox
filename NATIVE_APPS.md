@@ -56,7 +56,7 @@ Same React codebase, real store-distributable apps.
 │  existing REST + WebSocket                                  │   │  Your push-  │
 │  + register native device token (gated by entitlement)     │──▶│  relay (APNs)│
 │  + verify IAP receipt → mark user "push-entitled"          │   └──────────────┘
-│  + on new message: POST {token,payload} to push-relay      │            │
+│  + on new message: POST /notify (X-API-Key) to push-relay  │            │
 │    (iOS) or FCM directly (Android)                         │            ▼
 └────────────────────────────────────────────────────────────┘        APNs → iPhone
 ```
@@ -203,33 +203,46 @@ have both web (browser) and native (phone) devices.
 
 ### 5.3 Backend → push-relay contract (iOS)
 
-Your push-relay holds the APNs `.p8` and talks to Apple. The Kryptovox backend just
-POSTs to it. Suggested contract:
+Kryptovox's own **`push-relay`** project (already built, at `../push-relay`) holds
+the APNs `.p8` and talks to Apple; the Kryptovox backend just POSTs to it. This is
+the **actual** contract (from the relay's `POST /notify` in `app/main.py`), not a
+placeholder:
 
 ```
-POST  https://relay.yourdomain.com/send
-Authorization: Bearer <shared secret between backend and relay>
+POST  https://<relay-host>/notify
+X-API-Key: <Kryptovox's per-app key>
 {
-  "platform": "ios",
-  "token": "<APNs device token>",
-  "payload": {                       // CONTENTLESS — matches current E2EE design
-    "title": "Kryptovox",
-    "body": "New message",           // never plaintext; server can't read it anyway
-    "url": "/chat/<conversation_id>",
-    "badge": 3
-  },
-  "type": "alert"                     // or "voip" for calls — see §8
+  "bundle_id":    "com.yourorg.kryptovox",   // selects the app, its key, and APNs topic
+  "device_token": "<APNs device token>",
+  "title":        "Kryptovox",
+  "body":         "New message",             // CONTENTLESS — server can't read plaintext anyway
+  "custom_data":  { "url": "/chat/<id>", "type": "message" },  // merged into the push; app reads on tap
+  "badge":        3,
+  "sandbox":      false                       // true ONLY for Xcode debug-build tokens
 }
 ```
-The relay builds the APNs request (`apns-topic` = your bundle id, `apns-push-type`
-= `alert`/`voip`) and delivers. **Android** can skip the relay: the backend talks to
-**FCM HTTP v1** directly (free, simple) using the FCM token.
+- **Auth is per-app**, not a bearer secret: the relay does `verify_api_key(bundle_id,
+  X-API-Key)`. Onboard Kryptovox by registering its App ID (same Apple Team ID),
+  adding one line `com.yourorg.kryptovox=<hex key>` to the relay's `apps.keys` file
+  on the NAS, and restarting the relay — **no relay code change**.
+- The relay builds the APNs request (`apns-topic` = `bundle_id`, `apns-push-type` =
+  `alert`) and returns `{"status":"sent"}` or a `502` on an APNs error. It stores
+  **operational metadata only** — no tokens, no content — matching Kryptovox's model.
+- **Android skips the relay** (it's iOS/APNs-only): the Kryptovox backend talks to
+  **FCM HTTP v1** directly (free) using the device's FCM token.
 
 Wire this into the existing fan-out so a new message notifies *all* of a user's
-devices: web-push subscribers via `pywebpush` (today), native iOS via the relay,
-native Android via FCM. Mirror the **contentless** payload the app already uses
-(`push.py` sends `title`=sender name, `body`="New message", no ciphertext) — the
-phone shows "New message," and the app fetches + decrypts locally on open.
+devices: web-push subscribers via `pywebpush` (today), native iOS via `POST /notify`
+to the relay, native Android via FCM. Mirror the **contentless** payload the app
+already uses (`push.py` sends `title`=sender name, `body`="New message", no
+ciphertext) — the phone shows "New message," and the app fetches + decrypts on open.
+
+> **VoIP / CallKit gap (matters for §8):** the relay currently hardcodes
+> `apns-push-type: alert` (`app/apns.py`). Real incoming-call *ringing* needs a
+> **VoIP** push — a different push-type (`voip`), a separate **PushKit** token, and
+> the `.voip` APNs topic. So as-is the relay can *notify* you of a call but can't
+> drive a native ring; you'd add a small VoIP path to the relay (a `push_type`
+> field on `/notify` → `apns-push-type: voip` + `<bundle>.voip` topic) for Phase 2.
 
 > Advanced (optional): an iOS **Notification Service Extension** could decrypt and
 > show the real message text in the banner — but the identity key lives in the
@@ -319,7 +332,7 @@ All additive; none break the existing web/PWA path:
 - [ ] `DELETE /api/push/native` — drop the token (logout / disable).
 - [ ] `User.push_entitled` (bool) + the RevenueCat webhook (or receipt-verify endpoint) that sets it.
 - [ ] Extend the message/call fan-out: for each recipient device, send via web-push (existing), iOS relay, or FCM by device type.
-- [ ] Push-relay client: `POST {token,payload,type}` with the shared-secret auth.
+- [ ] Push-relay client: `POST /notify` with `X-API-Key` + `{bundle_id, device_token, title, body, custom_data, badge}` (see §5.3).
 - [ ] CORS: allow `capacitor://localhost`, `https://localhost`.
 - [ ] (Phase 2) VoIP push path for incoming calls.
 
