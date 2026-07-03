@@ -419,11 +419,15 @@ async def _post_voip(
     sandbox: bool,
 ) -> httpx.Response | None:
     """PushKit / VoIP push — carries the SDP offer so CallKit can ring a closed
-    app. No title/body: it's a silent, high-priority wake, not a banner."""
+    app. CallKit (not a banner) draws the UI, but the relay requires title/body on
+    every push, so we send placeholders derived from the caller name."""
+    caller = custom_data.get("name") or "Someone"
     body = {
         "bundle_id": settings.apns_bundle_id,
         "device_token": voip_token,
         "push_type": "voip",
+        "title": "Incoming call",
+        "body": f"{caller} is calling",
         "custom_data": custom_data,
         "sandbox": sandbox,
     }
