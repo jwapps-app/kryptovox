@@ -97,6 +97,9 @@ class WebauthnCredential(Base):
     public_key: Mapped[str] = mapped_column(Text, nullable=False)
     sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Comma-separated transport hints ("internal", "hybrid", …) from registration,
+    # replayed at login so the browser prefers a local passkey over the QR flow.
+    transports: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -177,6 +177,10 @@ async def passkey_register_verify(
         )
     except Exception:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Passkey registration failed")
+    # Capture the authenticator's reported transports (e.g. ["internal","hybrid"])
+    # so login can steer the browser to a local passkey instead of the QR flow.
+    raw_transports = (body.credential.get("response") or {}).get("transports") or []
+    transports = ",".join(t for t in raw_transports if isinstance(t, str))[:128] or None
     db.add(
         WebauthnCredential(
             user_id=current.id,
@@ -184,6 +188,7 @@ async def passkey_register_verify(
             public_key=bytes_to_base64url(v.credential_public_key),
             sign_count=v.sign_count,
             name=body.name,
+            transports=transports,
         )
     )
     current.has_passkey = True
