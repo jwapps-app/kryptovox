@@ -503,13 +503,16 @@ async def ring_call(
         async with SessionLocal() as db:
             await notify_user(db, callee_id, payload)  # web push (per-device skip)
             if apns_enabled():
-                sdp = offer.get("sdp")
+                # The VoIP push carries only enough to wake the app and ring
+                # CallKit. The SDP offer is deliberately NOT included: a video
+                # offer exceeds APNs's ~5KB VoIP payload cap (PayloadTooLarge).
+                # The woken app connects its WS and receives the buffered offer +
+                # ICE via deliver_buffered_calls — the standard PushKit flow.
                 voip_custom = {
                     "from": str(offer.get("from") or ""),
                     "conversation_id": str(conversation_id),
                     "name": caller_name or "Someone",
                     "video": bool(offer.get("video")),
-                    "sdp": sdp,
                 }
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     tokens = list(
@@ -531,7 +534,7 @@ async def ring_call(
                         ):
                             skipped += 1
                             continue
-                        if token.voip_token and sdp is not None:
+                        if token.voip_token:
                             if await _send_voip_one(client, db, token, voip_custom):
                                 voip += 1
                         elif await _send_apns_one(
