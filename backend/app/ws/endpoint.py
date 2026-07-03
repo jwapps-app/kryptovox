@@ -10,7 +10,7 @@ from app.database import SessionLocal
 from app.models import ConversationMember, Device, User
 from app.security import decode_access_token
 from app.services.app_settings import get_require_2fa
-from app.ws.calls import CALL_EVENTS, relay_call_event
+from app.ws.calls import CALL_EVENTS, deliver_buffered_offer, relay_call_event
 from app.services.fanout import fanout_conversation
 from app.services.presence import mark_offline, mark_online
 from app.ws.events import (
@@ -75,6 +75,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
     hub.register(websocket, str(user_id), conversation_ids)
     await mark_online(device_id)
     await _touch_last_seen(device_id)
+    # If a call came in while this user was offline, hand over the buffered offer
+    # so opening the app (e.g. from a call push) rings them.
+    await deliver_buffered_offer(websocket, user_id)
 
     try:
         while True:
