@@ -3,7 +3,20 @@ security pass — guard against silent regressions."""
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import MessageCreate, PublicUserOut, UserOut
+from app.schemas import ApnsTokenIn, MessageCreate, PublicUserOut, UserOut
+
+
+def test_apns_token_validation():
+    t = ApnsTokenIn(apns_token="a" * 64, environment="sandbox", device_name="iPhone")
+    assert t.environment == "sandbox"
+    # environment must be sandbox|production
+    with pytest.raises(ValidationError):
+        ApnsTokenIn(apns_token="a" * 64, environment="staging")
+    # too-short token rejected
+    with pytest.raises(ValidationError):
+        ApnsTokenIn(apns_token="abc")
+    # default environment
+    assert ApnsTokenIn(apns_token="a" * 64).environment == "production"
 
 
 def _valid_message(**over):

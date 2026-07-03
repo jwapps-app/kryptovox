@@ -5,11 +5,55 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import get_current_user
-from app.models import Device, User
-from app.schemas import DeviceOut
+from app.deps import CurrentIdentity, get_current_identity, get_current_user
+from app.models import ApnsToken, Device, User
+from app.schemas import ApnsTokenIn, DeviceOut
 
 router = APIRouter(tags=["devices"])
+
+
+@router.post("/devices", status_code=204)
+async def register_apns_token(
+    body: ApnsTokenIn,
+    identity: CurrentIdentity = Depends(get_current_identity),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Register (or re-register) this device's APNs token. Idempotent — keyed on
+    the token, so the client's liberal retries are safe. If the same token shows
+    up under a different account (phone switched users), it's reassigned."""
+    existing = await db.scalar(
+        select(ApnsToken).where(ApnsToken.apns_token == body.apns_token)
+    )
+    if existing is not None:
+        existing.user_id = identity.user.id
+        existing.device_id = identity.device.id
+        existing.environment = body.environment
+        existing.device_name = body.device_name
+    else:
+        db.add(
+            ApnsToken(
+                user_id=identity.user.id,
+                device_id=identity.device.id,
+                apns_token=body.apns_token,
+                environment=body.environment,
+                device_name=body.device_name,
+            )
+        )
+
+
+@router.delete("/devices/apns/{apns_token}", status_code=204)
+async def delete_apns_token(
+    apns_token: str,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    row = await db.scalar(
+        select(ApnsToken).where(
+            ApnsToken.apns_token == apns_token, ApnsToken.user_id == current.id
+        )
+    )
+    if row is not None:
+        await db.delete(row)
 
 
 @router.get("/devices", response_model=list[DeviceOut])

@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # CORS — comma-separated list of allowed origins
     allowed_origins: str = "https://localhost:5173"
 
+    # Native iOS push via the self-hosted push-relay (APNs). Leave URL/key blank
+    # to disable APNs entirely — web push (VAPID) is unaffected either way.
+    push_relay_url: str = ""  # e.g. http://192.168.1.42:8088
+    push_relay_api_key: str = ""
+    apns_bundle_id: str = "com.jworthington.kryptovox"
+
     # WebAuthn (passkeys). Passkeys are cryptographically bound to rp_id, and the
     # browser origin must match `webauthn_origin` exactly. Set these to your real
     # domain in production: WEBAUTHN_RP_ID=chat.example.com and
