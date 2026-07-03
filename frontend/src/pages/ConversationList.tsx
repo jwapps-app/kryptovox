@@ -127,7 +127,7 @@ export default function ConversationList() {
 
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
-      <header className="relative flex items-center justify-between border-b border-gray-100 px-4 py-3">
+      <header className="relative z-20 flex items-center justify-between border-b border-gray-100 px-4 py-3">
         <button
           className="text-imsg-blue active:opacity-60"
           aria-label="Settings"
