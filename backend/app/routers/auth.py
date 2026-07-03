@@ -12,6 +12,7 @@ from webauthn import (
 )
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 from webauthn.helpers.structs import (
+    AuthenticatorTransport,
     PublicKeyCredentialDescriptor,
     UserVerificationRequirement,
 )
@@ -62,6 +63,20 @@ from app.services.twofa_guard import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 REFRESH_COOKIE = "kv_refresh"
+
+
+def _parse_transports(stored: str | None) -> list[AuthenticatorTransport] | None:
+    """Stored 'internal,hybrid' -> transport enums for the login descriptor.
+    Unknown values are skipped; None means the browser gets no hint (old creds)."""
+    if not stored:
+        return None
+    out: list[AuthenticatorTransport] = []
+    for t in stored.split(","):
+        try:
+            out.append(AuthenticatorTransport(t.strip()))
+        except ValueError:
+            continue
+    return out or None
 COOKIE_PATH = "/api/auth"
 
 
@@ -256,7 +271,10 @@ async def passkey_login_options(
     options = generate_authentication_options(
         rp_id=rp_id,
         allow_credentials=[
-            PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id))
+            PublicKeyCredentialDescriptor(
+                id=base64url_to_bytes(c.credential_id),
+                transports=_parse_transports(c.transports),
+            )
             for c in creds
         ],
         user_verification=UserVerificationRequirement.PREFERRED,
