@@ -279,14 +279,13 @@ def apns_enabled() -> bool:
     return bool(settings.push_relay_url and settings.push_relay_api_key)
 
 
-async def _send_apns_one(
+async def _post_notify(
     client: httpx.AsyncClient,
-    db: AsyncSession,
     token: ApnsToken,
     badge: int,
     conversation_id: uuid.UUID,
-) -> bool:
-    """POST one notification to the relay. Returns True if the relay accepted it."""
+    sandbox: bool,
+) -> httpx.Response | None:
     body = {
         "bundle_id": settings.apns_bundle_id,
         "device_token": token.apns_token,
@@ -294,32 +293,66 @@ async def _send_apns_one(
         "body": "New message",  # content is E2EE — never included
         "custom_data": {"conversation_id": str(conversation_id)},
         "badge": int(badge),
-        "sandbox": token.environment == "sandbox",
+        "sandbox": sandbox,
     }
     try:
-        resp = await client.post(
+        return await client.post(
             f"{settings.push_relay_url.rstrip('/')}/notify",
             json=body,
             headers={"X-API-Key": settings.push_relay_api_key},
         )
     except Exception as exc:  # noqa: BLE001 — relay is best-effort
         log.warning("APNs relay call failed (%s): %s", settings.push_relay_url, exc)
+        return None
+
+
+async def _send_apns_one(
+    client: httpx.AsyncClient,
+    db: AsyncSession,
+    token: ApnsToken,
+    badge: int,
+    conversation_id: uuid.UUID,
+) -> bool:
+    """Send one notification. `sandbox` is derived from the stored environment,
+    but if Apple returns BadDeviceToken (the classic env/flag mismatch) we retry
+    once with the opposite flag and, on success, correct the stored environment —
+    so a mislabeled token (e.g. a production token registered as 'sandbox') still
+    delivers and self-heals."""
+    prefer_sandbox = (token.environment or "").strip().lower() == "sandbox"
+    resp = await _post_notify(client, token, badge, conversation_id, prefer_sandbox)
+    if resp is None:
         return False
     if resp.status_code == 200:
         return True
-    if resp.status_code == 502 and (
-        "BadDeviceToken" in resp.text or "Unregistered" in resp.text
-    ):
-        log.info("APNs token stale — pruning (%s)", resp.text[:80])
-        await db.delete(token)  # stale token — drop it
-        return False
     if resp.status_code == 403:
         log.error(
             "push-relay 403: API key mismatch for %s — check PUSH_RELAY_API_KEY",
             settings.apns_bundle_id,
         )
         return False
-    log.warning("push-relay %s: %s", resp.status_code, resp.text[:200])
+    if resp.status_code == 502 and "BadDeviceToken" in resp.text:
+        # Wrong environment flag → retry flipped and learn the right value.
+        retry = await _post_notify(
+            client, token, badge, conversation_id, not prefer_sandbox
+        )
+        if retry is not None and retry.status_code == 200:
+            token.environment = "production" if prefer_sandbox else "sandbox"
+            log.info(
+                "APNs delivered on retry; corrected environment to %r (token=%s…)",
+                token.environment,
+                token.apns_token[:8],
+            )
+            return True
+        # Both environments rejected → genuinely stale token; drop it.
+        log.info("APNs BadDeviceToken on both environments — pruning token")
+        await db.delete(token)
+        return False
+    if resp.status_code == 502 and "Unregistered" in resp.text:
+        await db.delete(token)  # Apple says the token is dead
+        return False
+    log.warning(
+        "push-relay %s (sandbox=%s): %s", resp.status_code, prefer_sandbox, resp.text[:200]
+    )
     return False
 
 
