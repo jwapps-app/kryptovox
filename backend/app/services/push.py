@@ -31,7 +31,7 @@ from app.models import (
     Message,
 )
 from app.services.fanout import conversation_member_ids
-from app.services.presence import is_online
+from app.services.presence import is_online, user_online
 
 log = logging.getLogger("kryptovox.push")
 
@@ -412,12 +412,81 @@ async def notify_offline_apns(
         log.warning("APNs message fanout failed for conv=%s: %s", conversation_id, exc)
 
 
-async def notify_call(
-    callee_id: uuid.UUID, caller_name: str, conversation_id: uuid.UUID
+async def _post_voip(
+    client: httpx.AsyncClient,
+    voip_token: str,
+    custom_data: dict,
+    sandbox: bool,
+) -> httpx.Response | None:
+    """PushKit / VoIP push — carries the SDP offer so CallKit can ring a closed
+    app. No title/body: it's a silent, high-priority wake, not a banner."""
+    body = {
+        "bundle_id": settings.apns_bundle_id,
+        "device_token": voip_token,
+        "push_type": "voip",
+        "custom_data": custom_data,
+        "sandbox": sandbox,
+    }
+    try:
+        return await client.post(
+            f"{settings.push_relay_url.rstrip('/')}/notify",
+            json=body,
+            headers={"X-API-Key": settings.push_relay_api_key},
+        )
+    except Exception as exc:  # noqa: BLE001 — relay is best-effort
+        log.warning("VoIP relay call failed (%s): %s", settings.push_relay_url, exc)
+        return None
+
+
+async def _send_voip_one(
+    client: httpx.AsyncClient,
+    db: AsyncSession,
+    token: ApnsToken,
+    custom_data: dict,
+) -> bool:
+    """Send one VoIP push, deriving sandbox from the stored environment and
+    retrying flipped on BadDeviceToken (same self-heal as the alert path)."""
+    prefer_sandbox = (token.environment or "").strip().lower() == "sandbox"
+    resp = await _post_voip(client, token.voip_token, custom_data, prefer_sandbox)
+    if resp is None:
+        return False
+    if resp.status_code == 200:
+        return True
+    if resp.status_code == 403:
+        log.error("push-relay 403 on VoIP — check PUSH_RELAY_API_KEY")
+        return False
+    if resp.status_code == 502 and "BadDeviceToken" in resp.text:
+        retry = await _post_voip(
+            client, token.voip_token, custom_data, not prefer_sandbox
+        )
+        if retry is not None and retry.status_code == 200:
+            token.environment = "production" if prefer_sandbox else "sandbox"
+            return True
+        # A dead VoIP token doesn't mean the alert token is dead — just clear it.
+        token.voip_token = None
+        return False
+    if resp.status_code == 502 and "Unregistered" in resp.text:
+        token.voip_token = None
+        return False
+    log.warning("push-relay VoIP %s: %s", resp.status_code, resp.text[:200])
+    return False
+
+
+async def ring_call(
+    callee_id: uuid.UUID,
+    caller_name: str,
+    conversation_id: uuid.UUID,
+    offer: dict,
 ) -> None:
-    """Ring a callee's offline/background devices about an incoming 1:1 call —
-    web push AND APNs. A device that's foreground gets the call.offer over its
-    live socket instead (notify_user skips online web devices)."""
+    """Ring a callee's offline/background devices about an incoming 1:1 call.
+
+    - Native devices with a VoIP token get a PushKit push carrying the SDP offer,
+      so CallKit rings even from a fully closed app.
+    - Other devices fall back to an alert: web push for PWAs, APNs alert for older
+      native builds.
+    A callee with a live socket already rings from the WS offer, so the wake-up
+    pushes (VoIP + APNs alert) are skipped for them; web push self-skips online
+    devices regardless."""
     body_text = f"{caller_name or 'Someone'} is calling"
     payload = {
         "title": "Kryptovox",
@@ -427,8 +496,16 @@ async def notify_call(
     }
     try:
         async with SessionLocal() as db:
+            online = await user_online(db, callee_id)
             await notify_user(db, callee_id, payload)  # web push (skips online)
-            if apns_enabled():
+            if apns_enabled() and not online:
+                voip_custom = {
+                    "from": str(offer.get("from") or ""),
+                    "conversation_id": str(conversation_id),
+                    "name": caller_name or "Someone",
+                    "video": bool(offer.get("video")),
+                    "sdp": offer.get("sdp"),
+                }
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     tokens = list(
                         (
@@ -440,14 +517,17 @@ async def notify_call(
                         .all()
                     )
                     for token in tokens:
-                        await _send_apns_one(
-                            client,
-                            db,
-                            token,
-                            conversation_id,
-                            title="Incoming call",
-                            body_text=body_text,
-                        )
+                        if token.voip_token and voip_custom["sdp"] is not None:
+                            await _send_voip_one(client, db, token, voip_custom)
+                        else:
+                            await _send_apns_one(
+                                client,
+                                db,
+                                token,
+                                conversation_id,
+                                title="Incoming call",
+                                body_text=body_text,
+                            )
                     await db.commit()
     except Exception as exc:  # noqa: BLE001 — best-effort
-        log.warning("call notify failed for callee=%s: %s", callee_id, exc)
+        log.warning("call ring failed for callee=%s: %s", callee_id, exc)

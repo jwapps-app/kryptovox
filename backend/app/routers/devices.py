@@ -29,12 +29,14 @@ async def register_apns_token(
         existing.device_id = identity.device.id
         existing.environment = body.environment
         existing.device_name = body.device_name
+        existing.voip_token = body.voip_token
     else:
         db.add(
             ApnsToken(
                 user_id=identity.user.id,
                 device_id=identity.device.id,
                 apns_token=body.apns_token,
+                voip_token=body.voip_token,
                 environment=body.environment,
                 device_name=body.device_name,
             )
