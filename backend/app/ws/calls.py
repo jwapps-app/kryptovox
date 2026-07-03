@@ -1,10 +1,14 @@
-"""1:1 WebRTC call signaling — relay + ring.
+"""1:1 WebRTC call signaling — relay, ring, and offline buffering.
 
 The server never sees call media (WebRTC is peer-to-peer, DTLS-SRTP encrypted);
 it only forwards the setup messages (SDP offer/answer + ICE candidates) between
-two users who share a conversation. On an offer it also "rings" the callee —
-buffers the offer briefly and pushes their offline/background devices — so a call
-reaches them even when their app isn't focused (mirrors the secret-link flow).
+two users who share a conversation.
+
+Every `call.*` is routed ONLY to the `to` user's devices — never echoed back to
+the sender (a caller that sees its own offer would conclude "busy"). On an offer
+we also "ring" an offline callee: buffer the whole signaling stream and send a
+wake-up push (VoIP → CallKit, else web/APNs alert), so a call reaches them even
+when their app is closed.
 """
 import asyncio
 import json
@@ -14,7 +18,8 @@ from app.database import SessionLocal
 from app.models import ConversationMember, User
 from app.redis_client import redis
 from app.services.fanout import fanout_user
-from app.services.push import notify_call
+from app.services.presence import user_online
+from app.services.push import ring_call
 from app.ws.events import envelope
 
 CALL_EVENTS = {
@@ -27,8 +32,14 @@ CALL_EVENTS = {
     "call.ringing",
 }
 
-_OFFER_KEY = "call_offer_user:{}"  # buffered incoming offer per callee (TTL'd)
-_OFFER_TTL = 60  # long enough to open the app from a push and answer
+# While a callee is offline (waking from a push), queue EVERY call.* addressed to
+# them — offer, then ICE, maybe hangup — and flush in order when their WS connects.
+# Without this the callee answers but ICE never arrives and the call hangs at
+# "Connecting…".
+_QUEUE_KEY = "call_queue_user:{}"
+_QUEUE_TTL = 60  # seconds — drop a stale, never-answered call
+_QUEUE_MAX = 64  # cap the backlog (offer + a burst of ICE candidates)
+_CLEAR_EVENTS = {"call.answer", "call.hangup", "call.decline"}
 
 # Keep strong refs to fire-and-forget push tasks so they aren't GC'd mid-flight.
 _bg_tasks: set[asyncio.Task] = set()
@@ -38,6 +49,23 @@ def _fire(coro) -> None:
     t = asyncio.create_task(coro)
     _bg_tasks.add(t)
     t.add_done_callback(_bg_tasks.discard)
+
+
+async def _queue_event(user_id: uuid.UUID, env: dict) -> None:
+    try:
+        key = _QUEUE_KEY.format(user_id)
+        await redis.rpush(key, json.dumps(env))
+        await redis.ltrim(key, -_QUEUE_MAX, -1)
+        await redis.expire(key, _QUEUE_TTL)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _clear_queue(*user_ids: uuid.UUID) -> None:
+    try:
+        await redis.delete(*[_QUEUE_KEY.format(u) for u in user_ids])
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def relay_call_event(from_user_id: uuid.UUID, data: dict) -> None:
@@ -61,35 +89,38 @@ async def relay_call_event(from_user_id: uuid.UUID, data: dict) -> None:
         if await db.get(ConversationMember, (conv_uuid, to_uuid)) is None:
             return
         caller = await db.get(User, from_user_id) if event_type == "call.offer" else None
+        online = await user_online(db, to_uuid)
 
     out = dict(payload)
     out["from"] = str(from_user_id)
     env = envelope(event_type, out)
-    await fanout_user(to_uuid, env)  # deliver to the callee's live socket(s)
+    # Deliver ONLY to the callee's live socket(s); never back to the caller.
+    await fanout_user(to_uuid, env)
+
+    # Buffer for a callee who's offline (their app is waking from the push).
+    if not online and event_type not in _CLEAR_EVENTS:
+        await _queue_event(to_uuid, env)
 
     if event_type == "call.offer":
-        # Buffer so the callee can still answer after opening from a push, and
-        # ring their offline/background devices.
-        try:
-            await redis.set(_OFFER_KEY.format(to_uuid), json.dumps(env), ex=_OFFER_TTL)
-        except Exception:  # noqa: BLE001
-            pass
         caller_name = (caller.display_name or caller.username) if caller else "Someone"
-        _fire(notify_call(to_uuid, caller_name, conv_uuid))
-    elif event_type in ("call.answer", "call.hangup", "call.decline"):
-        try:
-            await redis.delete(
-                _OFFER_KEY.format(to_uuid), _OFFER_KEY.format(from_user_id)
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        _fire(ring_call(to_uuid, caller_name, conv_uuid, out))
+    elif event_type in _CLEAR_EVENTS:
+        # Call resolved — drop any buffered signaling for both directions.
+        await _clear_queue(to_uuid, from_user_id)
 
 
-async def deliver_buffered_offer(websocket, user_id: uuid.UUID) -> None:
-    """On WS connect: hand over any incoming call offer buffered while offline."""
+async def deliver_buffered_calls(websocket, user_id: uuid.UUID) -> None:
+    """On WS connect: flush, in order, any call.* buffered while this user was
+    offline — so opening the app (e.g. from a call push) rings them and ICE that
+    arrived during the wake-up still lands."""
     try:
-        buffered = await redis.get(_OFFER_KEY.format(user_id))
-        if buffered:
-            await websocket.send_json(json.loads(buffered))
+        key = _QUEUE_KEY.format(user_id)
+        items = await redis.lrange(key, 0, -1)
+        await redis.delete(key)
     except Exception:  # noqa: BLE001
-        pass
+        return
+    for raw in items:
+        try:
+            await websocket.send_json(json.loads(raw))
+        except Exception:  # noqa: BLE001
+            break

@@ -33,6 +33,9 @@ class ApnsToken(Base):
     apns_token: Mapped[str] = mapped_column(
         String, unique=True, nullable=False, index=True
     )
+    # PushKit / VoIP token (distinct from apns_token) — carries the SDP offer so
+    # CallKit can ring a closed app. Nullable: web/older builds have none.
+    voip_token: Mapped[str | None] = mapped_column(String, nullable=True)
     environment: Mapped[str] = mapped_column(
         String, nullable=False, default="production"
     )
