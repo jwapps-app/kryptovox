@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
@@ -13,6 +13,7 @@ export default function NotesList() {
   const identity = useAuth((s) => s.identity);
   const [notes, setNotes] = useState<NoteListItem[]>([]);
   const [titles, setTitles] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     const list = await api<NoteListItem[]>("/notes").catch(() => []);
@@ -39,6 +40,15 @@ export default function NotesList() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Notes-only search: filters this list by the (decrypted) note title, the sole
+  // text the list holds. Bodies are E2EE and not loaded here — mirroring how the
+  // Messages search matches the row preview, not full message history.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return notes;
+    return notes.filter((n) => (titles[n.id] ?? "").toLowerCase().includes(q));
+  }, [notes, titles, query]);
 
   const remove = async (noteId: string) => {
     setNotes((n) => n.filter((x) => x.id !== noteId));
@@ -70,6 +80,16 @@ export default function NotesList() {
         </button>
       </header>
 
+      <div className="px-3 py-2">
+        <input
+          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[15px] outline-none"
+          placeholder="Search"
+          autoCapitalize="none"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+
       <ul className="kv-scroll flex-1 overflow-y-auto">
         {notes.length === 0 && (
           <li className="px-4 py-10 text-center text-gray-400">
@@ -78,7 +98,10 @@ export default function NotesList() {
             Tap ✎ to write one. Only you can read them.
           </li>
         )}
-        {notes.map((n) => (
+        {notes.length > 0 && filtered.length === 0 && (
+          <li className="px-4 py-10 text-center text-gray-400">No matches</li>
+        )}
+        {filtered.map((n) => (
           <NoteRow
             key={n.id}
             title={titles[n.id] ?? ""}
