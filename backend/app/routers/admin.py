@@ -37,7 +37,7 @@ async def create_user(
     user = User(
         username=body.username,
         display_name=body.display_name or body.username,
-        password_hash=hash_password(body.password),
+        password_hash=await hash_password(body.password),
         is_admin=body.is_admin,
     )
     db.add(user)
@@ -65,7 +65,7 @@ async def update_user(
             )
         user.is_admin = body.is_admin
     if body.password is not None:
-        user.password_hash = hash_password(body.password)
+        user.password_hash = await hash_password(body.password)
 
     db.add(user)
     await db.flush()

@@ -301,13 +301,6 @@ class AppConfigUpdate(BaseModel):
     require_2fa: bool | None = None
 
 
-class ConversationMemberOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    user_id: uuid.UUID
-    role: str
-    last_read_message_id: uuid.UUID | None = None
-
-
 class ConversationOut(BaseModel):
     id: uuid.UUID
     type: str

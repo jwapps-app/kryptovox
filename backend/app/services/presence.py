@@ -25,3 +25,21 @@ async def mark_offline(device_id: uuid.UUID) -> None:
 
 async def is_online(device_id: uuid.UUID) -> bool:
     return bool(await redis.exists(_key(device_id)))
+
+
+async def filter_online(device_ids) -> set[uuid.UUID]:
+    """The subset of `device_ids` currently online — one pipelined Redis
+    round-trip instead of one EXISTS per device. On a Redis blip, returns the
+    empty set (treat everyone as offline: push paths would rather over-send
+    than silently drop)."""
+    ids = list(device_ids)
+    if not ids:
+        return set()
+    try:
+        async with redis.pipeline(transaction=False) as pipe:
+            for d in ids:
+                pipe.exists(_key(d))
+            flags = await pipe.execute()
+        return {d for d, flag in zip(ids, flags) if flag}
+    except Exception:  # noqa: BLE001
+        return set()
