@@ -1,4 +1,4 @@
-from functools import lru_cache
+from functools import cached_property, lru_cache
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -67,15 +67,15 @@ class Settings(BaseSettings):
     webauthn_rp_id: str = "localhost"
     webauthn_origin: str = "http://localhost:5173"
 
-    # Web Push (Phase 6). If keys aren't provided they're generated once and
-    # persisted to vapid_key_path so subscriptions survive restarts.
-    vapid_private_key: str = ""
+    # Web Push (Phase 6). The private key is generated once and persisted to
+    # vapid_key_path so subscriptions survive restarts.
     vapid_public_key: str = ""
     vapid_email: str = "mailto:admin@example.com"
     vapid_key_path: str = "vapid_private.pem"
 
-    @property
+    @cached_property
     def cors_origins(self) -> list[str]:
+        # Read on every WS handshake — parse the env string once, not per access.
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
 

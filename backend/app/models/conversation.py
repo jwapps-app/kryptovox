@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,6 +41,9 @@ class Conversation(Base):
 
 class ConversationMember(Base):
     __tablename__ = "conversation_members"
+    # The PK is (conversation_id, user_id); "WHERE user_id = ?" (conversation
+    # list, unread totals) can't use it, so user_id gets its own index.
+    __table_args__ = (Index("ix_conversation_members_user_id", "user_id"),)
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

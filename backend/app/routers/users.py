@@ -70,9 +70,9 @@ async def change_password(
     under the new password (the server can't — it never holds the plaintext key)
     and sends the new blob, so message history stays decryptable. Other signed-in
     devices keep working: the public key is unchanged and they hold the key already."""
-    if not verify_password(body.current_password, current.password_hash):
+    if not await verify_password(body.current_password, current.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
-    current.password_hash = hash_password(body.new_password)
+    current.password_hash = await hash_password(body.new_password)
     current.encrypted_private_key = body.encrypted_private_key.model_dump()
 
 
@@ -88,7 +88,7 @@ async def delete_me(
     passkeys, receipts, reactions, notes, avatar keys, and recovery data; the
     user's sent messages are kept (sender set null) so recipients' history is
     intact, and the blob GC reclaims any now-orphaned attachments."""
-    if not verify_password(body.password, current.password_hash):
+    if not await verify_password(body.password, current.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Password is incorrect")
     await db.delete(current)
 

@@ -25,7 +25,7 @@ from app.schemas import (
 )
 from app.services import media_store
 from app.services.fanout import fanout_conversation, fanout_user
-from app.services.push import notify_offline, notify_offline_apns
+from app.services.push import notify_offline_all
 from app.ws.events import (
     CONVERSATION_UPDATED,
     MESSAGE_DELETE,
@@ -149,12 +149,12 @@ async def send_message(
     await fanout_conversation(
         db, conversation_id, envelope(MESSAGE_NEW, out.model_dump(mode="json"))
     )
-    # Push to recipients whose devices are offline (best-effort).
+    # Push fanout (web + APNs) runs after the response is sent, in its own
+    # session — the sender never waits on push-service round-trips.
     sender_name = identity.user.display_name or identity.user.username
-    await notify_offline(db, conversation_id, identity.user.id, sender_name)
-    # Native iOS (APNs) fanout — runs after the response is sent (own DB session),
-    # so a slow relay never delays the sender.
-    background_tasks.add_task(notify_offline_apns, conversation_id, identity.user.id)
+    background_tasks.add_task(
+        notify_offline_all, conversation_id, identity.user.id, sender_name
+    )
     return out
 
 

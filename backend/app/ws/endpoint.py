@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jwt import PyJWTError as JWTError
-from sqlalchemy import select
 
 from app.config import settings
 from app.database import SessionLocal
@@ -21,16 +20,6 @@ from app.ws.events import (
 from app.ws.hub import hub
 
 router = APIRouter()
-
-
-async def _conversation_ids(user_id: uuid.UUID) -> list[str]:
-    async with SessionLocal() as db:
-        rows = await db.execute(
-            select(ConversationMember.conversation_id).where(
-                ConversationMember.user_id == user_id
-            )
-        )
-        return [str(cid) for cid in rows.scalars().all()]
 
 
 async def _touch_last_seen(device_id: uuid.UUID) -> None:
@@ -71,8 +60,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
             return
 
     await websocket.accept()
-    conversation_ids = await _conversation_ids(user_id)
-    hub.register(websocket, str(user_id), conversation_ids)
+    hub.register(websocket, str(user_id))
     await mark_online(device_id)
     await _touch_last_seen(device_id)
     # If a call came in while this user was offline, flush the buffered signaling
@@ -88,7 +76,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
     except Exception:  # noqa: BLE001
         pass
     finally:
-        hub.unregister(websocket, str(user_id), conversation_ids)
+        hub.unregister(websocket, str(user_id))
         await mark_offline(device_id)
         await _touch_last_seen(device_id)
 

@@ -78,7 +78,7 @@ async def finish_recovery(
     client-side under the new password). 2FA, if enabled, still applies at login."""
     user = await db.scalar(select(User).where(User.username == body.username))
     user = _verify(user, body.recovery_verifier)
-    user.password_hash = hash_password(body.new_password)
+    user.password_hash = await hash_password(body.new_password)
     user.encrypted_private_key = body.encrypted_private_key.model_dump()
     await db.flush()
     # Alert the account's devices — a recovery-key reset bypasses 2FA, so the

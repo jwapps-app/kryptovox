@@ -21,10 +21,6 @@ REACTION_REMOVE = "reaction.remove"
 GUEST_REPLY = "guest.reply"
 
 
-def conv_channel(conversation_id: str) -> str:
-    return f"conv:{conversation_id}"
-
-
 def user_channel(user_id: str) -> str:
     return f"user:{user_id}"
 
