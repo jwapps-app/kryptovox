@@ -31,8 +31,9 @@ Stop with `docker compose down` (add `-v` to also wipe the Postgres volume).
 
 ## Why HTTPS matters here
 
-This app relies on **Web Crypto** (`crypto.subtle`) for E2EE and a **service
-worker** for the PWA. Browsers only expose those in a *secure context*:
+This app relies on **Web Crypto** (`crypto.subtle`) for E2EE and a push-only
+**service worker** (`public/push-sw.js`) for notifications. Browsers only
+expose those in a *secure context*:
 
 - `localhost` / `127.0.0.1` → always treated as secure, even over plain HTTP.
 - Any other host (e.g. your Mac's LAN IP `192.168.x.x`) → needs real HTTPS.

@@ -20,20 +20,22 @@ export default function NotesList() {
     setNotes(list);
     if (!identity || !user.identity_public_key) return;
     const decoded: Record<string, string> = {};
-    for (const n of list) {
-      try {
-        const key = await unwrapKeyForSelf(
-          n.wrapped_key,
-          identity.privateKey,
-          user.identity_public_key
-        );
-        decoded[n.id] = n.title_ciphertext
-          ? await decryptWithKey(key, n.title_ciphertext, n.title_iv)
-          : "";
-      } catch {
-        decoded[n.id] = "";
-      }
-    }
+    await Promise.all(
+      list.map(async (n) => {
+        try {
+          const key = await unwrapKeyForSelf(
+            n.wrapped_key,
+            identity.privateKey,
+            user.identity_public_key!
+          );
+          decoded[n.id] = n.title_ciphertext
+            ? await decryptWithKey(key, n.title_ciphertext, n.title_iv)
+            : "";
+        } catch {
+          decoded[n.id] = "";
+        }
+      })
+    );
     setTitles(decoded);
   }, [identity, user.identity_public_key]);
 

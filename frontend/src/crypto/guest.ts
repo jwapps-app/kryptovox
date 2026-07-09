@@ -10,7 +10,7 @@ import {
   utf8Encode,
 } from "./base64";
 import { scaledJpeg } from "./media";
-import { WRAP_IV_LEN, deriveWrapKey, importPublicKey } from "./messaging";
+import { WRAP_IV_LEN, deriveWrapKeyCached } from "./messaging";
 import type { ImageMedia } from "../lib/types";
 
 export async function generateThreadKey(): Promise<{ key: CryptoKey; raw: string }> {
@@ -151,7 +151,7 @@ export async function wrapKeyForSelf(
   myPrivateKey: CryptoKey,
   myPublicKeyB64: string
 ): Promise<string> {
-  const wrapKey = await deriveWrapKey(myPrivateKey, await importPublicKey(myPublicKeyB64));
+  const wrapKey = await deriveWrapKeyCached(myPrivateKey, myPublicKeyB64);
   const iv = crypto.getRandomValues(new Uint8Array(WRAP_IV_LEN));
   const wrapped = new Uint8Array(
     await crypto.subtle.encrypt({ name: "AES-GCM", iv }, wrapKey, base64urlToBytes(rawKeyB64))
@@ -164,7 +164,7 @@ export async function unwrapKeyForSelf(
   myPrivateKey: CryptoKey,
   myPublicKeyB64: string
 ): Promise<CryptoKey> {
-  const wrapKey = await deriveWrapKey(myPrivateKey, await importPublicKey(myPublicKeyB64));
+  const wrapKey = await deriveWrapKeyCached(myPrivateKey, myPublicKeyB64);
   const blob = base64urlToBytes(wrappedB64);
   const raw = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: blob.slice(0, WRAP_IV_LEN) },

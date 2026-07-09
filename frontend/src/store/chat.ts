@@ -107,6 +107,35 @@ async function decryptForMe(msg: Message): Promise<string> {
   }
 }
 
+// Optimistic append for our own sends. The server fans out a message.new WS
+// echo during the send POST, which can arrive before the response resolves — so
+// append idempotently (dedupe by id) to avoid showing the message twice. We
+// always set the locally-known plaintext / thumbnail (no round-trip decrypt).
+type SetChat = (fn: (s: ChatState) => Partial<ChatState>) => void;
+function appendSent(
+  set: SetChat,
+  conversationId: string,
+  msg: Message,
+  local: { text?: string; thumbUrl?: string }
+): void {
+  set((s) => {
+    const existing = s.messagesByConv[conversationId] ?? [];
+    const already = existing.some((m) => m.id === msg.id);
+    return {
+      messagesByConv: {
+        ...s.messagesByConv,
+        [conversationId]: already ? existing : [...existing, msg],
+      },
+      ...(local.text !== undefined
+        ? { textByMessage: { ...s.textByMessage, [msg.id]: local.text } }
+        : {}),
+      ...(local.thumbUrl !== undefined
+        ? { thumbByMessage: { ...s.thumbByMessage, [msg.id]: local.thumbUrl } }
+        : {}),
+    };
+  });
+}
+
 export const useChat = create<ChatState>((set, get) => ({
   conversations: [],
   messagesByConv: {},
@@ -228,21 +257,7 @@ export const useChat = create<ChatState>((set, get) => ({
       method: "POST",
       body: JSON.stringify({ ...enc, type: "text", reply_to_id: replyToId }),
     });
-    // The server fans out a message.new WS echo during this POST, which can
-    // arrive before this response resolves — so append idempotently (dedupe by
-    // id) to avoid showing our own message twice. We always set the plaintext
-    // since we know it locally.
-    set((s) => {
-      const existing = s.messagesByConv[conversationId] ?? [];
-      const already = existing.some((m) => m.id === msg.id);
-      return {
-        messagesByConv: {
-          ...s.messagesByConv,
-          [conversationId]: already ? existing : [...existing, msg],
-        },
-        textByMessage: { ...s.textByMessage, [msg.id]: text },
-      };
-    });
+    appendSent(set, conversationId, msg, { text });
   },
 
   sendImage: async (conversationId, file, memberIds) => {
@@ -259,19 +274,8 @@ export const useChat = create<ChatState>((set, get) => ({
         media: { ...enc.media, id },
       }),
     });
-    // Show our own image instantly from the local file (no round-trip decrypt).
-    const localUrl = URL.createObjectURL(file);
-    set((s) => {
-      const existing = s.messagesByConv[conversationId] ?? [];
-      const already = existing.some((m) => m.id === msg.id);
-      return {
-        messagesByConv: {
-          ...s.messagesByConv,
-          [conversationId]: already ? existing : [...existing, msg],
-        },
-        thumbByMessage: { ...s.thumbByMessage, [msg.id]: localUrl },
-      };
-    });
+    // Show our own image instantly from the local file.
+    appendSent(set, conversationId, msg, { thumbUrl: URL.createObjectURL(file) });
   },
 
   sendFile: async (conversationId, file, memberIds) => {
@@ -290,17 +294,7 @@ export const useChat = create<ChatState>((set, get) => ({
         file: { ...enc.media, id },
       }),
     });
-    set((s) => {
-      const existing = s.messagesByConv[conversationId] ?? [];
-      const already = existing.some((m) => m.id === msg.id);
-      return {
-        messagesByConv: {
-          ...s.messagesByConv,
-          [conversationId]: already ? existing : [...existing, msg],
-        },
-        textByMessage: { ...s.textByMessage, [msg.id]: file.name },
-      };
-    });
+    appendSent(set, conversationId, msg, { text: file.name });
   },
 
   loadFile: async (message) => {
@@ -326,17 +320,7 @@ export const useChat = create<ChatState>((set, get) => ({
       method: "POST",
       body: JSON.stringify({ ...enc, type: "location" }),
     });
-    set((s) => {
-      const existing = s.messagesByConv[conversationId] ?? [];
-      const already = existing.some((m) => m.id === msg.id);
-      return {
-        messagesByConv: {
-          ...s.messagesByConv,
-          [conversationId]: already ? existing : [...existing, msg],
-        },
-        textByMessage: { ...s.textByMessage, [msg.id]: payload },
-      };
-    });
+    appendSent(set, conversationId, msg, { text: payload });
   },
 
   loadFullImage: async (message) => {
@@ -470,8 +454,28 @@ export const useChat = create<ChatState>((set, get) => ({
               : s.thumbByMessage,
           };
         });
-        // Refresh conversation ordering / previews.
-        get().loadConversations();
+        // Update the conversation row locally (the list re-sorts from
+        // last_message time) instead of refetching + re-decrypting everything.
+        const { user } = useAuth.getState();
+        if (get().conversations.some((c) => c.id === msg.conversation_id)) {
+          set((s) => ({
+            conversations: s.conversations.map((c) =>
+              c.id === msg.conversation_id
+                ? {
+                    ...c,
+                    last_message: msg,
+                    // Own echoes don't count; markRead zeroes it on open.
+                    unread_count:
+                      msg.sender_id === user?.id ? c.unread_count : c.unread_count + 1,
+                  }
+                : c
+            ),
+          }));
+          syncBadge(get().conversations, get().guestUnread);
+        } else {
+          // Brand-new conversation — we don't have its members/metadata yet.
+          get().loadConversations();
+        }
         break;
       }
       case "message.edit": {

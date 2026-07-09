@@ -52,6 +52,31 @@ export async function deriveWrapKey(
   );
 }
 
+// ECDH + HKDF is deterministic per key pair, so derive each wrap key once. The
+// WeakMap is keyed on the private-key object itself: a new identity (login /
+// account switch) is a new CryptoKey, so stale entries just get collected.
+const wrapKeyCache = new WeakMap<CryptoKey, Map<string, Promise<CryptoKey>>>();
+
+export function deriveWrapKeyCached(
+  privateKey: CryptoKey,
+  peerPublicKeyB64: string
+): Promise<CryptoKey> {
+  let byPeer = wrapKeyCache.get(privateKey);
+  if (!byPeer) {
+    byPeer = new Map();
+    wrapKeyCache.set(privateKey, byPeer);
+  }
+  let derived = byPeer.get(peerPublicKeyB64);
+  if (!derived) {
+    derived = importPublicKey(peerPublicKeyB64).then((pub) =>
+      deriveWrapKey(privateKey, pub)
+    );
+    derived.catch(() => byPeer.delete(peerPublicKeyB64)); // don't cache failures
+    byPeer.set(peerPublicKeyB64, derived);
+  }
+  return derived;
+}
+
 export async function encryptMessage(
   plaintext: string,
   recipients: RecipientKey[],
@@ -73,8 +98,7 @@ export async function encryptMessage(
   const encrypted_keys: Record<string, string> = {};
   for (const r of recipients) {
     if (encrypted_keys[r.userId]) continue; // one entry per user
-    const peerPub = await importPublicKey(r.publicKeyB64);
-    const wrapKey = await deriveWrapKey(senderPrivateKey, peerPub);
+    const wrapKey = await deriveWrapKeyCached(senderPrivateKey, r.publicKeyB64);
     const wrapIv = crypto.getRandomValues(new Uint8Array(WRAP_IV_LEN));
     const wrapped = new Uint8Array(
       await crypto.subtle.encrypt({ name: "AES-GCM", iv: wrapIv }, wrapKey, rawMessageKey)
@@ -96,8 +120,7 @@ export async function decryptMessage(
   senderPublicKeyB64: string,
   recipientPrivateKey: CryptoKey
 ): Promise<string> {
-  const senderPub = await importPublicKey(senderPublicKeyB64);
-  const wrapKey = await deriveWrapKey(recipientPrivateKey, senderPub);
+  const wrapKey = await deriveWrapKeyCached(recipientPrivateKey, senderPublicKeyB64);
 
   const wrappedBlob = base64urlToBytes(wrappedKeyB64);
   const wrapIv = wrappedBlob.slice(0, WRAP_IV_LEN);

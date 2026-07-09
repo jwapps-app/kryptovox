@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
@@ -18,16 +18,20 @@ import { useCalls } from "../store/calls";
 import { CALLS_ENABLED } from "../lib/features";
 import type { Conversation, Message } from "../lib/types";
 
+// Stable fallbacks so absent store entries don't churn hook deps every render.
+const EMPTY_ARRAY: never[] = [];
+const EMPTY_OBJECT: Record<string, string> = {};
+
 export default function ChatView() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const user = useAuth((s) => s.user)!;
 
-  const messages = useChat((s) => s.messagesByConv[id]) ?? [];
+  const messages = useChat((s) => s.messagesByConv[id]) ?? EMPTY_ARRAY;
   const textByMessage = useChat((s) => s.textByMessage);
   const thumbByMessage = useChat((s) => s.thumbByMessage);
-  const typing = useChat((s) => s.typingByConv[id]) ?? [];
-  const readBy = useChat((s) => s.readByConv[id]) ?? {};
+  const typing = useChat((s) => s.typingByConv[id]) ?? EMPTY_ARRAY;
+  const readBy = useChat((s) => s.readByConv[id]) ?? EMPTY_OBJECT;
   const loadMessages = useChat((s) => s.loadMessages);
   const loadOlder = useChat((s) => s.loadOlder);
   const sendMessage = useChat((s) => s.sendMessage);
@@ -78,34 +82,54 @@ export default function ChatView() {
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
 
-  const openImage = async (m: Message) => {
-    setViewerLoading(true);
-    setViewerUrl(null);
-    try {
-      setViewerUrl(await loadFullImage(m));
-    } catch {
-      /* leave closed on failure */
-    } finally {
-      setViewerLoading(false);
-    }
-  };
+  // Handlers passed to the memoized bubbles — keep their identities stable so
+  // an unrelated store update doesn't re-render every message.
+  const openImage = useCallback(
+    async (m: Message) => {
+      setViewerLoading(true);
+      setViewerUrl(null);
+      try {
+        setViewerUrl(await loadFullImage(m));
+      } catch {
+        /* leave closed on failure */
+      } finally {
+        setViewerLoading(false);
+      }
+    },
+    [loadFullImage]
+  );
 
-  const openFile = async (m: Message) => {
-    try {
-      const url = await loadFile(m);
-      const name = textByMessage[m.id] || "file";
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch {
-      /* best-effort */
-    }
-  };
+  const openFile = useCallback(
+    async (m: Message) => {
+      try {
+        const url = await loadFile(m);
+        const name = useChat.getState().textByMessage[m.id] || "file";
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch {
+        /* best-effort */
+      }
+    },
+    [loadFile]
+  );
+
+  const onReact = useCallback(
+    (mid: string, emoji: string) => void toggleReaction(id, mid, emoji, user.id),
+    [toggleReaction, id, user.id]
+  );
+  const onReply = useCallback((msg: Message) => setReplyTo(msg), []);
+  const onUnsend = useCallback((mid: string) => void unsend(mid, id), [unsend, id]);
+  const onEdit = useCallback((msg: Message) => {
+    setReplyTo(null);
+    setEditing(msg);
+  }, []);
+  const onForward = useCallback((msg: Message) => setForwarding(msg), []);
   const closeViewer = () => {
     setViewerUrl(null);
     setViewerLoading(false);
@@ -165,7 +189,7 @@ export default function ChatView() {
 
   const title = conv ? conversationTitle(conv, user.id) : "";
   const memberIds = useMemo(() => conv?.members.map((m) => m.id) ?? [], [conv]);
-  const othersTyping = typing.filter((u) => u !== user.id);
+  const othersTyping = typing.some((u) => u !== user.id);
 
   // Disappearing messages: each carries its own window (disappear_seconds) and
   // its clock starts when read. Hide on time client-side (the server sweeps them
@@ -483,21 +507,18 @@ export default function ChatView() {
                     thumbUrl={thumbByMessage[m.id]}
                     onOpenImage={openImage}
                     onOpenFile={openFile}
-                    onReact={(mid, emoji) => toggleReaction(id, mid, emoji, user.id)}
-                    onReply={(msg) => setReplyTo(msg)}
-                    onUnsend={(mid) => unsend(mid, id)}
-                    onEdit={(msg) => {
-                      setReplyTo(null);
-                      setEditing(msg);
-                    }}
-                    onForward={(msg) => setForwarding(msg)}
+                    onReact={onReact}
+                    onReply={onReply}
+                    onUnsend={onUnsend}
+                    onEdit={onEdit}
+                    onForward={onForward}
                   />
                 </div>
               );
             })}
           </div>
         )}
-        {othersTyping.length > 0 && <TypingIndicator />}
+        {othersTyping && <TypingIndicator />}
       </div>
 
       <InputBar
