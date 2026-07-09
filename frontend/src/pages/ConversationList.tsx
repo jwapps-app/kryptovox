@@ -42,31 +42,33 @@ export default function ConversationList() {
     setGuests(list);
     if (!identity || !user.identity_public_key) return;
     const decoded: Record<string, { label: string; preview: string }> = {};
-    for (const t of list) {
-      try {
-        const key = await unwrapKeyForSelf(
-          t.wrapped_key,
-          identity.privateKey,
-          user.identity_public_key
-        );
-        const label =
-          t.label_ciphertext && t.label_iv
-            ? await decryptWithKey(key, t.label_ciphertext, t.label_iv)
-            : "Secret link";
-        const preview = !t.last
-          ? ""
-          : t.last.type === "image"
-            ? "📷 Photo"
-            : t.last.type === "location"
-              ? "📍 Location"
-              : t.last.type === "file"
-                ? `📎 ${await decryptWithKey(key, t.last.ciphertext, t.last.iv)}`
-                : await decryptWithKey(key, t.last.ciphertext, t.last.iv);
-        decoded[t.id] = { label, preview };
-      } catch {
-        decoded[t.id] = { label: "Secret link", preview: "…" };
-      }
-    }
+    await Promise.all(
+      list.map(async (t) => {
+        try {
+          const key = await unwrapKeyForSelf(
+            t.wrapped_key,
+            identity.privateKey,
+            user.identity_public_key!
+          );
+          const label =
+            t.label_ciphertext && t.label_iv
+              ? await decryptWithKey(key, t.label_ciphertext, t.label_iv)
+              : "Secret link";
+          const preview = !t.last
+            ? ""
+            : t.last.type === "image"
+              ? "📷 Photo"
+              : t.last.type === "location"
+                ? "📍 Location"
+                : t.last.type === "file"
+                  ? `📎 ${await decryptWithKey(key, t.last.ciphertext, t.last.iv)}`
+                  : await decryptWithKey(key, t.last.ciphertext, t.last.iv);
+          decoded[t.id] = { label, preview };
+        } catch {
+          decoded[t.id] = { label: "Secret link", preview: "…" };
+        }
+      })
+    );
     setGuestText(decoded);
   }, [identity, user.identity_public_key]);
 
@@ -81,6 +83,14 @@ export default function ConversationList() {
     await api(`/links/${id}`, { method: "DELETE" }).catch(() => {});
     setGuests((g) => g.filter((t) => t.id !== id));
   };
+
+  // Stable handlers for the memoized rows (they pass their own id back).
+  const openConv = useCallback((id: string) => navigate(`/chat/${id}`), [navigate]);
+  const deleteConv = useCallback(
+    (id: string) => void leaveConversation(id),
+    [leaveConversation]
+  );
+  const unreadConv = useCallback((id: string) => void markUnread(id), [markUnread]);
 
   // Merge conversations + secret-link threads into one list, newest first.
   const items = useMemo<Item[]>(() => {
@@ -239,9 +249,9 @@ export default function ConversationList() {
                         : textByMessage[item.conv.last_message.id] ?? "…"
                   : "No messages yet"
               }
-              onOpen={() => navigate(`/chat/${item.id}`)}
-              onDelete={() => void leaveConversation(item.id)}
-              onMarkUnread={() => void markUnread(item.id)}
+              onOpen={openConv}
+              onDelete={deleteConv}
+              onMarkUnread={unreadConv}
             />
           ) : (
             <GuestThreadRow

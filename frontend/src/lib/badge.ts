@@ -5,7 +5,7 @@ type BadgeNavigator = Navigator & {
   clearAppBadge?: () => Promise<void>;
 };
 
-export function setAppBadge(count: number): void {
+function setAppBadge(count: number): void {
   const nav = navigator as BadgeNavigator;
   try {
     if (count > 0) {

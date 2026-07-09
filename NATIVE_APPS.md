@@ -272,10 +272,10 @@ single **entitlement** ("push") with server-side receipt validation and a webhoo
 ```
 User taps "Enable notifications ($X)"  →  IAP purchase (StoreKit/Play Billing)
    →  RevenueCat validates the receipt  →  webhook to Kryptovox backend
-   →  backend marks the user push-entitled  →  POST /push/native now accepted
+   →  backend marks the user push-entitled  →  POST /api/devices now accepted
    →  pushes start flowing
 ```
-Backend gate: `POST /push/native` (and the per-message send to a native token)
+Backend gate: `POST /api/devices` (and the per-message send to a native token)
 checks `user.push_entitled` (a new boolean, set by the RevenueCat webhook or by
 your own receipt verification). No entitlement → 402/403 and the app shows the
 upgrade prompt. **Verify receipts server-side** — never trust a client "I paid" flag.
@@ -328,8 +328,8 @@ are live.
 ## 9. Backend changes — summary checklist
 
 All additive; none break the existing web/PWA path:
-- [ ] `POST /api/push/native` — store `{token, platform}` for the device; **require push entitlement**.
-- [ ] `DELETE /api/push/native` — drop the token (logout / disable).
+- [ ] `POST /api/devices` — store the device's APNs token; **require push entitlement**.
+- [ ] `DELETE /api/devices/apns/{apns_token}` — drop the token (logout / disable).
 - [ ] `User.push_entitled` (bool) + the RevenueCat webhook (or receipt-verify endpoint) that sets it.
 - [ ] Extend the message/call fan-out: for each recipient device, send via web-push (existing), iOS relay, or FCM by device type.
 - [ ] Push-relay client: `POST /notify` with `X-API-Key` + `{bundle_id, device_token, title, body, custom_data, badge}` (see §5.3).

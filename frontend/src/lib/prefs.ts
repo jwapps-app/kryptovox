@@ -28,17 +28,23 @@ export function mapsUrl(lat: number, lng: number): string {
   return `https://maps.apple.com/?ll=${a},${o}&q=Shared%20Location`;
 }
 
+// Cached: getPrefs runs on render paths, so don't hit localStorage every call.
+let cached: Prefs | null = null;
+
 export function getPrefs(): Prefs {
+  if (cached) return cached;
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
+    cached = raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
   } catch {
-    return DEFAULTS;
+    cached = DEFAULTS;
   }
+  return cached ?? DEFAULTS;
 }
 
 export function setPref<K extends keyof Prefs>(key: K, value: Prefs[K]): Prefs {
   const next = { ...getPrefs(), [key]: value };
+  cached = next;
   localStorage.setItem(KEY, JSON.stringify(next));
   return next;
 }

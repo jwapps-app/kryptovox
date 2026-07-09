@@ -54,37 +54,39 @@ export default function GuestView() {
       if (!res.ok) return setError("This link is invalid or was removed.");
       const thread = (await res.json()) as PublicThread;
       setExpiresAt(thread.expires_at);
-      const out: Decoded[] = [];
-      for (const m of thread.messages) {
-        let t = "";
-        if (m.ciphertext) {
-          try {
-            t = await decryptWithKey(keyRef.current, m.ciphertext, m.iv);
-          } catch {
-            t = "[unable to decrypt]";
+      const key = keyRef.current;
+      const out = await Promise.all(
+        thread.messages.map(async (m): Promise<Decoded> => {
+          let t = "";
+          if (m.ciphertext) {
+            try {
+              t = await decryptWithKey(key, m.ciphertext, m.iv);
+            } catch {
+              t = "[unable to decrypt]";
+            }
           }
-        }
-        out.push({
-          id: m.id,
-          sender: m.sender,
-          type: m.type,
-          text: t,
-          media: m.media,
-          created_at: m.created_at,
-        });
-        // Decrypt thumbnails for image messages once (cached by id).
-        if (m.type === "image" && m.media && !thumbsRef.current[m.id]) {
-          try {
-            thumbsRef.current[m.id] = await decryptThumbToUrl(
-              m.media.thumb,
-              m.media.thumb_iv,
-              keyRef.current
-            );
-          } catch {
-            /* skip */
+          // Decrypt thumbnails for image messages once (cached by id).
+          if (m.type === "image" && m.media && !thumbsRef.current[m.id]) {
+            try {
+              thumbsRef.current[m.id] = await decryptThumbToUrl(
+                m.media.thumb,
+                m.media.thumb_iv,
+                key
+              );
+            } catch {
+              /* skip */
+            }
           }
-        }
-      }
+          return {
+            id: m.id,
+            sender: m.sender,
+            type: m.type,
+            text: t,
+            media: m.media,
+            created_at: m.created_at,
+          };
+        })
+      );
       setMsgs(out);
       setThumbs({ ...thumbsRef.current });
     } catch {

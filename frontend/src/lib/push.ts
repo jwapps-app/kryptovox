@@ -4,7 +4,7 @@ import { api } from "./api";
 
 const SW_URL = "/push-sw.js";
 
-export function pushSupported(): boolean {
+function pushSupported(): boolean {
   return (
     "serviceWorker" in navigator &&
     "PushManager" in window &&

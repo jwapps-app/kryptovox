@@ -1,16 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { clockTime } from "../lib/format";
+import { memo, useEffect, useRef, useState } from "react";
+import { clockTime, formatBytes } from "../lib/format";
 import { mapsUrl } from "../lib/prefs";
 import ExpiryBadge from "./ExpiryBadge";
 import type { Message } from "../lib/types";
 
 export const TAPBACKS = ["❤️", "👍", "👎", "😂", "‼️", "❓"];
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 // Feather/Lucide-style stroked icons, matching the gear/compose/location icons.
 const iconProps: React.SVGProps<SVGSVGElement> = {
@@ -75,7 +69,9 @@ interface Props {
   onOpenFile?: (message: Message) => void;
 }
 
-export default function MessageBubble({
+// Memoized: chat renders every loaded bubble, so a new message (or typing tick)
+// must not re-render the whole transcript. Callers pass stable callbacks.
+function MessageBubble({
   message,
   text,
   isMine,
@@ -449,3 +445,5 @@ export default function MessageBubble({
     </div>
   );
 }
+
+export default memo(MessageBubble);
