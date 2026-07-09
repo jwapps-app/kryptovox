@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import Avatar from "./Avatar";
 import { conversationTitle, relativeTime } from "../lib/format";
 import type { Conversation } from "../lib/types";
@@ -9,14 +9,15 @@ interface Props {
   conversation: Conversation;
   currentUserId: string;
   preview: string;
-  onOpen: () => void;
-  onDelete: () => void;
-  onMarkUnread: () => void;
+  onOpen: (id: string) => void;
+  onDelete: (id: string) => void;
+  onMarkUnread: (id: string) => void;
 }
 
 // A conversation list row. On touch: swipe left → Delete, swipe right → Unread.
 // On devices with a mouse (no swipe), the same actions appear on hover.
-export default function ConversationRow({
+// Memoized (callbacks take the id so callers can pass stable references).
+function ConversationRow({
   conversation: c,
   currentUserId,
   preview,
@@ -59,7 +60,7 @@ export default function ConversationRow({
       close(); // tapping an open row closes it
       return;
     }
-    onOpen();
+    onOpen(c.id);
   };
 
   const snapped = dx === 0 || dx === -REVEAL || dx === REVEAL;
@@ -68,7 +69,7 @@ export default function ConversationRow({
     <li className="kv-row relative overflow-hidden">
       <button
         onClick={() => {
-          onMarkUnread();
+          onMarkUnread(c.id);
           close();
         }}
         aria-label="Mark unread"
@@ -78,7 +79,7 @@ export default function ConversationRow({
         Unread
       </button>
       <button
-        onClick={onDelete}
+        onClick={() => onDelete(c.id)}
         aria-label="Delete conversation"
         className="absolute inset-y-0 right-0 flex items-center justify-center bg-red-500 text-sm font-medium text-white"
         style={{ width: REVEAL }}
@@ -137,7 +138,7 @@ export default function ConversationRow({
 
         <div className="kv-row-actions absolute right-2 top-1/2 -translate-y-1/2 items-center gap-1">
           <button
-            onClick={onMarkUnread}
+            onClick={() => onMarkUnread(c.id)}
             aria-label="Mark unread"
             className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-imsg-blue hover:bg-gray-200"
           >
@@ -147,7 +148,7 @@ export default function ConversationRow({
           </button>
           <button
             onClick={() => {
-              if (confirm("Delete this conversation?")) onDelete();
+              if (confirm("Delete this conversation?")) onDelete(c.id);
             }}
             aria-label="Delete conversation"
             className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-red-500 hover:bg-gray-200"
@@ -171,3 +172,5 @@ export default function ConversationRow({
     </li>
   );
 }
+
+export default memo(ConversationRow);

@@ -77,36 +77,38 @@ export default function SecretLinkThread() {
         /* keep default */
       }
     }
-    const out: Decoded[] = [];
-    for (const m of detail.messages) {
-      let t = "";
-      if (m.ciphertext) {
-        try {
-          t = await decryptWithKey(keyRef.current, m.ciphertext, m.iv);
-        } catch {
-          t = "[unable to decrypt]";
+    const key = keyRef.current;
+    const out = await Promise.all(
+      detail.messages.map(async (m): Promise<Decoded> => {
+        let t = "";
+        if (m.ciphertext) {
+          try {
+            t = await decryptWithKey(key, m.ciphertext, m.iv);
+          } catch {
+            t = "[unable to decrypt]";
+          }
         }
-      }
-      out.push({
-        id: m.id,
-        sender: m.sender,
-        type: m.type,
-        text: t,
-        media: m.media,
-        created_at: m.created_at,
-      });
-      if (m.type === "image" && m.media && !thumbsRef.current[m.id]) {
-        try {
-          thumbsRef.current[m.id] = await decryptThumbToUrl(
-            m.media.thumb,
-            m.media.thumb_iv,
-            keyRef.current
-          );
-        } catch {
-          /* skip */
+        if (m.type === "image" && m.media && !thumbsRef.current[m.id]) {
+          try {
+            thumbsRef.current[m.id] = await decryptThumbToUrl(
+              m.media.thumb,
+              m.media.thumb_iv,
+              key
+            );
+          } catch {
+            /* skip */
+          }
         }
-      }
-    }
+        return {
+          id: m.id,
+          sender: m.sender,
+          type: m.type,
+          text: t,
+          media: m.media,
+          created_at: m.created_at,
+        };
+      })
+    );
     setMsgs(out);
     setThumbs({ ...thumbsRef.current });
   }, [id, identity, user.identity_public_key, navigate]);

@@ -12,15 +12,10 @@ import {
   wrapKeyForSelf,
 } from "../crypto/guest";
 import { fetchNoteMedia, uploadNoteMedia } from "../lib/media";
+import { formatBytes } from "../lib/format";
 import BackButton from "../components/BackButton";
 import RichNoteEditor from "../components/RichNoteEditor";
 import type { Note, NoteAttachment } from "../lib/types";
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export default function NoteEditor() {
   const { id = "new" } = useParams();

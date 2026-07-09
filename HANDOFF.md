@@ -13,7 +13,7 @@ automated API smoke tests and a frontend type-check + production build.
 - ✅ **Phase 3 — Conversations & Contacts**
 - ✅ **Phase 4 — Realtime messaging (WebSockets + E2EE + Redis fanout)**
 - ✅ **Phase 5 — Chat UI** (bubbles, reactions, reply, read receipts, virtualization)
-- ✅ **Phase 6 — PWA & Web Push** (installable, offline shell, VAPID push)
+- ✅ **Phase 6 — PWA & Web Push** (installable, VAPID push)
 - ✅ **Phase 7 — Groups, profiles, settings** (group mgmt, safety numbers, Cmd+K)
 - ✅ **Phase 8 — Hardening** (rate limiting, CSRF, backups, log rotation, dep audit)
 
@@ -41,7 +41,8 @@ A few sub-items are deliberately deferred — see "Deferred" below.
   via `@tanstack/react-virtual`.
 
 **PWA & Push**
-- Manifest + maskable icons + Workbox service worker (precaches shell). iOS meta.
+- Manifest + maskable icons + push-only service worker (`push-sw.js` — no
+  precache/offline shell). iOS meta.
 - Web Push: VAPID keypair auto-generated + persisted; `POST /push/subscribe`;
   Redis **presence** tracking; server pushes to **offline** recipient devices on
   new messages (best-effort, never blocks send). Custom SW push +

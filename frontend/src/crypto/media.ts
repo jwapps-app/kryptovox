@@ -3,7 +3,7 @@
 // thumbnail, and is wrapped per recipient via X25519. The server only stores
 // ciphertext (the full image as a blob, the thumbnail inline on the message).
 import { base64urlToBytes, bytesToBase64url, concatBytes, utf8Encode } from "./base64";
-import { WRAP_IV_LEN, deriveWrapKey, importPublicKey } from "./messaging";
+import { WRAP_IV_LEN, deriveWrapKeyCached } from "./messaging";
 import type { RecipientKey } from "./messaging";
 
 const FULL_MAX = 1600; // longest edge of the stored full image
@@ -81,7 +81,7 @@ export async function encryptImage(
   const encrypted_keys: Record<string, string> = {};
   for (const r of recipients) {
     if (encrypted_keys[r.userId]) continue;
-    const wrapKey = await deriveWrapKey(senderPrivateKey, await importPublicKey(r.publicKeyB64));
+    const wrapKey = await deriveWrapKeyCached(senderPrivateKey, r.publicKeyB64);
     const wrapIv = crypto.getRandomValues(new Uint8Array(WRAP_IV_LEN));
     const wrapped = new Uint8Array(
       await crypto.subtle.encrypt({ name: "AES-GCM", iv: wrapIv }, wrapKey, rawKey)
@@ -109,7 +109,7 @@ async function unwrapKey(
   senderPublicKeyB64: string,
   recipientPrivateKey: CryptoKey
 ): Promise<CryptoKey> {
-  const wrapKey = await deriveWrapKey(recipientPrivateKey, await importPublicKey(senderPublicKeyB64));
+  const wrapKey = await deriveWrapKeyCached(recipientPrivateKey, senderPublicKeyB64);
   const blob = base64urlToBytes(wrappedKeyB64);
   const rawKey = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: blob.slice(0, WRAP_IV_LEN) },
@@ -203,7 +203,7 @@ export async function encryptFile(
   const encrypted_keys: Record<string, string> = {};
   for (const r of recipients) {
     if (encrypted_keys[r.userId]) continue;
-    const wrapKey = await deriveWrapKey(senderPrivateKey, await importPublicKey(r.publicKeyB64));
+    const wrapKey = await deriveWrapKeyCached(senderPrivateKey, r.publicKeyB64);
     const wrapIv = crypto.getRandomValues(new Uint8Array(WRAP_IV_LEN));
     const wrapped = new Uint8Array(
       await crypto.subtle.encrypt({ name: "AES-GCM", iv: wrapIv }, wrapKey, rawKey)
