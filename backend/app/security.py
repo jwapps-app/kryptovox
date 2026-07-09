@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import secrets
@@ -14,13 +15,19 @@ from app.config import settings
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Verified against when a username doesn't exist, so login latency doesn't
+# reveal whether an account exists (hashed once at import).
+DUMMY_PASSWORD_HASH = _pwd.hash("kryptovox-timing-equalizer")
 
-def hash_password(password: str) -> str:
-    return _pwd.hash(password)
+
+async def hash_password(password: str) -> str:
+    """bcrypt is deliberately ~100-250ms of CPU — run it on the thread pool so
+    concurrent logins don't stall every coroutine on the worker."""
+    return await asyncio.to_thread(_pwd.hash, password)
 
 
-def verify_password(password: str, password_hash: str) -> bool:
-    return _pwd.verify(password, password_hash)
+async def verify_password(password: str, password_hash: str) -> bool:
+    return await asyncio.to_thread(_pwd.verify, password, password_hash)
 
 
 def create_access_token(user_id: uuid.UUID, device_id: uuid.UUID) -> str:

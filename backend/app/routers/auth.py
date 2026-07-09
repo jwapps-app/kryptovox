@@ -42,6 +42,7 @@ from app.services.webauthn_svc import (
 )
 from app.security import (
     consume_totp,
+    DUMMY_PASSWORD_HASH,
     create_access_token,
     create_pending_2fa_token,
     decode_pending_2fa_token,
@@ -148,7 +149,7 @@ async def register(
     user = User(
         username=body.username,
         display_name=body.display_name or body.username,
-        password_hash=hash_password(body.password),
+        password_hash=await hash_password(body.password),
         is_admin=True,  # first user bootstraps as admin
         identity_public_key=body.identity_public_key,
         encrypted_private_key=body.encrypted_private_key.model_dump(),
@@ -189,7 +190,12 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     user = await db.scalar(select(User).where(User.username == body.username))
-    if user is None or not verify_password(body.password, user.password_hash):
+    # Verify against a dummy hash for unknown usernames too, so response
+    # timing can't be used to enumerate accounts.
+    password_ok = await verify_password(
+        body.password, user.password_hash if user else DUMMY_PASSWORD_HASH
+    )
+    if user is None or not password_ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
     # 2FA enrolled → don't issue a session yet; require the second factor.

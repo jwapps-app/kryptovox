@@ -30,8 +30,7 @@ from app.models import (
     GuestThread,
     Message,
 )
-from app.services.fanout import conversation_member_ids
-from app.services.presence import is_online
+from app.services.presence import filter_online, is_online
 
 log = logging.getLogger("kryptovox.push")
 
@@ -99,21 +98,27 @@ async def _send(subscription: dict, payload: dict, device: Device, db: AsyncSess
         log.warning("Push delivery error: %s", exc)
 
 
-async def _unread_total(db: AsyncSession, user_id: uuid.UUID) -> int:
-    """Total unread messages for a user across all their conversations — drives
-    the app-icon badge. Computed in a SINGLE query (was ~2 per conversation): join
+async def _unread_totals(
+    db: AsyncSession, user_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """Total unread messages per user across all their conversations — drives the
+    app-icon badge. One grouped query for ANY number of users (the message fanout
+    used to run the single-user version once per recipient, per push flavor): join
     each membership to its last-read message for the cutoff time, then count newer
     inbound messages per conversation, with a +1 for manually marked-unread empty
     conversations."""
+    if not user_ids:
+        return {}
     m = aliased(Message)
     lr = aliased(Message)  # the member's last-read message (for its created_at)
     rows = await db.execute(
         select(
+            ConversationMember.user_id,
             ConversationMember.marked_unread,
             func.count(m.id)
             .filter(
                 and_(
-                    m.sender_id != user_id,
+                    m.sender_id != ConversationMember.user_id,
                     m.deleted_at.is_(None),
                     or_(lr.created_at.is_(None), m.created_at > lr.created_at),
                 )
@@ -123,87 +128,55 @@ async def _unread_total(db: AsyncSession, user_id: uuid.UUID) -> int:
         .select_from(ConversationMember)
         .outerjoin(lr, lr.id == ConversationMember.last_read_message_id)
         .outerjoin(m, m.conversation_id == ConversationMember.conversation_id)
-        .where(ConversationMember.user_id == user_id)
-        .group_by(ConversationMember.conversation_id, ConversationMember.marked_unread)
+        .where(ConversationMember.user_id.in_(user_ids))
+        .group_by(
+            ConversationMember.user_id,
+            ConversationMember.conversation_id,
+            ConversationMember.marked_unread,
+        )
     )
-    total = 0
-    for marked_unread, unread in rows.all():
+    totals: dict[uuid.UUID, int] = dict.fromkeys(user_ids, 0)
+    for uid, marked_unread, unread in rows.all():
         unread = int(unread or 0)
         if marked_unread and unread == 0:
             unread = 1
-        total += unread
-    return total
+        totals[uid] = totals.get(uid, 0) + unread
+    return totals
 
 
-async def notify_offline(
-    db: AsyncSession,
-    conversation_id: uuid.UUID,
-    sender_user_id: uuid.UUID,
-    sender_name: str,
-) -> None:
-    """Push to every recipient device that is currently offline + subscribed."""
-    base = {
-        "title": sender_name or "Kryptovox",
-        "body": "New message",
-        "url": f"/chat/{conversation_id}",
-    }
-    considered = online = pushed = 0
-    seen_endpoints: set[str] = set()
-    for uid in await conversation_member_ids(db, conversation_id):
-        if uid == sender_user_id:
-            continue
-        # Respect per-member mute.
-        member = await db.get(ConversationMember, (conversation_id, uid))
-        if member is not None and member.muted:
-            continue
-        # Per-recipient unread total for the home-screen icon badge.
-        payload = {**base, "badge": await _unread_total(db, uid)}
-        rows = await db.execute(
-            select(Device).where(
-                Device.user_id == uid, Device.push_subscription.isnot(None)
-            )
-        )
-        for device in rows.scalars().all():
-            considered += 1
-            if await is_online(device.id):
-                online += 1
-                continue
-            # Re-logins create multiple device rows that may share one browser
-            # push endpoint — dedupe so the user gets a single banner.
-            endpoint = (device.push_subscription or {}).get("endpoint")
-            if endpoint and endpoint in seen_endpoints:
-                continue
-            if endpoint:
-                seen_endpoints.add(endpoint)
-            await _send(device.push_subscription, payload, device, db)
-            pushed += 1
-    log.info(
-        "push fanout conv=%s: %d subscribed device(s), %d online (skipped), %d pushed",
-        conversation_id,
-        considered,
-        online,
-        pushed,
-    )
+async def _unread_total(db: AsyncSession, user_id: uuid.UUID) -> int:
+    return (await _unread_totals(db, [user_id])).get(user_id, 0)
 
 
 async def user_badge_total(db: AsyncSession, user_id: uuid.UUID) -> int:
     """Total unread for the app-icon badge: conversation unread + secret-link
-    threads with an unread guest reply."""
+    threads with an unread guest reply. Runs on every guest reply, so the last
+    message per thread comes from ONE DISTINCT ON query, not one per thread."""
     total = await _unread_total(db, user_id)
-    rows = await db.execute(
-        select(GuestThread).where(GuestThread.creator_id == user_id)
-    )
-    for t in rows.scalars().all():
-        last = await db.scalar(
-            select(GuestMessage)
-            .where(GuestMessage.thread_id == t.id)
-            .order_by(GuestMessage.created_at.desc())
-            .limit(1)
+    threads = (
+        await db.execute(
+            select(GuestThread.id, GuestThread.host_read_at).where(
+                GuestThread.creator_id == user_id
+            )
         )
+    ).all()
+    if not threads:
+        return total
+    lasts = (
+        await db.execute(
+            select(GuestMessage)
+            .where(GuestMessage.thread_id.in_([t.id for t in threads]))
+            .order_by(GuestMessage.thread_id, GuestMessage.created_at.desc())
+            .distinct(GuestMessage.thread_id)
+        )
+    ).scalars()
+    last_by_thread = {gm.thread_id: gm for gm in lasts}
+    for tid, host_read_at in threads:
+        last = last_by_thread.get(tid)
         if (
             last
             and last.sender == "guest"
-            and (t.host_read_at is None or last.created_at > t.host_read_at)
+            and (host_read_at is None or last.created_at > host_read_at)
         ):
             total += 1
     return total
@@ -304,8 +277,31 @@ def apns_enabled() -> bool:
     return bool(settings.push_relay_url and settings.push_relay_api_key)
 
 
+_relay: httpx.AsyncClient | None = None
+
+
+def _relay_client() -> httpx.AsyncClient:
+    """One keep-alive connection pool to the relay per process — not a fresh
+    client (new pool + TLS handshake) per message or call."""
+    global _relay
+    if _relay is None:
+        _relay = httpx.AsyncClient(timeout=5.0)
+    return _relay
+
+
+async def _relay_post(body: dict) -> httpx.Response | None:
+    try:
+        return await _relay_client().post(
+            f"{settings.push_relay_url.rstrip('/')}/notify",
+            json=body,
+            headers={"X-API-Key": settings.push_relay_api_key},
+        )
+    except Exception as exc:  # noqa: BLE001 — relay is best-effort
+        log.warning("push-relay call failed (%s): %s", settings.push_relay_url, exc)
+        return None
+
+
 async def _post_notify(
-    client: httpx.AsyncClient,
     token: ApnsToken,
     conversation_id: uuid.UUID,
     sandbox: bool,
@@ -323,19 +319,10 @@ async def _post_notify(
     }
     if badge is not None:
         body["badge"] = int(badge)  # calls omit badge so they don't reset it
-    try:
-        return await client.post(
-            f"{settings.push_relay_url.rstrip('/')}/notify",
-            json=body,
-            headers={"X-API-Key": settings.push_relay_api_key},
-        )
-    except Exception as exc:  # noqa: BLE001 — relay is best-effort
-        log.warning("APNs relay call failed (%s): %s", settings.push_relay_url, exc)
-        return None
+    return await _relay_post(body)
 
 
 async def _send_apns_one(
-    client: httpx.AsyncClient,
     db: AsyncSession,
     token: ApnsToken,
     conversation_id: uuid.UUID,
@@ -351,7 +338,7 @@ async def _send_apns_one(
     delivers and self-heals."""
     prefer_sandbox = (token.environment or "").strip().lower() == "sandbox"
     resp = await _post_notify(
-        client, token, conversation_id, prefer_sandbox, title, body_text, badge
+        token, conversation_id, prefer_sandbox, title, body_text, badge
     )
     if resp is None:
         return False
@@ -366,7 +353,7 @@ async def _send_apns_one(
     if resp.status_code == 502 and "BadDeviceToken" in resp.text:
         # Wrong environment flag → retry flipped and learn the right value.
         retry = await _post_notify(
-            client, token, conversation_id, not prefer_sandbox, title, body_text, badge
+            token, conversation_id, not prefer_sandbox, title, body_text, badge
         )
         if retry is not None and retry.status_code == 200:
             token.environment = "production" if prefer_sandbox else "sandbox"
@@ -389,62 +376,105 @@ async def _send_apns_one(
     return False
 
 
-async def notify_offline_apns(
-    conversation_id: uuid.UUID, sender_user_id: uuid.UUID
+async def notify_offline_all(
+    conversation_id: uuid.UUID, sender_user_id: uuid.UUID, sender_name: str
 ) -> None:
-    """Fire-and-forget APNs fanout for a new message. Runs in its OWN session (so
-    it never touches the request's transaction or delays the sender's response).
+    """Fire-and-forget push fanout for a new message — web push AND APNs in one
+    pass. Runs as a background task in its OWN session, so the sender's response
+    never waits on push-service round-trips (the web half used to run inline).
 
-    We deliberately do NOT skip WS-online recipients: iOS suppresses banners for a
-    foregrounded app itself, and presence lag was silently dropping pushes. So we
-    send to every registered token of every non-sender, non-muted member. A single
-    summary line is logged per message so the hook is verifiable in the logs."""
-    if not apns_enabled():
-        log.debug("APNs disabled (PUSH_RELAY_URL / PUSH_RELAY_API_KEY unset)")
-        return
-    tokens_total = sent = 0
+    Constant query count regardless of conversation size: members+mute, badge
+    totals, subscribed devices, and APNs tokens are each ONE query for the whole
+    conversation (previously ~4 queries per recipient, run twice — once per push
+    flavor — with the badge aggregate recomputed for both).
+
+    Web push skips devices holding a live socket; APNs deliberately does NOT skip
+    WS-online recipients (iOS suppresses banners for a foregrounded app itself,
+    and presence lag was silently dropping pushes)."""
     try:
-        async with SessionLocal() as db, httpx.AsyncClient(timeout=5.0) as client:
-            for uid in await conversation_member_ids(db, conversation_id):
-                if uid == sender_user_id:
-                    continue
-                member = await db.get(ConversationMember, (conversation_id, uid))
-                if member is not None and member.muted:
-                    continue
-                tokens = list(
-                    (
-                        await db.execute(
-                            select(ApnsToken).where(ApnsToken.user_id == uid)
-                        )
-                    )
-                    .scalars()
-                    .all()
+        async with SessionLocal() as db:
+            rows = await db.execute(
+                select(ConversationMember.user_id, ConversationMember.muted).where(
+                    ConversationMember.conversation_id == conversation_id
                 )
-                if not tokens:
+            )
+            recipients = [
+                uid for uid, muted in rows.all() if uid != sender_user_id and not muted
+            ]
+            if not recipients:
+                return
+            badges = await _unread_totals(db, recipients)
+
+            # --- Web push (VAPID) ---
+            base = {
+                "title": sender_name or "Kryptovox",
+                "body": "New message",
+                "url": f"/chat/{conversation_id}",
+            }
+            devices = (
+                await db.execute(
+                    select(Device).where(
+                        Device.user_id.in_(recipients),
+                        Device.push_subscription.isnot(None),
+                    )
+                )
+            ).scalars().all()
+            online_ids = await filter_online(d.id for d in devices)
+            pushed = 0
+            seen_endpoints: set[str] = set()
+            for device in devices:
+                if device.id in online_ids:
                     continue
-                badge = await _unread_total(db, uid)
+                # Re-logins create multiple device rows that may share one browser
+                # push endpoint — dedupe so the user gets a single banner.
+                endpoint = (device.push_subscription or {}).get("endpoint")
+                if endpoint and endpoint in seen_endpoints:
+                    continue
+                if endpoint:
+                    seen_endpoints.add(endpoint)
+                payload = {**base, "badge": badges.get(device.user_id, 0)}
+                await _send(device.push_subscription, payload, device, db)
+                pushed += 1
+            log.info(
+                "push fanout conv=%s: %d subscribed device(s), %d online (skipped), %d pushed",
+                conversation_id,
+                len(devices),
+                len(online_ids),
+                pushed,
+            )
+
+            # --- APNs via the relay ---
+            if apns_enabled():
+                tokens = (
+                    await db.execute(
+                        select(ApnsToken).where(ApnsToken.user_id.in_(recipients))
+                    )
+                ).scalars().all()
+                sent = 0
                 for token in tokens:
-                    tokens_total += 1
                     if await _send_apns_one(
-                        client, db, token, conversation_id, badge=badge
+                        db, token, conversation_id, badge=badges.get(token.user_id, 0)
                     ):
                         sent += 1
-            await db.commit()  # persist any stale-token deletions
-        log.info(
-            "APNs fanout conv=%s: %d token(s), %d sent", conversation_id, tokens_total, sent
-        )
+                await db.commit()  # persist stale-token deletions / env corrections
+                if tokens:
+                    log.info(
+                        "APNs fanout conv=%s: %d token(s), %d sent",
+                        conversation_id,
+                        len(tokens),
+                        sent,
+                    )
     except Exception as exc:  # noqa: BLE001 — best-effort, must not raise into the caller
-        log.warning("APNs message fanout failed for conv=%s: %s", conversation_id, exc)
+        log.warning("push fanout failed for conv=%s: %s", conversation_id, exc)
 
 
 async def _post_voip(
-    client: httpx.AsyncClient,
     voip_token: str,
     custom_data: dict,
     sandbox: bool,
 ) -> httpx.Response | None:
-    """PushKit / VoIP push — carries the SDP offer so CallKit can ring a closed
-    app. CallKit (not a banner) draws the UI, but the relay requires title/body on
+    """PushKit / VoIP push — wakes the app so CallKit can ring a closed device.
+    CallKit (not a banner) draws the UI, but the relay requires title/body on
     every push, so we send placeholders derived from the caller name."""
     caller = custom_data.get("name") or "Someone"
     body = {
@@ -456,19 +486,10 @@ async def _post_voip(
         "custom_data": custom_data,
         "sandbox": sandbox,
     }
-    try:
-        return await client.post(
-            f"{settings.push_relay_url.rstrip('/')}/notify",
-            json=body,
-            headers={"X-API-Key": settings.push_relay_api_key},
-        )
-    except Exception as exc:  # noqa: BLE001 — relay is best-effort
-        log.warning("VoIP relay call failed (%s): %s", settings.push_relay_url, exc)
-        return None
+    return await _relay_post(body)
 
 
 async def _send_voip_one(
-    client: httpx.AsyncClient,
     db: AsyncSession,
     token: ApnsToken,
     custom_data: dict,
@@ -476,7 +497,7 @@ async def _send_voip_one(
     """Send one VoIP push, deriving sandbox from the stored environment and
     retrying flipped on BadDeviceToken (same self-heal as the alert path)."""
     prefer_sandbox = (token.environment or "").strip().lower() == "sandbox"
-    resp = await _post_voip(client, token.voip_token, custom_data, prefer_sandbox)
+    resp = await _post_voip(token.voip_token, custom_data, prefer_sandbox)
     if resp is None:
         return False
     if resp.status_code == 200:
@@ -486,7 +507,7 @@ async def _send_voip_one(
         return False
     if resp.status_code == 502 and "BadDeviceToken" in resp.text:
         retry = await _post_voip(
-            client, token.voip_token, custom_data, not prefer_sandbox
+            token.voip_token, custom_data, not prefer_sandbox
         )
         if retry is not None and retry.status_code == 200:
             token.environment = "production" if prefer_sandbox else "sandbox"
@@ -541,39 +562,33 @@ async def ring_call(
                     "name": caller_name or "Someone",
                     "video": bool(offer.get("video")),
                 }
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    tokens = list(
-                        (
-                            await db.execute(
-                                select(ApnsToken).where(ApnsToken.user_id == callee_id)
-                            )
-                        )
-                        .scalars()
-                        .all()
+                tokens = (
+                    await db.execute(
+                        select(ApnsToken).where(ApnsToken.user_id == callee_id)
                     )
-                    for token in tokens:
-                        # Only skip a device whose OWN session holds a live socket
-                        # (it rings from the WS offer). Presence is per-device, so
-                        # another device being online — e.g. a browser tab left
-                        # open — never suppresses a closed phone's wake-up push.
-                        if token.device_id is not None and await is_online(
-                            token.device_id
-                        ):
-                            skipped += 1
-                            continue
-                        if token.voip_token:
-                            if await _send_voip_one(client, db, token, voip_custom):
-                                voip += 1
-                        elif await _send_apns_one(
-                            client,
-                            db,
-                            token,
-                            conversation_id,
-                            title="Incoming call",
-                            body_text=body_text,
-                        ):
-                            alert += 1
-                    await db.commit()
+                ).scalars().all()
+                for token in tokens:
+                    # Only skip a device whose OWN session holds a live socket
+                    # (it rings from the WS offer). Presence is per-device, so
+                    # another device being online — e.g. a browser tab left
+                    # open — never suppresses a closed phone's wake-up push.
+                    if token.device_id is not None and await is_online(
+                        token.device_id
+                    ):
+                        skipped += 1
+                        continue
+                    if token.voip_token:
+                        if await _send_voip_one(db, token, voip_custom):
+                            voip += 1
+                    elif await _send_apns_one(
+                        db,
+                        token,
+                        conversation_id,
+                        title="Incoming call",
+                        body_text=body_text,
+                    ):
+                        alert += 1
+                await db.commit()
         log.info(
             "call ring callee=%s: %d voip, %d alert, %d skipped(online)",
             callee_id,

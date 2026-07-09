@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,6 +10,10 @@ from app.database import Base
 
 class Message(Base):
     __tablename__ = "messages"
+    # The composite covers every query shape (all message reads filter by
+    # conversation, ordered/cut by created_at) — no standalone single-column
+    # indexes, which only added write cost on the highest-volume table.
+    __table_args__ = (Index("ix_messages_conv_created", "conversation_id", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -17,7 +21,6 @@ class Message(Base):
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("conversations.id", ondelete="CASCADE"),
-        index=True,
     )
     sender_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -53,7 +56,7 @@ class Message(Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True
+        DateTime(timezone=True), server_default=func.now()
     )
 
 
