@@ -386,12 +386,17 @@ async def set_retention(
     current: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ConversationOut:
-    # Retention is a shared property of the conversation, so any member may set
-    # it (like disappearing-message settings in other messengers).
+    # Shortening retention permanently deletes shared history on the next sweep,
+    # so in a GROUP only an admin may change it (one member can't nuke everyone's
+    # history); in a 1:1 either party may (both equally own the history).
     member = await _ensure_member(db, conversation_id, current.id)
     conv = await db.get(Conversation, conversation_id)
     if conv is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
+    if conv.type == "group" and member.role != "admin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only an admin can change retention"
+        )
     conv.retention_days = body.retention_days
     await db.flush()
     await fanout_conversation(

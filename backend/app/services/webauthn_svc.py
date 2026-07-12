@@ -15,10 +15,18 @@ from app.config import settings
 
 
 def rp_and_origin(request: Request) -> tuple[str, str]:
-    # The real browser origin (forbidden header — JS can't forge it). Fall back to
-    # the configured value only if it's somehow absent.
-    origin = request.headers.get("origin") or settings.webauthn_origin
-    # rp_id: an explicit WEBAUTHN_RP_ID wins; otherwise the origin's hostname.
+    # Pin expected_origin to a SERVER-trusted value: use the browser Origin only
+    # when it's allow-listed, else the configured WEBAUTHN_ORIGIN. Echoing an
+    # arbitrary request Origin back as expected_origin makes WebAuthn's origin
+    # check tautological (it must compare the signed clientDataJSON.origin against
+    # an origin the server independently trusts). Legit requests come from an
+    # allow-listed origin, so this is transparent for them.
+    header_origin = request.headers.get("origin")
+    if header_origin and header_origin in settings.cors_origins:
+        origin = header_origin
+    else:
+        origin = settings.webauthn_origin
+    # rp_id: an explicit WEBAUTHN_RP_ID wins; otherwise the trusted origin's host.
     if settings.webauthn_rp_id and settings.webauthn_rp_id != "localhost":
         rp_id = settings.webauthn_rp_id
     else:
