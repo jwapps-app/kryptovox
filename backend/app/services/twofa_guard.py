@@ -29,11 +29,19 @@ _REPLAYED = HTTPException(
     status.HTTP_401_UNAUTHORIZED,
     "This sign-in was already completed. Start again.",
 )
+_UNAVAILABLE = HTTPException(
+    status.HTTP_503_SERVICE_UNAVAILABLE,
+    "Sign-in temporarily unavailable. Please try again.",
+)
 
 
-# These guards fail OPEN if Redis is unreachable: a Redis outage must not lock
-# everyone out of login. The lockout/replay protection degrades for the duration
-# of the outage, which is the right availability trade-off for a self-hosted app.
+# Asymmetric Redis-outage handling by design:
+#  - the failed-attempt LOCKOUT check fails OPEN — a Redis outage must not lock
+#    every account out of login (slowapi per-IP limiting still applies), and a
+#    missing counter carries no security signal on its own; whereas
+#  - the pending-token REPLAY check fails CLOSED (below) — without Redis we can't
+#    guarantee a completed sign-in is single-use, so we reject rather than risk a
+#    replayed session mint. 2FA logins are refused for the (rare, short) outage.
 async def assert_not_locked(user_id: uuid.UUID) -> None:
     try:
         n = await redis.get(_FAIL_PREFIX + str(user_id))
@@ -65,8 +73,9 @@ async def assert_pending_unused(jti: str) -> None:
     try:
         used = jti and await redis.exists(_USED_PREFIX + jti)
     except Exception as exc:  # noqa: BLE001
-        log.warning("pending-2FA replay check skipped (Redis): %s", exc)
-        return
+        # Fail CLOSED: can't prove single-use without Redis → refuse the sign-in.
+        log.warning("pending-2FA replay check unavailable (Redis): %s", exc)
+        raise _UNAVAILABLE from exc
     if used:
         raise _REPLAYED
 

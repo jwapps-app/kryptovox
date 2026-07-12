@@ -36,11 +36,20 @@ def test_non_challenge_token_rejected():
         decode_challenge_token(create_access_token(uuid.uuid4(), uuid.uuid4()))
 
 
-def test_rp_and_origin_derives_from_origin_header():
-    req = _request({"origin": "https://chat.example.com"})
+def test_rp_and_origin_honors_allowlisted_origin():
+    # An allow-listed browser Origin is trusted and used as expected_origin.
+    req = _request({"origin": "https://localhost:5173"})
     rp_id, origin = rp_and_origin(req)
-    assert rp_id == "chat.example.com"
-    assert origin == "https://chat.example.com"
+    assert origin == "https://localhost:5173"
+    assert rp_id == "localhost"
+
+
+def test_rp_and_origin_rejects_unlisted_origin():
+    # A non-allow-listed Origin is NOT echoed back — it falls back to the
+    # configured WEBAUTHN_ORIGIN, so WebAuthn's origin check stays meaningful.
+    req = _request({"origin": "https://evil.example.com"})
+    _, origin = rp_and_origin(req)
+    assert origin == "http://localhost:5173"  # settings.webauthn_origin default
 
 
 def test_client_ip_prefers_cf_connecting_ip():
