@@ -1,13 +1,14 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity
+from app.ratelimit import limiter
 from app.models import (
     Conversation,
     ConversationMember,
@@ -110,7 +111,9 @@ async def get_messages(
     response_model=MessageOut,
     status_code=201,
 )
+@limiter.limit("120/minute")
 async def send_message(
+    request: Request,
     conversation_id: uuid.UUID,
     body: MessageCreate,
     background_tasks: BackgroundTasks,
