@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity
+from app.ratelimit import limiter
 from app.services.push import application_server_key, send_test_to_user
 
 router = APIRouter(prefix="/push", tags=["push"])
@@ -38,7 +39,9 @@ async def subscribe(
 
 
 @router.post("/test")
+@limiter.limit("3/minute")
 async def test_push(
+    request: Request,
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
