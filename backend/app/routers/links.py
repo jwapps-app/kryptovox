@@ -11,6 +11,7 @@ from app.http_util import read_capped_body
 from app.models import GuestMessage, GuestThread
 from app.ws.events import envelope
 from app.ws.hub import hub
+from app.ratelimit import limiter
 from app.schemas import (
     GuestMessageIn,
     GuestMessageOut,
@@ -45,7 +46,9 @@ async def _own_thread(
 
 
 @router.post("", response_model=GuestThreadDetail, status_code=201)
+@limiter.limit("20/minute")
 async def create_link(
+    request: Request,
     body: GuestThreadCreate,
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
@@ -164,7 +167,9 @@ async def get_link(
 
 
 @router.post("/{thread_id}/messages", response_model=GuestMessageOut, status_code=201)
+@limiter.limit("60/minute")
 async def host_reply(
+    request: Request,
     thread_id: uuid.UUID,
     body: GuestMessageIn,
     identity: CurrentIdentity = Depends(get_current_identity),
@@ -208,6 +213,7 @@ async def revoke_link(
 
 
 @router.post("/{thread_id}/media", status_code=201)
+@limiter.limit("20/minute")
 async def host_upload_media(
     thread_id: uuid.UUID,
     request: Request,

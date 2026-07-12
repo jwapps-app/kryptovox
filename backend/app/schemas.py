@@ -11,7 +11,7 @@ class EncryptedKeyBlob(BaseModel):
     salt: str
     iv: str
     ciphertext: str
-    iterations: int = Field(default=200_000, ge=10_000, le=2_000_000)
+    iterations: int = Field(default=200_000, ge=200_000, le=2_000_000)
 
 
 class RegisterRequest(BaseModel):
@@ -27,7 +27,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str
-    password: str
+    password: str = Field(max_length=128)
     device_name: str | None = Field(default=None, max_length=64)
 
 
@@ -226,7 +226,16 @@ class AdminUserOut(BaseModel):
 class UserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     display_name: str | None = Field(default=None, max_length=64)
-    avatar_url: str | None = None
+    avatar_url: str | None = Field(default=None, max_length=512)
+
+
+def _validate_keys(v: dict[str, str]) -> dict[str, str]:
+    if len(v) > 512:
+        raise ValueError("too many recipient keys")
+    for val in v.values():
+        if len(val) > 1024:
+            raise ValueError("wrapped key too long")
+    return v
 
 
 # ---------- E2EE profile photos ----------
@@ -239,11 +248,13 @@ class AvatarUpload(BaseModel):
     iv: str = Field(max_length=64)
     self_key: str = Field(max_length=512)  # K wrapped to the owner (self-ECDH)
     encrypted_keys: dict[str, str] = {}  # recipient_id -> K wrapped to that contact
+    _ck = field_validator("encrypted_keys")(_validate_keys)
 
 
 class AvatarKeysUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     encrypted_keys: dict[str, str]  # re-wrapped K for the current contact set
+    _ck = field_validator("encrypted_keys")(_validate_keys)
 
 
 class AvatarOut(BaseModel):
@@ -390,15 +401,6 @@ class NoteOut(BaseModel):
 _MSG_CT_MAX = 262_144  # 256 KB of ciphertext (text/location); media/files go to blobs
 _THUMB_MAX = 262_144  # inline encrypted thumbnail
 _IV_MAX = 64
-
-
-def _validate_keys(v: dict[str, str]) -> dict[str, str]:
-    if len(v) > 512:
-        raise ValueError("too many recipient keys")
-    for val in v.values():
-        if len(val) > 1024:
-            raise ValueError("wrapped key too long")
-    return v
 
 
 class MediaRef(BaseModel):

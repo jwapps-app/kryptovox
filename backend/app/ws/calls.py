@@ -40,6 +40,25 @@ _QUEUE_TTL = 60  # seconds — drop a stale, never-answered call
 _QUEUE_MAX = 64  # cap the backlog (offer + a burst of ICE candidates)
 _CLEAR_EVENTS = {"call.answer", "call.hangup", "call.decline"}
 
+# Throttle the wake-up push a call.offer triggers (VoIP/APNs/web) so a member of
+# a shared conversation can't notification-bomb another. Mirrors the guest path's
+# ring limit; the WS relay itself has no HTTP rate limiter. Only the push is
+# gated — live signaling + buffering still flow, so a legit re-offer still rings.
+_RING_KEY = "call_ring:{}:{}"  # from:to
+_RING_WINDOW = 60  # seconds
+_RING_MAX = 6  # rings per window per (caller, callee) pair
+
+
+async def _ring_allowed(from_user_id: uuid.UUID, to_uuid: uuid.UUID) -> bool:
+    try:
+        key = _RING_KEY.format(from_user_id, to_uuid)
+        n = await redis.incr(key)
+        if n == 1:
+            await redis.expire(key, _RING_WINDOW)
+        return n <= _RING_MAX
+    except Exception:  # noqa: BLE001 — if Redis is down, don't block the ring
+        return True
+
 # Keep strong refs to fire-and-forget push tasks so they aren't GC'd mid-flight.
 _bg_tasks: set[asyncio.Task] = set()
 
@@ -106,7 +125,8 @@ async def relay_call_event(from_user_id: uuid.UUID, data: dict) -> None:
 
     if event_type == "call.offer":
         caller_name = (caller.display_name or caller.username) if caller else "Someone"
-        _fire(ring_call(to_uuid, caller_name, conv_uuid, out))
+        if await _ring_allowed(from_user_id, to_uuid):
+            _fire(ring_call(to_uuid, caller_name, conv_uuid, out))
     elif event_type in _CLEAR_EVENTS:
         # Call resolved — drop any buffered signaling for both directions.
         await _clear_queue(to_uuid, from_user_id)

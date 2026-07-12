@@ -20,16 +20,20 @@ from app.services.push import notify_user
 router = APIRouter(prefix="/recovery", tags=["recovery"])
 
 _INVALID = HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid recovery key")
+_DUMMY_VERIFIER = "0" * 64  # compared against when no account/verifier exists
 
 
 def _verify(user: User | None, verifier: str) -> User:
     # Constant-time check; identical error whether the user or recovery is missing
-    # (no account/recovery-setup enumeration).
+    # (no account/recovery-setup enumeration). Always run the compare against a
+    # dummy so a missing user/verifier doesn't return faster than a real mismatch.
+    stored = user.recovery_verifier if user and user.recovery_verifier else ""
+    ok = secrets.compare_digest(stored or _DUMMY_VERIFIER, verifier)
     if (
         user is None
         or user.recovery_verifier is None
         or user.recovery_key_blob is None
-        or not secrets.compare_digest(user.recovery_verifier, verifier)
+        or not ok
     ):
         raise _INVALID
     return user

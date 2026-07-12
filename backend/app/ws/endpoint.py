@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -20,6 +21,8 @@ from app.ws.events import (
 from app.ws.hub import hub
 
 router = APIRouter()
+
+_MAX_FRAME = 64 * 1024  # 64 KiB — SDP/ICE call frames are a few KB; reject larger
 
 
 async def _touch_last_seen(device_id: uuid.UUID) -> None:
@@ -69,7 +72,17 @@ async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
 
     try:
         while True:
-            data = await websocket.receive_json()
+            raw = await websocket.receive_text()
+            # Cap frame size before parsing (an SDP offer is a few KB) so a client
+            # can't stream a giant frame into the worker. Mirrors the guest socket.
+            if len(raw) > _MAX_FRAME:
+                continue
+            try:
+                data = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(data, dict):
+                continue
             await _handle_client_event(user_id, device_id, data)
     except WebSocketDisconnect:
         pass

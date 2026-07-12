@@ -188,6 +188,11 @@ async def guest_ws(websocket: WebSocket, thread_id: uuid.UUID, token: str = "") 
             event_type = data.get("type")
             if event_type not in _RELAY:
                 continue
+            # Re-check per frame: if the host revoked the link or it expired mid-
+            # call, stop relaying (previously only checked on a new offer).
+            if not await _still_active(thread_id):
+                await websocket.close(code=4410)
+                return
             payload = _clean_payload(dict(data.get("payload") or {}))
 
             state = json.loads(await _rget(call_key) or "{}")
