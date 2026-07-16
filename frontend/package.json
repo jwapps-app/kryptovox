@@ -18,14 +18,14 @@
     "@tiptap/pm": "^2.27.2",
     "@tiptap/react": "^2.27.2",
     "@tiptap/starter-kit": "^2.27.2",
-    "react": "^18.3.1",
+    "react": "^19.2.7",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.23.1",
     "tiptap-markdown": "^0.8.10",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
-    "@types/react": "^18.3.3",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.19",
