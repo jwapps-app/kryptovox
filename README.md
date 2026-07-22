@@ -92,3 +92,12 @@ docker compose logs -f backend          # tail backend logs
 docker compose exec backend alembic revision --autogenerate -m "msg"
 cd frontend && npm run build            # type-check + production bundle
 ```
+
+## License
+
+Licensed under the **GNU Affero General Public License v3.0** — see [LICENSE](LICENSE).
+
+The AGPL's network clause matters for a self-hosted server app: if you run a
+modified Kryptovox and let others use it over a network, you must make your
+modified source available to those users. Running it unmodified, or purely for
+yourself, carries no such obligation.
