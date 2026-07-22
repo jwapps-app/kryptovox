@@ -4,8 +4,8 @@ Self-hosted, end-to-end encrypted, iMessage-style chat PWA. React + Vite
 frontend, FastAPI + PostgreSQL + Redis backend, WebSocket realtime, deployable
 to a Synology NAS behind a Cloudflare Tunnel.
 
-See [ROADMAP.md](ROADMAP.md) for the full design and [HANDOFF.md](HANDOFF.md)
-for current status (what's built, what's next).
+See [ROADMAP.md](ROADMAP.md) for the original design and
+[DEPLOY.md](DEPLOY.md) to run it in production.
 
 ---
 

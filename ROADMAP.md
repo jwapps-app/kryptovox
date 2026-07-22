@@ -1,9 +1,9 @@
 # Kryptovox — E2EE iMessage-Style PWA Chat App
 ## Design Roadmap
 
-> **Status (2026-06-19):** All 8 phases implemented and running. See
-> [HANDOFF.md](HANDOFF.md) for current state, what's verified, and deferred
-> items, and [README.md](README.md) to run it. This file is the original design.
+> **Status:** All 8 phases implemented and running. See
+> [README.md](README.md) to run it. This file is the original design;
+> the codebase has moved on in places.
 
 ---
 
@@ -53,8 +53,7 @@ kryptovox/
 │   ├── vite.config.ts
 │   └── Dockerfile
 ├── docker-compose.yml
-├── docker-compose.prod.yml
-└── HANDOFF.md
+└── docker-compose.prod.yml
 ```
 
 ---
