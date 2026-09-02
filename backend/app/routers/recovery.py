@@ -94,7 +94,6 @@ async def finish_recovery(
     # best-effort: a notification problem must never undo the password reset.
     try:
         await notify_user(
-            db,
             user.id,
             {
                 "title": "Kryptovox security alert",
