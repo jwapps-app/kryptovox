@@ -5,9 +5,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import get_current_user
-from app.ratelimit import limiter
+from app.deps import CurrentIdentity, get_current_identity, get_current_user
 from app.models import AvatarKey, User
+from app.ratelimit import limiter
 from app.schemas import (
     AccountDeleteIn,
     AvatarKeysUpdate,
@@ -21,6 +21,7 @@ from app.schemas import (
     UserUpdate,
 )
 from app.security import hash_password, verify_password
+from app.services.sessions import revoke_sessions
 
 router = APIRouter(tags=["users"])
 
@@ -63,17 +64,22 @@ async def update_me(
 async def change_password(
     request: Request,
     body: PasswordChangeIn,
-    current: User = Depends(get_current_user),
+    identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Change the password while logged in. The client re-wraps the identity key
     under the new password (the server can't — it never holds the plaintext key)
-    and sends the new blob, so message history stays decryptable. Other signed-in
-    devices keep working: the public key is unchanged and they hold the key already."""
+    and sends the new blob, so message history stays decryptable. This device
+    keeps its session; every OTHER session is revoked (below)."""
+    current = identity.user
     if not await verify_password(body.current_password, current.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
     current.password_hash = await hash_password(body.new_password)
     current.encrypted_private_key = body.encrypted_private_key.model_dump()
+    # Evict every other session — a changed password must lock out anyone who
+    # had one (a stolen refresh token otherwise survives the change). Keep this
+    # device's own session so the caller isn't logged out.
+    await revoke_sessions(db, current.id, except_device_id=identity.device.id)
 
 
 @router.delete("/users/me", status_code=204)

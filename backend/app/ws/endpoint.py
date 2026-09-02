@@ -10,9 +10,9 @@ from app.database import SessionLocal
 from app.models import ConversationMember, Device, User
 from app.security import decode_access_token
 from app.services.app_settings import get_require_2fa
-from app.ws.calls import CALL_EVENTS, deliver_buffered_calls, relay_call_event
 from app.services.fanout import fanout_conversation
 from app.services.presence import mark_offline, mark_online
+from app.ws.calls import CALL_EVENTS, deliver_buffered_calls, relay_call_event
 from app.ws.events import (
     TYPING_START,
     TYPING_STOP,
@@ -55,7 +55,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
     # and this account hasn't set it up, don't open the live message stream.
     async with SessionLocal() as db:
         user = await db.get(User, user_id)
-        if user is None:
+        # Validate the DEVICE too, mirroring the REST get_current_identity check:
+        # a revoked or deleted device's still-unexpired token must not open the
+        # live stream. Device-revoke and account-delete drop the device row, so
+        # this rejects them at the handshake (previously only the user was checked).
+        device = await db.get(Device, device_id)
+        if user is None or device is None or device.user_id != user_id:
             await websocket.close(code=4401)
             return
         if not user.twofa_enabled and await get_require_2fa(db):
