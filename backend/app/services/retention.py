@@ -9,11 +9,17 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
-from app.models import Conversation, GuestMessage, GuestThread, Message
+from app.models import (
+    Conversation,
+    ConversationMember,
+    GuestMessage,
+    GuestThread,
+    Message,
+)
 from app.services import media_store
 from app.services.app_settings import get_default_retention_days
 
@@ -107,6 +113,32 @@ async def sweep_once(db: AsyncSession) -> int:
             media_store.delete(mid)
     expired = await db.execute(delete(GuestThread).where(thread_expired))
     removed += expired.rowcount or 0
+
+    # Backstop for member-less conversations: when the last members leave
+    # concurrently, the inline cleanup can miss the delete (READ COMMITTED race),
+    # leaving the conversation + its messages + blobs orphaned forever. Reclaim
+    # any conversation with no members here.
+    orphan_ids = (
+        await db.execute(
+            select(Conversation.id).where(
+                ~exists().where(ConversationMember.conversation_id == Conversation.id)
+            )
+        )
+    ).scalars().all()
+    if orphan_ids:
+        omedia = await db.execute(
+            select(Message.media["id"].astext).where(
+                Message.conversation_id.in_(orphan_ids), Message.media.isnot(None)
+            )
+        )
+        for mid in omedia.scalars().all():
+            if mid:
+                media_store.delete(mid)
+        result = await db.execute(
+            delete(Conversation).where(Conversation.id.in_(orphan_ids))
+        )
+        removed += result.rowcount or 0
+
     if removed:
         await db.commit()
     return removed

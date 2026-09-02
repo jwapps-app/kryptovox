@@ -92,19 +92,30 @@ async def list_links(
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
 ) -> list[GuestThreadOut]:
-    rows = await db.execute(
-        select(GuestThread)
-        .where(GuestThread.creator_id == identity.user.id)
-        .order_by(GuestThread.last_message_at.desc())
+    threads = list(
+        (
+            await db.execute(
+                select(GuestThread)
+                .where(GuestThread.creator_id == identity.user.id)
+                .order_by(GuestThread.last_message_at.desc())
+            )
+        ).scalars().all()
     )
+    # Last message per thread in ONE query (DISTINCT ON), not one query per thread.
+    last_by_thread: dict = {}
+    if threads:
+        for gm in (
+            await db.execute(
+                select(GuestMessage)
+                .where(GuestMessage.thread_id.in_([t.id for t in threads]))
+                .order_by(GuestMessage.thread_id, GuestMessage.created_at.desc())
+                .distinct(GuestMessage.thread_id)
+            )
+        ).scalars():
+            last_by_thread[gm.thread_id] = gm
     out: list[GuestThreadOut] = []
-    for t in rows.scalars().all():
-        last = await db.scalar(
-            select(GuestMessage)
-            .where(GuestMessage.thread_id == t.id)
-            .order_by(GuestMessage.created_at.desc())
-            .limit(1)
-        )
+    for t in threads:
+        last = last_by_thread.get(t.id)
         unread = bool(
             last
             and last.sender == "guest"

@@ -64,6 +64,10 @@ async def lifespan(app: FastAPI):
     blob_gc.cancel()
     await hub.stop()
     await redis.aclose()
+    from app.services import push
+
+    if push._relay is not None:
+        await push._relay.aclose()  # close the shared relay HTTP client's pool
 
 
 app = FastAPI(title="Kryptovox API", version="0.1.0", lifespan=lifespan)

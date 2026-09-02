@@ -117,6 +117,24 @@ class Hub:
     async def publish_thread(self, thread_id: str, envelope: dict[str, Any]) -> None:
         await self._publish(thread_channel(thread_id), envelope)
 
+    async def publish_users(self, user_ids: list[str], envelope: dict[str, Any]) -> None:
+        """Publish one envelope to many user channels in a single pipelined round
+        trip — conversation fanout was doing one awaited PUBLISH per member, which
+        scaled with group size."""
+        if not user_ids:
+            return
+        if self._redis is None:
+            log.warning("Hub not started; dropping fanout to %d user(s)", len(user_ids))
+            return
+        data = json.dumps(envelope, default=str)
+        try:
+            async with self._redis.pipeline(transaction=False) as pipe:
+                for uid in user_ids:
+                    pipe.publish(user_channel(uid), data)
+                await pipe.execute()
+        except Exception as exc:  # noqa: BLE001 — best-effort realtime fanout
+            log.warning("Hub fanout to %d user(s) failed (Redis): %s", len(user_ids), exc)
+
     async def _publish(self, channel: str, envelope: dict[str, Any]) -> None:
         if self._redis is None:
             log.warning("Hub not started; dropping publish to %s", channel)

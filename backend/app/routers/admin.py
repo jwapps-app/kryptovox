@@ -18,8 +18,21 @@ async def list_users(
     _: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[User]:
-    rows = await db.execute(select(User).order_by(User.created_at))
-    return list(rows.scalars().all())
+    # Cap the result and project only the columns AdminUserOut renders — the full
+    # row carries heavy JSONB (encrypted_private_key, backup_codes, recovery blob)
+    # a user list never needs.
+    rows = await db.execute(
+        select(
+            User.id, User.username, User.display_name, User.is_admin, User.created_at
+        ).order_by(User.created_at).limit(1000)
+    )
+    return [
+        AdminUserOut(
+            id=r.id, username=r.username, display_name=r.display_name,
+            is_admin=r.is_admin, created_at=r.created_at,
+        )
+        for r in rows.all()
+    ]
 
 
 @router.post("/users", response_model=AdminUserOut, status_code=201)
