@@ -17,8 +17,8 @@ from app.schemas import (
     ConversationUpdate,
     DisappearingUpdate,
     MessageOut,
+    PublicUserOut,
     RetentionUpdate,
-    UserOut,
 )
 from app.services import media_store
 from app.services.fanout import fanout_conversation
@@ -109,7 +109,7 @@ async def _to_out(
         type=conv.type,
         name=conv.name,
         avatar_url=conv.avatar_url,
-        members=[UserOut.model_validate(m) for m in members],
+        members=[PublicUserOut.model_validate(m) for m in members],
         my_role=member.role,
         last_message=MessageOut.model_validate(last) if last else None,
         unread_count=await _unread_count(db, member, user.id),
@@ -293,7 +293,7 @@ async def list_conversations(
                 name=conv.name,
                 avatar_url=conv.avatar_url,
                 members=[
-                    UserOut.model_validate(u) for u in members_by_conv.get(conv.id, [])
+                    PublicUserOut.model_validate(u) for u in members_by_conv.get(conv.id, [])
                 ],
                 my_role=member.role,
                 last_message=MessageOut.model_validate(last) if last else None,

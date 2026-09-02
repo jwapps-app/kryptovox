@@ -317,7 +317,7 @@ class ConversationOut(BaseModel):
     type: str
     name: str | None
     avatar_url: str | None
-    members: list[UserOut]
+    members: list[PublicUserOut]
     my_role: str = "member"
     last_message: "MessageOut | None" = None
     unread_count: int = 0

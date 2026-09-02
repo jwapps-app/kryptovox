@@ -35,14 +35,9 @@ from app.schemas import (
     TwoFAComplete,
     UserOut,
 )
-from app.services.webauthn_svc import (
-    create_challenge_token,
-    decode_challenge_token,
-    rp_and_origin,
-)
 from app.security import (
-    consume_totp,
     DUMMY_PASSWORD_HASH,
+    consume_totp,
     create_access_token,
     create_pending_2fa_token,
     decode_pending_2fa_token,
@@ -59,6 +54,11 @@ from app.services.twofa_guard import (
     clear_failures,
     consume_pending,
     record_failure,
+)
+from app.services.webauthn_svc import (
+    create_challenge_token,
+    decode_challenge_token,
+    rp_and_origin,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -227,7 +227,14 @@ async def complete_2fa(
         user_id, jti = decode_pending_2fa_token(body.pending_token)
     except InvalidTokenError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
-    user = await db.get(User, user_id)
+    # Lock the user row for the whole completion. Two concurrent requests with the
+    # same pending token + same backup code would otherwise both read the code as
+    # unused (and the same TOTP step as fresh) and each mint a session — a one-time
+    # code double-spend. FOR UPDATE serializes them so the second sees the first's
+    # committed state (code marked used / step advanced / pending consumed).
+    user = await db.scalar(
+        select(User).where(User.id == user_id).with_for_update()
+    )
     if user is None or not user.twofa_enabled:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
     await assert_not_locked(user_id)

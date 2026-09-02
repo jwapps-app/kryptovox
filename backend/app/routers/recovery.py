@@ -16,6 +16,7 @@ from app.schemas import (
 )
 from app.security import hash_password
 from app.services.push import notify_user
+from app.services.sessions import revoke_sessions
 
 router = APIRouter(prefix="/recovery", tags=["recovery"])
 
@@ -84,6 +85,9 @@ async def finish_recovery(
     user = _verify(user, body.recovery_verifier)
     user.password_hash = await hash_password(body.new_password)
     user.encrypted_private_key = body.encrypted_private_key.model_dump()
+    # A recovery reset must evict every existing session (the account may be
+    # compromised — that's why recovery is being used).
+    await revoke_sessions(db, user.id)
     await db.flush()
     # Alert the account's devices — a recovery-key reset bypasses 2FA, so the
     # owner should hear about it in case the recovery key was stolen. Strictly
