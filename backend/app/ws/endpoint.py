@@ -7,10 +7,10 @@ from jwt import PyJWTError as JWTError
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import ConversationMember, Device, User
+from app.models import Device, User
 from app.security import decode_access_token
 from app.services.app_settings import get_require_2fa
-from app.services.fanout import fanout_conversation
+from app.services.fanout import conversation_member_ids, fanout_conversation
 from app.services.presence import mark_offline, mark_online
 from app.ws.calls import CALL_EVENTS, deliver_buffered_calls, relay_call_event
 from app.ws.events import (
@@ -131,21 +131,20 @@ async def _handle_client_event(
     if event_type in (TYPING_START, TYPING_STOP):
         await mark_online(device_id)
         async with SessionLocal() as db:
-            # Only fan out to a conversation the sender actually belongs to —
-            # otherwise a client could spoof typing into any conversation and
-            # probe for its existence.
+            # One member-id query serves both the membership check (a client can't
+            # spoof typing into a conversation it isn't in / probe existence) and
+            # the fanout — previously the check and the fanout each queried.
             conv_uuid = uuid.UUID(conversation_id)
-            if await db.get(ConversationMember, (conv_uuid, user_id)) is None:
+            member_ids = await conversation_member_ids(db, conv_uuid)
+            if user_id not in member_ids:
                 return
             await fanout_conversation(
                 db,
                 conv_uuid,
                 envelope(
                     event_type,
-                    {
-                        "conversation_id": conversation_id,
-                        "user_id": str(user_id),
-                    },
+                    {"conversation_id": conversation_id, "user_id": str(user_id)},
                 ),
                 exclude_user_id=user_id,
+                member_ids=member_ids,
             )

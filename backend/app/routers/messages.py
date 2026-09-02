@@ -347,16 +347,14 @@ async def add_reaction(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
     await _require_member(db, msg.conversation_id, identity.user.id)
 
-    existing = await db.get(
-        MessageReaction, (message_id, identity.user.id, body.emoji)
+    # Idempotent insert: a duplicate tapback (double-tap / concurrent) is a no-op
+    # instead of a PK-violation 500.
+    await db.execute(
+        pg_insert(MessageReaction)
+        .values(message_id=message_id, user_id=identity.user.id, emoji=body.emoji)
+        .on_conflict_do_nothing()
     )
-    if existing is None:
-        db.add(
-            MessageReaction(
-                message_id=message_id, user_id=identity.user.id, emoji=body.emoji
-            )
-        )
-        await db.commit()
+    await db.commit()
     await fanout_conversation(
         db,
         msg.conversation_id,

@@ -30,14 +30,18 @@ async def fanout_conversation(
     conversation_id: uuid.UUID,
     envelope: dict[str, Any],
     exclude_user_id: uuid.UUID | None = None,
+    member_ids: list[uuid.UUID] | None = None,
 ) -> None:
-    """Publish an event to every member's user channel.
-
-    Routing through user channels (rather than a per-conversation channel)
-    means a member added after a socket connected still receives events
-    without needing to resubscribe.
+    """Publish an event to every member's user channel, in one pipelined round
+    trip. Routing through user channels (rather than a per-conversation channel)
+    means a member added after a socket connected still receives events without
+    resubscribing. Pass `member_ids` when the caller already has the list (e.g.
+    the typing path checks membership) to skip a redundant query.
     """
-    for uid in await conversation_member_ids(db, conversation_id):
-        if exclude_user_id is not None and uid == exclude_user_id:
-            continue
-        await hub.publish_user(str(uid), envelope)
+    ids = (
+        member_ids
+        if member_ids is not None
+        else await conversation_member_ids(db, conversation_id)
+    )
+    recipients = [str(uid) for uid in ids if uid != exclude_user_id]
+    await hub.publish_users(recipients, envelope)

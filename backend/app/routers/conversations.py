@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -345,12 +346,18 @@ async def add_member(
     if await db.get(User, user_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
 
-    existing = await db.get(ConversationMember, (conversation_id, user_id))
-    if existing is None:
-        db.add(
-            ConversationMember(conversation_id=conversation_id, user_id=user_id)
+    # Idempotent add: a concurrent double-add is a no-op instead of a PK-violation
+    # 500. Only fan out when a row was actually inserted.
+    inserted = (
+        await db.execute(
+            pg_insert(ConversationMember)
+            .values(conversation_id=conversation_id, user_id=user_id)
+            .on_conflict_do_nothing()
+            .returning(ConversationMember.user_id)
         )
-        await db.flush()
+    ).first() is not None
+    await db.flush()
+    if inserted:
         await fanout_conversation(
             db,
             conversation_id,
