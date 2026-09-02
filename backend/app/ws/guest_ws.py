@@ -108,17 +108,15 @@ async def _ring_host(creator_id: uuid.UUID, thread_id: uuid.UUID, name: str) -> 
         envelope("call.incoming", {"thread_id": str(thread_id), "name": name}),
     )
     try:
-        async with SessionLocal() as db:
-            await notify_user(
-                db,
-                creator_id,
-                {
-                    "title": "Incoming call",
-                    "body": f"{name} is calling you on your secret link.",
-                    "url": f"/links/{thread_id}",
-                    "type": "call",
-                },
-            )
+        await notify_user(
+            creator_id,
+            {
+                "title": "Incoming call",
+                "body": f"{name} is calling you on your secret link.",
+                "url": f"/links/{thread_id}",
+                "type": "call",
+            },
+        )
     except Exception:  # noqa: BLE001 — push is best-effort
         pass
 

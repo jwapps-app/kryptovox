@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +19,7 @@ async def upload_media(
 ) -> dict[str, str]:
     """Store an encrypted blob (raw ciphertext body) and return its id."""
     body = await read_capped_body(request)
-    return {"id": media_store.save(body)}
+    return {"id": await media_store.save(body)}
 
 
 @router.get("/{media_id}")
@@ -26,7 +27,7 @@ async def get_media(
     media_id: str,
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
-) -> Response:
+) -> FileResponse:
     """Return an encrypted blob — only to a member of a conversation that
     references it (the id is also unguessable, but this enforces membership)."""
     allowed = await db.scalar(
@@ -43,12 +44,13 @@ async def get_media(
     )
     if allowed is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    data = media_store.load(media_id)
-    if data is None:
+    path = media_store.path_for(media_id)
+    if path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    # Opaque ciphertext; cache aggressively since the id is content-stable.
-    return Response(
-        content=data,
+    # Streamed off the event loop (blob is up to 25 MB). Opaque ciphertext; cache
+    # aggressively since the id is content-stable.
+    return FileResponse(
+        path,
         media_type="application/octet-stream",
         headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )

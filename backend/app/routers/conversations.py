@@ -256,19 +256,22 @@ async def list_conversations(
             select(
                 ConversationMember.conversation_id,
                 ConversationMember.marked_unread,
-                func.count(m.id)
-                .filter(
-                    and_(
-                        m.sender_id != current.id,
-                        m.deleted_at.is_(None),
-                        or_(lr.created_at.is_(None), m.created_at > lr.created_at),
-                    )
-                )
-                .label("unread"),
+                func.count(m.id).label("unread"),
             )
             .select_from(ConversationMember)
             .outerjoin(lr, lr.id == ConversationMember.last_read_message_id)
-            .outerjoin(m, m.conversation_id == ConversationMember.conversation_id)
+            # Predicates in the JOIN (not a count() FILTER) so the created_at
+            # cutoff rides ix_messages_conv_created instead of scanning every
+            # message of every conversation.
+            .outerjoin(
+                m,
+                and_(
+                    m.conversation_id == ConversationMember.conversation_id,
+                    m.sender_id != current.id,
+                    m.deleted_at.is_(None),
+                    or_(lr.created_at.is_(None), m.created_at > lr.created_at),
+                ),
+            )
             .where(ConversationMember.user_id == current.id)
             .group_by(
                 ConversationMember.conversation_id, ConversationMember.marked_unread

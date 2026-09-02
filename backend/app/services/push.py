@@ -10,13 +10,14 @@ import json
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from functools import lru_cache
 
 import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException, webpush
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -82,20 +83,23 @@ def _send_sync(subscription: dict, payload: dict) -> None:
     )
 
 
-async def _send(subscription: dict, payload: dict, device: Device, db: AsyncSession) -> None:
-    # Push is strictly best-effort: it must never break message sending.
+async def _send_web(subscription: dict, payload: dict) -> str:
+    """Deliver one web push. Session-free by design: fanout callers gather rows,
+    release the DB connection, then run the network sends (this) with no
+    connection held — a slow push service can't drain the pool. Returns "expired"
+    (404/410 → caller should null the subscription), "ok", or "error"."""
     try:
         await asyncio.to_thread(_send_sync, subscription, payload)
+        return "ok"
     except WebPushException as exc:
-        # 404/410 => subscription expired; drop it.
         status = getattr(exc.response, "status_code", None)
         if status in (404, 410):
-            device.push_subscription = None
-            await db.commit()
-        else:
-            log.warning("Push failed (%s): %s", status, exc)
+            return "expired"
+        log.warning("Push failed (%s): %s", status, exc)
+        return "error"
     except Exception as exc:  # noqa: BLE001 — network/DNS/etc.
         log.warning("Push delivery error: %s", exc)
+        return "error"
 
 
 async def _unread_totals(
@@ -115,19 +119,23 @@ async def _unread_totals(
         select(
             ConversationMember.user_id,
             ConversationMember.marked_unread,
-            func.count(m.id)
-            .filter(
-                and_(
-                    m.sender_id != ConversationMember.user_id,
-                    m.deleted_at.is_(None),
-                    or_(lr.created_at.is_(None), m.created_at > lr.created_at),
-                )
-            )
-            .label("unread"),
+            func.count(m.id).label("unread"),
         )
         .select_from(ConversationMember)
         .outerjoin(lr, lr.id == ConversationMember.last_read_message_id)
-        .outerjoin(m, m.conversation_id == ConversationMember.conversation_id)
+        # Discriminating predicates live in the JOIN, not a count() FILTER: the
+        # created_at cutoff then rides ix_messages_conv_created (conversation_id,
+        # created_at) as an index range scan, instead of joining every message of
+        # every conversation and discarding the read ones in the aggregate.
+        .outerjoin(
+            m,
+            and_(
+                m.conversation_id == ConversationMember.conversation_id,
+                m.sender_id != ConversationMember.user_id,
+                m.deleted_at.is_(None),
+                or_(lr.created_at.is_(None), m.created_at > lr.created_at),
+            ),
+        )
         .where(ConversationMember.user_id.in_(user_ids))
         .group_by(
             ConversationMember.user_id,
@@ -183,45 +191,59 @@ async def user_badge_total(db: AsyncSession, user_id: uuid.UUID) -> int:
 
 
 async def notify_user(
-    db: AsyncSession,
     user_id: uuid.UUID,
     payload: dict,
     *,
     ignore_presence: bool = False,
 ) -> None:
-    """Push a payload to a user's subscribed devices (used for secret-link replies
-    and call rings, which aren't tied to a conversation).
+    """Push a payload to a user's subscribed devices (secret-link replies, call
+    rings — not tied to a conversation). Manages its own DB sessions: reads the
+    subscriptions, releases the connection, then sends (a slow push service can't
+    hold a pooled connection), and only re-opens to prune expired subscriptions.
 
     By default skips devices with a live socket. `ignore_presence=True` pushes to
     every subscribed device regardless: for a time-sensitive call ring, a just
     force-closed app can linger "online" (presence TTL) and silently swallow the
-    push — the same lag that used to drop message pushes. A foregrounded app rings
-    from the live WS offer, so the extra banner is a tolerable trade for not
-    missing a call."""
-    rows = await db.execute(
-        select(Device).where(
-            Device.user_id == user_id, Device.push_subscription.isnot(None)
-        )
+    push. A foregrounded app rings from the live WS offer, so the extra banner is
+    a tolerable trade for not missing a call."""
+    async with SessionLocal() as db:
+        devices = (
+            await db.execute(
+                select(Device.id, Device.push_subscription).where(
+                    Device.user_id == user_id, Device.push_subscription.isnot(None)
+                )
+            )
+        ).all()
+    if not devices:
+        return
+    online: set[uuid.UUID] = (
+        set() if ignore_presence else await filter_online(d.id for d in devices)
     )
     seen_endpoints: set[str] = set()
-    considered = online = pushed = 0
-    for device in rows.scalars().all():
-        considered += 1
-        if not ignore_presence and await is_online(device.id):
-            online += 1
+    expired: list[uuid.UUID] = []
+    pushed = 0
+    for device_id, sub in devices:
+        if device_id in online:
             continue
-        endpoint = (device.push_subscription or {}).get("endpoint")
+        endpoint = (sub or {}).get("endpoint")
         if endpoint and endpoint in seen_endpoints:
             continue
         if endpoint:
             seen_endpoints.add(endpoint)
-        await _send(device.push_subscription, payload, device, db)
+        if await _send_web(sub, payload) == "expired":
+            expired.append(device_id)
         pushed += 1
+    if expired:
+        async with SessionLocal() as db:
+            await db.execute(
+                update(Device).where(Device.id.in_(expired)).values(push_subscription=None)
+            )
+            await db.commit()
     log.info(
         "notify_user user=%s: %d device(s), %d online-skipped, %d pushed (ignore_presence=%s)",
         user_id,
-        considered,
-        online,
+        len(devices),
+        len(online),
         pushed,
         ignore_presence,
     )
@@ -322,58 +344,64 @@ async def _post_notify(
     return await _relay_post(body)
 
 
-async def _send_apns_one(
-    db: AsyncSession,
+@dataclass
+class _ApnsResult:
+    """Outcome of one relay send, so the caller can persist prunes/corrections in
+    a short DB session AFTER the network I/O (not while holding a connection)."""
+
+    sent: bool = False
+    prune_token: bool = False  # dead token → delete the whole ApnsToken row
+    clear_voip: bool = False  # VoIP token dead but alert token may be fine
+    new_env: str | None = None  # corrected environment ("production"/"sandbox")
+
+
+async def _send_apns(
     token: ApnsToken,
     conversation_id: uuid.UUID,
     *,
     title: str = "Kryptovox",
     body_text: str = "New message",
     badge: int | None = None,
-) -> bool:
-    """Send one notification. `sandbox` is derived from the stored environment,
-    but if Apple returns BadDeviceToken (the classic env/flag mismatch) we retry
-    once with the opposite flag and, on success, correct the stored environment —
-    so a mislabeled token (e.g. a production token registered as 'sandbox') still
-    delivers and self-heals."""
+) -> _ApnsResult:
+    """Send one alert notification (session-free). `sandbox` is derived from the
+    stored environment; on BadDeviceToken (the classic env/flag mismatch) we retry
+    once flipped and, on success, report the corrected environment so a mislabeled
+    token self-heals — the caller persists that. Reads `token` fields only; never
+    mutates it or the session."""
     prefer_sandbox = (token.environment or "").strip().lower() == "sandbox"
     resp = await _post_notify(
         token, conversation_id, prefer_sandbox, title, body_text, badge
     )
     if resp is None:
-        return False
+        return _ApnsResult()
     if resp.status_code == 200:
-        return True
+        return _ApnsResult(sent=True)
     if resp.status_code == 403:
         log.error(
             "push-relay 403: API key mismatch for %s — check PUSH_RELAY_API_KEY",
             settings.apns_bundle_id,
         )
-        return False
+        return _ApnsResult()
     if resp.status_code == 502 and "BadDeviceToken" in resp.text:
-        # Wrong environment flag → retry flipped and learn the right value.
         retry = await _post_notify(
             token, conversation_id, not prefer_sandbox, title, body_text, badge
         )
         if retry is not None and retry.status_code == 200:
-            token.environment = "production" if prefer_sandbox else "sandbox"
+            corrected = "production" if prefer_sandbox else "sandbox"
             log.info(
-                "APNs delivered on retry; corrected environment to %r (token=%s…)",
-                token.environment,
+                "APNs delivered on retry; correcting environment to %r (token=%s…)",
+                corrected,
                 token.apns_token[:8],
             )
-            return True
-        # Both environments rejected → genuinely stale token; drop it.
+            return _ApnsResult(sent=True, new_env=corrected)
         log.info("APNs BadDeviceToken on both environments — pruning token")
-        await db.delete(token)
-        return False
+        return _ApnsResult(prune_token=True)
     if resp.status_code == 502 and "Unregistered" in resp.text:
-        await db.delete(token)  # Apple says the token is dead
-        return False
+        return _ApnsResult(prune_token=True)  # Apple says the token is dead
     log.warning(
         "push-relay %s (sandbox=%s): %s", resp.status_code, prefer_sandbox, resp.text[:200]
     )
-    return False
+    return _ApnsResult()
 
 
 async def notify_offline_all(
@@ -392,6 +420,7 @@ async def notify_offline_all(
     WS-online recipients (iOS suppresses banners for a foregrounded app itself,
     and presence lag was silently dropping pushes)."""
     try:
+        # --- Phase 1: read everything, then release the pooled connection ---
         async with SessionLocal() as db:
             rows = await db.execute(
                 select(ConversationMember.user_id, ConversationMember.muted).where(
@@ -404,68 +433,108 @@ async def notify_offline_all(
             if not recipients:
                 return
             badges = await _unread_totals(db, recipients)
-
-            # --- Web push (VAPID) ---
-            base = {
-                "title": sender_name or "Kryptovox",
-                "body": "New message",
-                "url": f"/chat/{conversation_id}",
-            }
             devices = (
                 await db.execute(
-                    select(Device).where(
+                    select(Device.id, Device.user_id, Device.push_subscription).where(
                         Device.user_id.in_(recipients),
                         Device.push_subscription.isnot(None),
                     )
                 )
-            ).scalars().all()
-            online_ids = await filter_online(d.id for d in devices)
-            pushed = 0
-            seen_endpoints: set[str] = set()
-            for device in devices:
-                if device.id in online_ids:
-                    continue
-                # Re-logins create multiple device rows that may share one browser
-                # push endpoint — dedupe so the user gets a single banner.
-                endpoint = (device.push_subscription or {}).get("endpoint")
-                if endpoint and endpoint in seen_endpoints:
-                    continue
-                if endpoint:
-                    seen_endpoints.add(endpoint)
-                payload = {**base, "badge": badges.get(device.user_id, 0)}
-                await _send(device.push_subscription, payload, device, db)
-                pushed += 1
-            log.info(
-                "push fanout conv=%s: %d subscribed device(s), %d online (skipped), %d pushed",
-                conversation_id,
-                len(devices),
-                len(online_ids),
-                pushed,
-            )
-
-            # --- APNs via the relay ---
-            if apns_enabled():
-                tokens = (
+            ).all()
+            tokens = (
+                (
                     await db.execute(
                         select(ApnsToken).where(ApnsToken.user_id.in_(recipients))
                     )
                 ).scalars().all()
-                sent = 0
-                for token in tokens:
-                    if await _send_apns_one(
-                        db, token, conversation_id, badge=badges.get(token.user_id, 0)
-                    ):
-                        sent += 1
-                await db.commit()  # persist stale-token deletions / env corrections
-                if tokens:
-                    log.info(
-                        "APNs fanout conv=%s: %d token(s), %d sent",
-                        conversation_id,
-                        len(tokens),
-                        sent,
-                    )
+                if apns_enabled()
+                else []
+            )
+        # Connection is back in the pool here — the network fanout below holds none.
+
+        # --- Phase 2: network sends (no DB connection held) ---
+        base = {
+            "title": sender_name or "Kryptovox",
+            "body": "New message",
+            "url": f"/chat/{conversation_id}",
+        }
+        online_ids = await filter_online(d.id for d in devices)
+        seen_endpoints: set[str] = set()
+        expired_devices: list[uuid.UUID] = []
+        pushed = 0
+        for device_id, user_id, sub in devices:
+            if device_id in online_ids:
+                continue
+            # Re-logins create multiple device rows that may share one browser push
+            # endpoint — dedupe so the user gets a single banner.
+            endpoint = (sub or {}).get("endpoint")
+            if endpoint and endpoint in seen_endpoints:
+                continue
+            if endpoint:
+                seen_endpoints.add(endpoint)
+            payload = {**base, "badge": badges.get(user_id, 0)}
+            if await _send_web(sub, payload) == "expired":
+                expired_devices.append(device_id)
+            pushed += 1
+        log.info(
+            "push fanout conv=%s: %d subscribed device(s), %d online (skipped), %d pushed",
+            conversation_id,
+            len(devices),
+            len(online_ids),
+            pushed,
+        )
+        apns_results: list[tuple[uuid.UUID, _ApnsResult]] = []
+        for token in tokens:
+            r = await _send_apns(
+                token, conversation_id, badge=badges.get(token.user_id, 0)
+            )
+            apns_results.append((token.id, r))
+        if tokens:
+            log.info(
+                "APNs fanout conv=%s: %d token(s), %d sent",
+                conversation_id,
+                len(tokens),
+                sum(1 for _, r in apns_results if r.sent),
+            )
+
+        # --- Phase 3: persist prunes/corrections in a short session ---
+        await _persist_push_results(expired_devices, apns_results)
     except Exception as exc:  # noqa: BLE001 — best-effort, must not raise into the caller
         log.warning("push fanout failed for conv=%s: %s", conversation_id, exc)
+
+
+async def _persist_push_results(
+    expired_devices: list[uuid.UUID],
+    apns_results: list[tuple[uuid.UUID, "_ApnsResult"]],
+) -> None:
+    """Apply the side effects gathered during a fanout — expired web
+    subscriptions, dead APNs/VoIP tokens, self-healed environments — in one short
+    session, opened only if there's anything to write."""
+    prune = [tid for tid, r in apns_results if r.prune_token]
+    updates = [
+        (tid, r)
+        for tid, r in apns_results
+        if not r.prune_token and (r.clear_voip or r.new_env)
+    ]
+    if not expired_devices and not prune and not updates:
+        return
+    async with SessionLocal() as db:
+        if expired_devices:
+            await db.execute(
+                update(Device)
+                .where(Device.id.in_(expired_devices))
+                .values(push_subscription=None)
+            )
+        if prune:
+            await db.execute(delete(ApnsToken).where(ApnsToken.id.in_(prune)))
+        for tid, r in updates:
+            vals: dict = {}
+            if r.clear_voip:
+                vals["voip_token"] = None
+            if r.new_env:
+                vals["environment"] = r.new_env
+            await db.execute(update(ApnsToken).where(ApnsToken.id == tid).values(**vals))
+        await db.commit()
 
 
 async def _post_voip(
@@ -489,37 +558,30 @@ async def _post_voip(
     return await _relay_post(body)
 
 
-async def _send_voip_one(
-    db: AsyncSession,
-    token: ApnsToken,
-    custom_data: dict,
-) -> bool:
-    """Send one VoIP push, deriving sandbox from the stored environment and
-    retrying flipped on BadDeviceToken (same self-heal as the alert path)."""
+async def _send_voip(token: ApnsToken, custom_data: dict) -> _ApnsResult:
+    """Send one VoIP push (session-free), retrying flipped on BadDeviceToken like
+    the alert path. A dead VoIP token clears only voip_token (the alert token may
+    still be good); the caller persists it."""
     prefer_sandbox = (token.environment or "").strip().lower() == "sandbox"
     resp = await _post_voip(token.voip_token, custom_data, prefer_sandbox)
     if resp is None:
-        return False
+        return _ApnsResult()
     if resp.status_code == 200:
-        return True
+        return _ApnsResult(sent=True)
     if resp.status_code == 403:
         log.error("push-relay 403 on VoIP — check PUSH_RELAY_API_KEY")
-        return False
+        return _ApnsResult()
     if resp.status_code == 502 and "BadDeviceToken" in resp.text:
-        retry = await _post_voip(
-            token.voip_token, custom_data, not prefer_sandbox
-        )
+        retry = await _post_voip(token.voip_token, custom_data, not prefer_sandbox)
         if retry is not None and retry.status_code == 200:
-            token.environment = "production" if prefer_sandbox else "sandbox"
-            return True
-        # A dead VoIP token doesn't mean the alert token is dead — just clear it.
-        token.voip_token = None
-        return False
+            return _ApnsResult(
+                sent=True, new_env="production" if prefer_sandbox else "sandbox"
+            )
+        return _ApnsResult(clear_voip=True)
     if resp.status_code == 502 and "Unregistered" in resp.text:
-        token.voip_token = None
-        return False
+        return _ApnsResult(clear_voip=True)
     log.warning("push-relay VoIP %s: %s", resp.status_code, resp.text[:200])
-    return False
+    return _ApnsResult()
 
 
 async def ring_call(
@@ -546,49 +608,46 @@ async def ring_call(
     }
     voip = alert = skipped = 0
     try:
-        async with SessionLocal() as db:
-            # Ring every subscribed device — don't let presence lag on a just
-            # force-closed PWA swallow the call banner (messages already do this).
-            await notify_user(db, callee_id, payload, ignore_presence=True)
-            if apns_enabled():
-                # The VoIP push carries only enough to wake the app and ring
-                # CallKit. The SDP offer is deliberately NOT included: a video
-                # offer exceeds APNs's ~5KB VoIP payload cap (PayloadTooLarge).
-                # The woken app connects its WS and receives the buffered offer +
-                # ICE via deliver_buffered_calls — the standard PushKit flow.
-                voip_custom = {
-                    "from": str(offer.get("from") or ""),
-                    "conversation_id": str(conversation_id),
-                    "name": caller_name or "Someone",
-                    "video": bool(offer.get("video")),
-                }
+        # Web push (own sessions, no connection held across the send).
+        await notify_user(callee_id, payload, ignore_presence=True)
+        if apns_enabled():
+            # The VoIP push carries only enough to wake the app and ring CallKit.
+            # The SDP offer is deliberately NOT included: a video offer exceeds
+            # APNs's ~5KB VoIP payload cap (PayloadTooLarge). The woken app connects
+            # its WS and receives the buffered offer + ICE via deliver_buffered_calls.
+            voip_custom = {
+                "from": str(offer.get("from") or ""),
+                "conversation_id": str(conversation_id),
+                "name": caller_name or "Someone",
+                "video": bool(offer.get("video")),
+            }
+            async with SessionLocal() as db:
                 tokens = (
                     await db.execute(
                         select(ApnsToken).where(ApnsToken.user_id == callee_id)
                     )
                 ).scalars().all()
-                for token in tokens:
-                    # Only skip a device whose OWN session holds a live socket
-                    # (it rings from the WS offer). Presence is per-device, so
-                    # another device being online — e.g. a browser tab left
-                    # open — never suppresses a closed phone's wake-up push.
-                    if token.device_id is not None and await is_online(
-                        token.device_id
-                    ):
-                        skipped += 1
-                        continue
-                    if token.voip_token:
-                        if await _send_voip_one(db, token, voip_custom):
-                            voip += 1
-                    elif await _send_apns_one(
-                        db,
-                        token,
-                        conversation_id,
-                        title="Incoming call",
-                        body_text=body_text,
-                    ):
+            # Session released; the relay sends below hold no DB connection.
+            results: list[tuple[uuid.UUID, _ApnsResult]] = []
+            for token in tokens:
+                # Only skip a device whose OWN session holds a live socket (it rings
+                # from the WS offer). Presence is per-device, so another device being
+                # online — e.g. a browser tab — never suppresses a closed phone's push.
+                if token.device_id is not None and await is_online(token.device_id):
+                    skipped += 1
+                    continue
+                if token.voip_token:
+                    r = await _send_voip(token, voip_custom)
+                    if r.sent:
+                        voip += 1
+                else:
+                    r = await _send_apns(
+                        token, conversation_id, title="Incoming call", body_text=body_text
+                    )
+                    if r.sent:
                         alert += 1
-                await db.commit()
+                results.append((token.id, r))
+            await _persist_push_results([], results)
         log.info(
             "call ring callee=%s: %d voip, %d alert, %d skipped(online)",
             callee_id,

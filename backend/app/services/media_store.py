@@ -20,12 +20,31 @@ def _path(media_id: str) -> str:
     return os.path.join(settings.media_dir, media_id)
 
 
-def save(data: bytes) -> str:
+def _save_sync(data: bytes) -> str:
     os.makedirs(settings.media_dir, exist_ok=True)
     media_id = uuid.uuid4().hex
     with open(_path(media_id), "wb") as f:
         f.write(data)
     return media_id
+
+
+async def save(data: bytes) -> str:
+    # Off the event loop: a blob is up to 25 MB, so a blocking write would stall
+    # every other coroutine (HTTP + WebSocket) on the worker.
+    import asyncio
+
+    return await asyncio.to_thread(_save_sync, data)
+
+
+def path_for(media_id: str) -> str | None:
+    """The on-disk path for an id, or None if the id is malformed or absent.
+    Serve blobs with FileResponse(path) so the (up to 25 MB) read is streamed off
+    the event loop rather than buffered whole in memory."""
+    try:
+        path = _path(media_id)
+    except ValueError:
+        return None
+    return path if os.path.exists(path) else None
 
 
 def load(media_id: str) -> bytes | None:

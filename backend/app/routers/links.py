@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -222,7 +223,7 @@ async def host_upload_media(
 ) -> dict[str, str]:
     await _own_thread(db, thread_id, identity.user.id)
     body = await read_capped_body(request)
-    return {"id": media_store.save(body)}
+    return {"id": await media_store.save(body)}
 
 
 @router.get("/{thread_id}/media/{media_id}")
@@ -243,11 +244,12 @@ async def host_get_media(
     )
     if ok is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    data = media_store.load(media_id)
-    if data is None:
+    path = media_store.path_for(media_id)
+    if path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    return Response(
-        content=data,
+    # Streamed off the event loop (blob up to 25 MB); opaque, content-stable id.
+    return FileResponse(
+        path,
         media_type="application/octet-stream",
         headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )
