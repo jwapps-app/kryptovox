@@ -20,7 +20,7 @@ from app.schemas import (
     GuestThreadDetail,
     GuestThreadOut,
 )
-from app.services import media_store
+from app.services import media_owner, media_store
 
 
 async def delete_thread_media(db: AsyncSession, thread_id: uuid.UUID) -> None:
@@ -69,6 +69,8 @@ async def create_link(
     )
     db.add(thread)
     await db.flush()
+    if body.media is not None:
+        await media_owner.assert_in_thread(db, body.media.id, thread.id)
     msg = GuestMessage(
         thread_id=thread.id, sender="host", ciphertext=body.ciphertext, iv=body.iv
     )
@@ -161,20 +163,13 @@ async def get_link(
         label_iv=thread.label_iv,
         messages=msgs,
     )
-    # Burn thread whose window has closed: this read IS the trigger to delete —
-    # the creator is guaranteed to have seen everything (including the last
-    # reply) before it's gone. We return the already-serialized detail.
-    if (
-        thread.burn_minutes
-        and thread.expires_at is not None
-        and thread.expires_at <= datetime.now(UTC)
-    ):
-        await delete_thread_media(db, thread.id)
-        await db.delete(thread)
-        await db.commit()
-    else:
-        thread.host_read_at = datetime.now(UTC)  # clears the unread/badge state
-        await db.commit()
+    # Mark read (clears unread/badge). An expired burn thread is NOT deleted
+    # here: this GET returns message metadata whose attachments the client
+    # fetches *next*, so deleting first guaranteed those fetches 404'd (and a
+    # retry / StrictMode double-load could discard the only copy). The retention
+    # sweep removes read burn threads after its grace window instead.
+    thread.host_read_at = datetime.now(UTC)  # clears the unread/badge state
+    await db.commit()
     return detail
 
 
@@ -234,7 +229,9 @@ async def host_upload_media(
 ) -> dict[str, str]:
     await _own_thread(db, thread_id, identity.user.id)
     body = await read_capped_body(request)
-    return {"id": await media_store.save(body)}
+    media_id = await media_store.save(body)
+    await media_owner.record(db, media_id, owner_id=identity.user.id, thread_id=thread_id)
+    return {"id": media_id}
 
 
 @router.get("/{thread_id}/media/{media_id}")

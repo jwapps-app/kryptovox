@@ -48,6 +48,7 @@ from app.security import (
     refresh_token_expiry,
     verify_password,
 )
+from app.services.sessions import close_device_sockets
 from app.services.twofa_guard import (
     assert_not_locked,
     assert_pending_unused,
@@ -62,6 +63,7 @@ from app.services.webauthn_svc import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+_BOOTSTRAP_LOCK = 0x4B56_4254  # "KVBT" — serializes first-admin bootstrap
 
 REFRESH_COOKIE = "kv_refresh"
 
@@ -135,7 +137,10 @@ async def register(
 ) -> TokenResponse:
     # Open registration is allowed only for the very first account, which
     # becomes the server administrator. After that, an admin must provision
-    # users via POST /admin/users.
+    # users via POST /admin/users. Serialize with a transaction-scoped advisory
+    # lock: two concurrent first-registers would otherwise both observe zero
+    # users (bcrypt yields in between) and both become admin.
+    await db.execute(select(func.pg_advisory_xact_lock(_BOOTSTRAP_LOCK)))
     if await _user_count(db) > 0:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -257,8 +262,8 @@ async def complete_2fa(
         await record_failure(user_id)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid code")
 
+    await consume_pending(jti)  # atomic single-use claim; raises on replay
     await clear_failures(user_id)
-    await consume_pending(jti)
     tokens = await _login_device(db, response, user, body.device_name)
     return LoginResponse(tokens=tokens)
 
@@ -271,7 +276,7 @@ async def passkey_login_options(
     db: AsyncSession = Depends(get_db),
 ) -> PasskeyOptionsOut:
     try:
-        user_id, _ = decode_pending_2fa_token(body.pending_token)
+        user_id, pending_jti = decode_pending_2fa_token(body.pending_token)
     except InvalidTokenError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
     rows = await db.execute(
@@ -292,7 +297,9 @@ async def passkey_login_options(
         ],
         user_verification=UserVerificationRequirement.PREFERRED,
     )
-    token = create_challenge_token(user_id, bytes_to_base64url(options.challenge))
+    token = create_challenge_token(
+        user_id, bytes_to_base64url(options.challenge), pending_jti=pending_jti
+    )
     return PasskeyOptionsOut(options=json.loads(options_to_json(options)), challenge_token=token)
 
 
@@ -306,10 +313,12 @@ async def passkey_login_verify(
 ) -> LoginResponse:
     try:
         uid_a, jti = decode_pending_2fa_token(body.pending_token)
-        uid_b, challenge_b64 = decode_challenge_token(body.challenge_token)
+        uid_b, challenge_b64, challenge_jti = decode_challenge_token(body.challenge_token)
     except InvalidTokenError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
-    if uid_a != uid_b:
+    # The challenge must belong to THIS pending login — otherwise a captured
+    # assertion could be replayed against any later pending token for the user.
+    if uid_a != uid_b or challenge_jti != jti:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
     await assert_not_locked(uid_a)
     await assert_pending_unused(jti)
@@ -337,8 +346,8 @@ async def passkey_login_verify(
         await record_failure(uid_a)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Passkey check failed")
     cred.sign_count = v.new_sign_count
+    await consume_pending(jti)  # atomic single-use claim; raises on replay
     await clear_failures(uid_a)
-    await consume_pending(jti)
     user = await db.get(User, uid_a)
     tokens = await _login_device(db, response, user, body.device_name)
     return LoginResponse(tokens=tokens)
@@ -419,6 +428,7 @@ async def logout(
     # Stop push to the logged-out device: native APNs token and web subscription.
     await db.execute(delete(ApnsToken).where(ApnsToken.device_id == identity.device.id))
     identity.device.push_subscription = None
+    await close_device_sockets(identity.user.id, [str(identity.device.id)])
     # Return the injected response so the cookie deletion header is actually sent
     # (a freshly constructed Response would drop it).
     response.delete_cookie(REFRESH_COOKIE, path=COOKIE_PATH)

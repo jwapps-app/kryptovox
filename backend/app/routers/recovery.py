@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -24,12 +25,19 @@ _INVALID = HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid recovery key")
 _DUMMY_VERIFIER = "0" * 64  # compared against when no account/verifier exists
 
 
+def _h(verifier: str) -> str:
+    """The database holds sha256(verifier), never the verifier itself — so a
+    database disclosure doesn't yield a working password-reset credential. The
+    client still sends the raw verifier (itself a hash of the recovery key)."""
+    return hashlib.sha256(verifier.encode()).hexdigest()
+
+
 def _verify(user: User | None, verifier: str) -> User:
     # Constant-time check; identical error whether the user or recovery is missing
     # (no account/recovery-setup enumeration). Always run the compare against a
     # dummy so a missing user/verifier doesn't return faster than a real mismatch.
     stored = user.recovery_verifier if user and user.recovery_verifier else ""
-    ok = secrets.compare_digest(stored or _DUMMY_VERIFIER, verifier)
+    ok = secrets.compare_digest(stored or _DUMMY_VERIFIER, _h(verifier))
     if (
         user is None
         or user.recovery_verifier is None
@@ -48,7 +56,7 @@ async def setup_recovery(
     """Store the recovery-key-wrapped private key + verifier. The server never
     sees the recovery key, only the verifier (a hash), so it can't decrypt this."""
     current.recovery_key_blob = body.recovery_key_blob.model_dump()
-    current.recovery_verifier = body.recovery_verifier
+    current.recovery_verifier = _h(body.recovery_verifier)
 
 
 @router.delete("/setup", status_code=204)

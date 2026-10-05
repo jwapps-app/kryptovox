@@ -105,6 +105,8 @@ async def _to_out(
 ) -> ConversationOut:
     members = await _members(db, conv.id)
     last = await _last_message(db, conv.id)
+    if last and member.cleared_at and last.created_at <= member.cleared_at:
+        last = None
     return ConversationOut(
         id=conv.id,
         type=conv.type,
@@ -272,6 +274,10 @@ async def list_conversations(
                     m.sender_id != current.id,
                     m.deleted_at.is_(None),
                     or_(lr.created_at.is_(None), m.created_at > lr.created_at),
+                    or_(
+                        ConversationMember.cleared_at.is_(None),
+                        m.created_at > ConversationMember.cleared_at,
+                    ),
                 ),
             )
             .where(ConversationMember.user_id == current.id)
@@ -291,6 +297,8 @@ async def list_conversations(
         if conv is None:
             continue
         last = last_by_conv.get(conv.id)
+        if last and member.cleared_at and last.created_at <= member.cleared_at:
+            last = None  # history was cleared past this message — no stale preview
         out.append(
             ConversationOut(
                 id=conv.id,

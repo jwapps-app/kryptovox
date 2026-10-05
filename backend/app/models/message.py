@@ -28,6 +28,9 @@ class Message(Base):
     sender_device_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("devices.id", ondelete="SET NULL"), nullable=True
     )
+    # Snapshot of the sender's identity public key at send time, so recipients
+    # can still decrypt after the sender's account is deleted (sender_id nulls).
+    sender_public_key: Mapped[str | None] = mapped_column(String, nullable=True)
     # E2EE payload — server never sees plaintext.
     ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
     iv: Mapped[str] = mapped_column(String, nullable=False)

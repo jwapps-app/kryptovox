@@ -11,7 +11,7 @@ from app.http_util import read_capped_body
 from app.models import GuestMessage, GuestThread
 from app.ratelimit import limiter
 from app.schemas import GuestMessageIn, GuestMessageOut, PublicThreadOut
-from app.services import media_store
+from app.services import media_owner, media_store
 from app.services.fanout import fanout_user
 from app.services.push import notify_user, user_badge_total
 from app.ws.events import GUEST_REPLY, envelope
@@ -65,6 +65,8 @@ async def guest_reply(
     db: AsyncSession = Depends(get_db),
 ) -> GuestMessageOut:
     thread = await _active_thread(db, thread_id)
+    if body.media is not None:
+        await media_owner.assert_in_thread(db, body.media.id, thread_id)
     msg = GuestMessage(
         thread_id=thread_id,
         sender="guest",
@@ -107,7 +109,9 @@ async def guest_upload_media(
 ) -> dict[str, str]:
     await _active_thread(db, thread_id)
     body = await read_capped_body(request)
-    return {"id": await media_store.save(body)}
+    media_id = await media_store.save(body)
+    await media_owner.record(db, media_id, thread_id=thread_id)
+    return {"id": media_id}
 
 
 @router.get("/{thread_id}/media/{media_id}")

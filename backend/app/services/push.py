@@ -90,6 +90,7 @@ def _send_sync(subscription: dict, payload: dict) -> None:
         data=json.dumps(payload),
         vapid_private_key=settings.vapid_key_path,
         vapid_claims={"sub": settings.vapid_email},
+        timeout=10,  # never let a stalled push service pin a worker thread
     )
 
 
@@ -144,6 +145,10 @@ async def _unread_totals(
                 m.sender_id != ConversationMember.user_id,
                 m.deleted_at.is_(None),
                 or_(lr.created_at.is_(None), m.created_at > lr.created_at),
+                or_(
+                    ConversationMember.cleared_at.is_(None),
+                    m.created_at > ConversationMember.cleared_at,
+                ),
             ),
         )
         .where(ConversationMember.user_id.in_(user_ids))

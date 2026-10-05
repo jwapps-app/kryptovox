@@ -90,6 +90,14 @@ class Hub:
         # sender skips its own echo, and an optional `_to` (a target connection
         # id) so a 1:1 call frame reaches only the paired peer — not every other
         # holder of the secret link.
+        # Control event: a device's session was revoked (logout / device revoke /
+        # password change) — close its live socket(s) instead of delivering.
+        if envelope.get("type") == "session.revoked":
+            revoked = set(envelope.get("device_ids") or [])
+            for ws in targets:
+                if getattr(ws, "_kv_device", None) in revoked:
+                    self._drop(ws, code=4401)
+            return
         src = envelope.get("_src")
         to = envelope.get("_to")
         sends = []
@@ -114,7 +122,7 @@ class Hub:
         except Exception:  # noqa: BLE001 — dead or stalled socket: drop it
             self._drop(ws)
 
-    def _drop(self, ws: WebSocket) -> None:
+    def _drop(self, ws: WebSocket, code: int = 1011) -> None:
         """Remove a dead/stalled socket from every subscription set and close it.
         Its endpoint handler's finally-block also unregisters; this just makes the
         hub stop trying to deliver to it immediately."""
@@ -122,7 +130,7 @@ class Hub:
             for key in [k for k, v in subs.items() if ws in v]:
                 self._discard(subs, key, ws)
         try:
-            asyncio.create_task(ws.close())
+            asyncio.create_task(ws.close(code=code))
         except Exception:  # noqa: BLE001
             pass
 

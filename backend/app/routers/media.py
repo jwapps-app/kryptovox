@@ -7,7 +7,7 @@ from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity
 from app.http_util import read_capped_body
 from app.models import ConversationMember, Message
-from app.services import media_store
+from app.services import media_owner, media_store
 
 router = APIRouter(prefix="/media", tags=["media"])
 
@@ -16,10 +16,13 @@ router = APIRouter(prefix="/media", tags=["media"])
 async def upload_media(
     request: Request,
     identity: CurrentIdentity = Depends(get_current_identity),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Store an encrypted blob (raw ciphertext body) and return its id."""
     body = await read_capped_body(request)
-    return {"id": await media_store.save(body)}
+    media_id = await media_store.save(body)
+    await media_owner.record(db, media_id, owner_id=identity.user.id)
+    return {"id": media_id}
 
 
 @router.get("/{media_id}")

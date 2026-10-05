@@ -24,7 +24,7 @@ from app.schemas import (
     ReactionCreate,
     ReactionOut,
 )
-from app.services import media_store
+from app.services import media_owner, media_store
 from app.services.fanout import fanout_conversation, fanout_user
 from app.services.push import notify_offline_all
 from app.ws.events import (
@@ -121,6 +121,10 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
 ) -> MessageOut:
     await _require_member(db, conversation_id, identity.user.id)
+    # A message may only reference a blob the sender uploaded (ownership check).
+    ref = body.media or body.file
+    if ref is not None:
+        await media_owner.assert_owned(db, ref.id, identity.user.id)
 
     # Bake the conversation's current disappearing window onto the message, so
     # toggling the setting only affects new messages, not existing history.
@@ -131,6 +135,7 @@ async def send_message(
         conversation_id=conversation_id,
         sender_id=identity.user.id,
         sender_device_id=identity.device.id,
+        sender_public_key=identity.user.identity_public_key,  # survives sender deletion
         ciphertext=body.ciphertext,
         iv=body.iv,
         encrypted_keys=body.encrypted_keys,

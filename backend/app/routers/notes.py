@@ -11,7 +11,7 @@ from app.deps import get_current_user
 from app.http_util import read_capped_body
 from app.models import Note, User
 from app.schemas import NoteCreate, NoteListItem, NoteOut, NoteUpdate
-from app.services import media_store
+from app.services import media_owner, media_store
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -25,6 +25,14 @@ async def _own_note(db: AsyncSession, note_id: uuid.UUID, user_id: uuid.UUID) ->
 
 def _media_ids(attachments: list) -> set[str]:
     return {a.get("media_id") for a in (attachments or []) if a.get("media_id")}
+
+
+async def _assert_attachments_owned(db: AsyncSession, attachments, owner_id: uuid.UUID) -> None:
+    """Every referenced blob must be one this user uploaded — a client-supplied
+    id could otherwise point at (and expose/affect) another resource's blob."""
+    wanted = {a.media_id for a in (attachments or [])}
+    if wanted and await media_owner.owned_ids(db, owner_id, wanted) != wanted:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown or foreign media id")
 
 
 @router.get("", response_model=list[NoteListItem])
@@ -53,6 +61,7 @@ async def create_note(
     current: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Note:
+    await _assert_attachments_owned(db, body.attachments, current.id)
     note = Note(
         owner_id=current.id,
         wrapped_key=body.wrapped_key,
@@ -94,6 +103,7 @@ async def update_note(
     # explicitly [] => remove all. Blob files are reclaimed by the GC sweep once
     # unreferenced, never deleted inline from a client-supplied id.
     if body.attachments is not None:
+        await _assert_attachments_owned(db, body.attachments, current.id)
         note.attachments = [a.model_dump() for a in body.attachments]
     note.updated_at = datetime.now(UTC)
     await db.commit()
@@ -123,7 +133,9 @@ async def upload_note_media(
 ) -> dict[str, str]:
     await _own_note(db, note_id, current.id)
     blob = await read_capped_body(request)
-    return {"id": await media_store.save(blob)}
+    media_id = await media_store.save(blob)
+    await media_owner.record(db, media_id, owner_id=current.id)
+    return {"id": media_id}
 
 
 @router.get("/{note_id}/media/{media_id}")
