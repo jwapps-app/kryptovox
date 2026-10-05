@@ -30,11 +30,16 @@ async def verify_password(password: str, password_hash: str) -> bool:
     return await asyncio.to_thread(_pwd.verify, password, password_hash)
 
 
-def create_access_token(user_id: uuid.UUID, device_id: uuid.UUID) -> str:
+def create_access_token(
+    user_id: uuid.UUID, device_id: uuid.UUID, token_version: int = 0
+) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "did": str(device_id),
+        # Bumped on password change / recovery / admin reset so every access
+        # token issued before that moment dies immediately, not at expiry.
+        "tv": token_version,
         "type": "access",
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),

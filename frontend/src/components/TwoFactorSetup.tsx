@@ -6,9 +6,15 @@ import {
   verifyPasskeyRegister,
   type PasskeyOptions,
 } from "../lib/passkey";
+import { usePasswordPrompt } from "./PasswordPrompt";
 
 // TOTP enrollment flow: setup → show secret → verify a code → show backup codes.
 // Calls onEnabled once 2FA is active. Reused in Settings and the forced gate.
+//
+// Enrolling a factor is a step-up action (the server takes the password), so
+// each path starts with a password prompt. For passkeys that means two taps:
+// one to confirm the password and fetch the WebAuthn options, a second to run
+// the WebAuthn ceremony — it must be the first await after a tap on iOS Safari.
 export default function TwoFactorSetup({
   onEnabled,
   onCancel,
@@ -25,17 +31,29 @@ export default function TwoFactorSetup({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [regOpts, setRegOpts] = useState<PasskeyOptions | null>(null);
+  const { ask, element: passwordPrompt } = usePasswordPrompt();
 
   useEffect(() => {
-    if (forceTotp) {
-      void start();
-    } else {
-      // Preload so the WebAuthn call fires immediately on tap (iOS Safari).
-      preloadPasskeyRegisterOptions().then(setRegOpts).catch(() => {});
-    }
+    if (forceTotp) void start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceTotp]);
 
+  // Step 1 of the passkey path: confirm the password, fetch the options.
+  const preparePasskey = async () => {
+    setErr(null);
+    const password = await ask("Confirm your password", "Adding a passkey as a second factor.");
+    if (!password) return;
+    setBusy(true);
+    try {
+      setRegOpts(await preloadPasskeyRegisterOptions(password));
+    } catch (e) {
+      setErr((e as Error).message || "Couldn't start passkey setup.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Step 2: the WebAuthn ceremony, from its own tap.
   const addPasskey = async () => {
     if (!regOpts) return;
     setErr(null);
@@ -56,18 +74,24 @@ export default function TwoFactorSetup({
     } catch {
       setErr("Passkey registration failed.");
     } finally {
+      setRegOpts(null);
       setBusy(false);
     }
   };
 
   const start = async () => {
-    setBusy(true);
     setErr(null);
+    const password = await ask("Confirm your password", "Adding an authenticator app as a second factor.");
+    if (!password) {
+      onCancel?.();
+      return;
+    }
+    setBusy(true);
     try {
-      const r = await api<{ secret: string; provisioning_uri: string }>(
-        "/2fa/totp/setup",
-        { method: "POST" }
-      );
+      const r = await api<{ secret: string; provisioning_uri: string }>("/2fa/totp/setup", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      });
       setSecret(r.secret);
       setUri(r.provisioning_uri);
     } catch (e) {
@@ -133,16 +157,23 @@ export default function TwoFactorSetup({
         <a href={uri} className="block text-center text-xs text-imsg-blue">
           Open in authenticator app
         </a>
-        <input
-          autoFocus
-          className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-center text-[17px] tracking-widest outline-none focus:border-imsg-blue"
-          placeholder="123456"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
-        />
-        {err && <p className="text-sm text-red-500">{err}</p>}
+        <label className="block">
+          <span className="sr-only">Authenticator code</span>
+          <input
+            autoFocus
+            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-center text-[17px] tracking-widest outline-none focus:border-imsg-blue"
+            placeholder="123456"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
+          />
+        </label>
+        {err && (
+          <p className="text-sm text-red-500" role="alert">
+            {err}
+          </p>
+        )}
         <button
           onClick={() => void verify()}
           disabled={busy || code.trim().length < 6}
@@ -154,12 +185,15 @@ export default function TwoFactorSetup({
     );
   }
 
-  // forceTotp: start() is fetching the secret; don't flash the choice screen.
+  // forceTotp: start() is prompting / fetching; don't flash the choice screen.
   if (forceTotp) {
     return (
       <div className="space-y-2">
+        {passwordPrompt}
         {err ? (
-          <p className="text-sm text-red-500">{err}</p>
+          <p className="text-sm text-red-500" role="alert">
+            {err}
+          </p>
         ) : (
           <p className="text-sm text-gray-400">Setting up…</p>
         )}
@@ -175,23 +209,40 @@ export default function TwoFactorSetup({
   // Step 1: choose a method.
   return (
     <div className="space-y-3">
+      {passwordPrompt}
       <p className="text-sm text-gray-500">
         Add a second factor to protect your account. Choose a method:
       </p>
-      {err && <p className="text-sm text-red-500">{err}</p>}
-      <button
-        onClick={() => void addPasskey()}
-        disabled={busy || !regOpts}
-        className="flex w-full items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-left active:bg-gray-50 disabled:opacity-50"
-      >
-        <span>
-          <span className="block font-medium">Passkey</span>
-          <span className="block text-xs text-gray-400">
-            Face ID / Touch ID or your password manager
+      {err && (
+        <p className="text-sm text-red-500" role="alert">
+          {err}
+        </p>
+      )}
+      {regOpts ? (
+        <button
+          onClick={() => void addPasskey()}
+          disabled={busy}
+          className="w-full rounded-xl bg-imsg-blue py-3 font-medium text-white active:opacity-70 disabled:opacity-50"
+        >
+          Create passkey now
+        </button>
+      ) : (
+        <button
+          onClick={() => void preparePasskey()}
+          disabled={busy}
+          className="flex w-full items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-left active:bg-gray-50 disabled:opacity-50"
+        >
+          <span>
+            <span className="block font-medium">Passkey</span>
+            <span className="block text-xs text-gray-400">
+              Face ID / Touch ID or your password manager
+            </span>
           </span>
-        </span>
-        <span className="text-gray-300">›</span>
-      </button>
+          <span className="text-gray-300" aria-hidden="true">
+            ›
+          </span>
+        </button>
+      )}
       <button
         onClick={() => void start()}
         disabled={busy}
@@ -203,7 +254,9 @@ export default function TwoFactorSetup({
             A rotating code (works with your password manager)
           </span>
         </span>
-        <span className="text-gray-300">›</span>
+        <span className="text-gray-300" aria-hidden="true">
+          ›
+        </span>
       </button>
       {onCancel && (
         <button onClick={onCancel} className="w-full text-center text-sm text-gray-400">

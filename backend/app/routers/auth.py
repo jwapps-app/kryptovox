@@ -34,7 +34,9 @@ from app.schemas import (
     TokenResponse,
     TwoFAComplete,
     UserOut,
+    WsTicketOut,
 )
+from app.services import ws_ticket as ws_ticket_svc
 from app.security import (
     DUMMY_PASSWORD_HASH,
     consume_totp,
@@ -109,7 +111,7 @@ async def _issue_tokens(
     await db.flush()
     _set_refresh_cookie(response, refresh)
     return TokenResponse(
-        access_token=create_access_token(user.id, device.id),
+        access_token=create_access_token(user.id, device.id, user.token_version),
         refresh_token=refresh,
         expires_in=settings.access_token_expire_minutes * 60,
         user=UserOut.model_validate(user),
@@ -401,12 +403,29 @@ async def refresh(
     # users simply re-login when it lapses.
     _set_refresh_cookie(response, token)
     return TokenResponse(
-        access_token=create_access_token(user.id, device.id),
+        access_token=create_access_token(user.id, device.id, user.token_version),
         refresh_token=token,
         expires_in=settings.access_token_expire_minutes * 60,
         user=UserOut.model_validate(user),
         device_id=device.id,
     )
+
+
+@router.post("/ws-ticket", response_model=WsTicketOut)
+@limiter.limit("60/minute")
+async def ws_ticket(
+    request: Request,
+    identity: CurrentIdentity = Depends(get_current_identity),
+) -> WsTicketOut:
+    """Trade the bearer for a 30-second single-use ticket to open a WebSocket
+    with, so the long-lived access token never appears in a URL or access log."""
+    try:
+        ticket = await ws_ticket_svc.issue(identity.user.id, identity.device.id)
+    except Exception:  # noqa: BLE001 — Redis unreachable
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Live connection temporarily unavailable"
+        )
+    return WsTicketOut(ticket=ticket, expires_in=ws_ticket_svc.TTL_SECONDS)
 
 
 @router.post("/logout", status_code=204)

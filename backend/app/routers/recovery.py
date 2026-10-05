@@ -14,10 +14,12 @@ from app.schemas import (
     RecoverBeginOut,
     RecoverFinishIn,
     RecoverySetupIn,
+    StepUpIn,
 )
 from app.security import hash_password
 from app.services.push import notify_user
 from app.services.sessions import revoke_sessions
+from app.services.stepup import require_password
 
 router = APIRouter(prefix="/recovery", tags=["recovery"])
 
@@ -49,18 +51,29 @@ def _verify(user: User | None, verifier: str) -> User:
 
 
 @router.post("/setup", status_code=204)
+@limiter.limit("10/minute")
 async def setup_recovery(
+    request: Request,
     body: RecoverySetupIn,
     current: User = Depends(get_current_user),
 ) -> None:
     """Store the recovery-key-wrapped private key + verifier. The server never
-    sees the recovery key, only the verifier (a hash), so it can't decrypt this."""
+    sees the recovery key, only the verifier (a hash), so it can't decrypt this.
+    Step-up: replacing recovery material is how a stolen session would plant a
+    permanent back door, so it takes a fresh password."""
+    await require_password(current, body.password)
     current.recovery_key_blob = body.recovery_key_blob.model_dump()
     current.recovery_verifier = _h(body.recovery_verifier)
 
 
 @router.delete("/setup", status_code=204)
-async def clear_recovery(current: User = Depends(get_current_user)) -> None:
+@limiter.limit("10/minute")
+async def clear_recovery(
+    request: Request,
+    body: StepUpIn,
+    current: User = Depends(get_current_user),
+) -> None:
+    await require_password(current, body.password)
     current.recovery_key_blob = None
     current.recovery_verifier = None
 
@@ -94,7 +107,9 @@ async def finish_recovery(
     user.password_hash = await hash_password(body.new_password)
     user.encrypted_private_key = body.encrypted_private_key.model_dump()
     # A recovery reset must evict every existing session (the account may be
-    # compromised — that's why recovery is being used).
+    # compromised — that's why recovery is being used). Bumping token_version
+    # kills already-issued access tokens too, not just refresh tokens.
+    user.token_version += 1
     await revoke_sessions(db, user.id)
     await db.flush()
     # Alert the account's devices — a recovery-key reset bypasses 2FA, so the

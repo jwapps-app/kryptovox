@@ -48,8 +48,14 @@ export function verifyPasskeyLogin(
 }
 
 // ---- Enrollment (attestation) ----
-export function preloadPasskeyRegisterOptions(): Promise<PasskeyOptions> {
-  return api<PasskeyOptions>("/2fa/passkey/register/options", { method: "POST" });
+// Enrolling a factor is a step-up action: the options request carries the
+// current password. Fetch these first (await), then call attestPasskey from a
+// fresh tap — iOS Safari drops the user gesture across an awaited request.
+export function preloadPasskeyRegisterOptions(password: string): Promise<PasskeyOptions> {
+  return api<PasskeyOptions>("/2fa/passkey/register/options", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
 }
 
 // MUST be called directly in the tap handler.

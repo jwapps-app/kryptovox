@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ from app.schemas import (
     GuestThreadDetail,
     GuestThreadOut,
 )
-from app.services import media_owner, media_store
+from app.services import media_owner, media_store, quota
 
 
 async def delete_thread_media(db: AsyncSession, thread_id: uuid.UUID) -> None:
@@ -143,15 +143,21 @@ async def list_links(
 @router.get("/{thread_id}", response_model=GuestThreadDetail)
 async def get_link(
     thread_id: uuid.UUID,
+    after: uuid.UUID | None = Query(
+        default=None,
+        description="Only messages newer than this message id (incremental refresh).",
+    ),
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
 ) -> GuestThreadDetail:
     thread = await _own_thread(db, thread_id, identity.user.id)
-    rows = await db.execute(
-        select(GuestMessage)
-        .where(GuestMessage.thread_id == thread_id)
-        .order_by(GuestMessage.created_at)
-    )
+    q = select(GuestMessage).where(GuestMessage.thread_id == thread_id)
+    if after is not None:
+        anchor = select(GuestMessage.created_at).where(
+            GuestMessage.id == after, GuestMessage.thread_id == thread_id
+        ).scalar_subquery()
+        q = q.where(GuestMessage.created_at > anchor)
+    rows = await db.execute(q.order_by(GuestMessage.created_at))
     msgs = [GuestMessageOut.model_validate(m) for m in rows.scalars().all()]
     detail = GuestThreadDetail(
         id=thread.id,
@@ -228,9 +234,13 @@ async def host_upload_media(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     await _own_thread(db, thread_id, identity.user.id)
-    body = await read_capped_body(request)
-    media_id = await media_store.save(body)
-    await media_owner.record(db, media_id, owner_id=identity.user.id, thread_id=thread_id)
+    async with quota.upload_slot(str(identity.user.id)):
+        body = await read_capped_body(request)
+        await quota.assert_within_quota(db, identity.user.id, len(body))
+        media_id = await media_store.save(body)
+    await media_owner.record(
+        db, media_id, owner_id=identity.user.id, thread_id=thread_id, size_bytes=len(body)
+    )
     return {"id": media_id}
 
 

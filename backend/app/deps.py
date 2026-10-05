@@ -36,7 +36,13 @@ async def get_current_identity(
 
     user = await db.get(User, user_id)
     device = await db.get(Device, device_id)
-    if user is None or device is None or device.user_id != user.id:
+    if (
+        user is None
+        or device is None
+        or device.user_id != user.id
+        # Issued before the last password change / recovery / admin reset.
+        or int(claims.get("tv", 0)) != user.token_version
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Identity no longer valid",

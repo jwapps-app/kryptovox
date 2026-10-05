@@ -26,11 +26,20 @@ import type { Decoded, PublicThread } from "../lib/types";
 
 // Public page for a secret-link recipient — no account. The decryption key is in
 // the URL fragment (never sent to the server).
+// Append newly fetched messages, skipping any we already hold.
+function mergeDecoded(prev: Decoded[], next: Decoded[]): Decoded[] {
+  if (!next.length) return prev;
+  const seen = new Set(prev.map((m) => m.id));
+  const fresh = next.filter((m) => !seen.has(m.id));
+  return fresh.length ? [...prev, ...fresh] : prev;
+}
+
 export default function GuestView() {
   const { id = "" } = useParams();
   const keyB64 = window.location.hash.slice(1);
   const [error, setError] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<Decoded[]>([]);
+  const lastIdRef = useRef<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -49,7 +58,11 @@ export default function GuestView() {
   const load = useCallback(async () => {
     if (!keyRef.current) return;
     try {
-      const res = await fetch(`/api/guest/${id}`);
+      // Incremental: only messages newer than the last one we have. The
+      // thread is re-polled every 20 s, so re-sending (and re-decrypting) the
+      // whole history each time would grow with the thread.
+      const after = lastIdRef.current ? `?after=${encodeURIComponent(lastIdRef.current)}` : "";
+      const res = await fetch(`/api/guest/${id}${after}`);
       if (res.status === 410) return setError("This link has expired.");
       if (!res.ok) return setError("This link is invalid or was removed.");
       const thread = (await res.json()) as PublicThread;
@@ -87,7 +100,8 @@ export default function GuestView() {
           };
         })
       );
-      setMsgs(out);
+      if (out.length) lastIdRef.current = out[out.length - 1].id;
+      setMsgs((prev) => (after ? mergeDecoded(prev, out) : out));
       setThumbs({ ...thumbsRef.current });
     } catch {
       /* transient network error — keep polling */
@@ -120,7 +134,7 @@ export default function GuestView() {
   // a new host reply (thread.activity) instead of waiting for the poll.
   useEffect(() => {
     if (!CALLS_ENABLED || !id) return;
-    connectThreadSocket(id, undefined, () => void load());
+    connectThreadSocket(id, { onActivity: () => void load() });
     return () => disconnectThreadSocket();
   }, [id, load]);
 

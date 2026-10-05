@@ -12,12 +12,13 @@ only one gunicorn worker sweeps each tick (mirrors the retention sweeper).
 """
 import asyncio
 import logging
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
-from app.models import GuestMessage, Message, Note
+from app.models import GuestMessage, MediaBlob, Message, Note
 from app.services import media_store
 
 log = logging.getLogger("kryptovox.blobgc")
@@ -57,17 +58,27 @@ async def referenced_ids(db: AsyncSession) -> set[str]:
 
 
 async def gc_once(db: AsyncSession, grace_seconds: float = _GRACE_SECONDS) -> int:
-    """Delete blobs older than the grace window that no row references. Returns
-    the count removed."""
+    """Delete blobs older than the grace window that no row references, and
+    drop their ownership rows so they stop counting toward the uploader's
+    storage quota. Returns the count removed."""
     candidates = media_store.list_ids(min_age_seconds=grace_seconds)
-    if not candidates:
-        return 0
     referenced = await referenced_ids(db)
     removed = 0
     for media_id in candidates:
         if media_id not in referenced:
             media_store.delete(media_id)
             removed += 1
+    # Ownership rows outlive their files (retention deletes the file, not the
+    # row) and would otherwise hold quota forever.
+    cutoff = datetime.now(UTC) - timedelta(seconds=grace_seconds)
+    stale = (
+        await db.execute(
+            select(MediaBlob.id).where(MediaBlob.created_at < cutoff)
+        )
+    ).scalars().all()
+    orphan_rows = [mid for mid in stale if mid not in referenced]
+    if orphan_rows:
+        await db.execute(delete(MediaBlob).where(MediaBlob.id.in_(orphan_rows)))
     return removed
 
 

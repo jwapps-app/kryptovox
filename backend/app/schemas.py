@@ -58,6 +58,7 @@ class RecoverySetupIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     recovery_key_blob: EncryptedKeyBlob  # private key wrapped under the recovery key
     recovery_verifier: str = Field(min_length=16, max_length=128)
+    password: str = Field(min_length=1, max_length=128)  # step-up: replacing recovery material
 
 
 class RecoverBeginIn(BaseModel):
@@ -131,6 +132,17 @@ class TotpVerifyIn(BaseModel):
     code: str = Field(min_length=4, max_length=10)
 
 
+class StepUpIn(BaseModel):
+    """Fresh proof of the password for security-factor changes."""
+    model_config = ConfigDict(extra="forbid")
+    password: str = Field(min_length=1, max_length=128)
+
+
+class WsTicketOut(BaseModel):
+    ticket: str
+    expires_in: int
+
+
 class BackupCodesOut(BaseModel):
     codes: list[str]
 
@@ -145,6 +157,11 @@ class TwoFAStatus(BaseModel):
 class PasskeyOptionsOut(BaseModel):
     options: dict  # PublicKeyCredential*OptionsJSON for @simplewebauthn/browser
     challenge_token: str
+
+
+class PasskeyRegisterOptionsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    password: str = Field(min_length=1, max_length=128)  # step-up: enrolling a factor
 
 
 class PasskeyRegisterVerify(BaseModel):

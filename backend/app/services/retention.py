@@ -9,7 +9,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, delete, exists, func, or_, select
+from sqlalchemy import and_, delete, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
@@ -36,9 +36,6 @@ async def sweep_once(db: AsyncSession) -> int:
     Effective retention = the conversation's override, or the live global default
     when the override is NULL (inherit). 0 means keep forever."""
     default_days = await get_default_retention_days(db)
-    rows = await db.execute(
-        select(Conversation.id, Conversation.retention_days)
-    )
     now = datetime.now(UTC)
     removed = 0
     # Disappearing messages: each carries its own window (disappear_seconds) and
@@ -58,29 +55,35 @@ async def sweep_once(db: AsyncSession) -> int:
             media_store.delete(mid)
     result = await db.execute(delete(Message).where(expired))
     removed += result.rowcount or 0
-    for conv_id, override in rows.all():
-        days = override if override is not None else default_days
-        if days <= 0:
-            continue
-        cutoff = now - timedelta(days=days)
-        # Delete the encrypted image blobs for expiring messages first.
-        media_ids = await db.execute(
-            select(Message.media["id"].astext).where(
-                Message.conversation_id == conv_id,
-                Message.created_at < cutoff,
-                Message.media.isnot(None),
+    # Age-based retention, set-based: one predicate joins each message to its
+    # conversation's effective window (override, else the global default; 0 =
+    # keep forever) instead of a query pair per conversation.
+    effective_days = func.coalesce(Conversation.retention_days, default_days)
+    aged = and_(
+        Message.conversation_id == Conversation.id,
+        effective_days > 0,
+        Message.created_at < now - effective_days * text("interval '1 day'"),
+    )
+    media_ids = await db.execute(
+        select(Message.media["id"].astext)
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(aged, Message.media.isnot(None))
+    )
+    for mid in media_ids.scalars().all():
+        if mid:
+            media_store.delete(mid)
+    result = await db.execute(
+        delete(Message).where(
+            Message.id.in_(
+                select(Message.id)
+                .select_from(Message)
+                .join(Conversation, Conversation.id == Message.conversation_id)
+                .where(aged)
             )
         )
-        for mid in media_ids.scalars().all():
-            if mid:
-                media_store.delete(mid)
-        result = await db.execute(
-            delete(Message).where(
-                Message.conversation_id == conv_id,
-                Message.created_at < cutoff,
-            )
-        )
-        removed += result.rowcount or 0
+    )
+    removed += result.rowcount or 0
     # Secret-link thread cleanup (messages cascade):
     #  - time-based: delete at expiry.
     #  - burn, opened: the creator's post-window read deletes it; this is just a

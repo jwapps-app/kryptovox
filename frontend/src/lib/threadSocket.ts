@@ -4,6 +4,7 @@
 // secret-link call feature.
 import { useCalls, setCallTransport } from "../store/calls";
 import { CALLS_ENABLED } from "./features";
+import { fetchWsTicket } from "./wsTicket";
 
 let sock: WebSocket | null = null;
 let curThread: string | null = null;
@@ -24,16 +25,29 @@ export function armThreadTransport(): void {
 // the page can refresh in real time instead of relying on slow polling.
 export function connectThreadSocket(
   threadId: string,
-  token?: string,
-  onActivity?: () => void
+  opts: { asHost?: boolean; onActivity?: () => void } = {}
 ): void {
   if (!CALLS_ENABLED) return;
-  activityCb = onActivity ?? null;
+  activityCb = opts.onActivity ?? null;
   if (sock && curThread === threadId && sock.readyState <= WebSocket.OPEN) return;
   disconnectThreadSocket();
   curThread = threadId;
+  // The host proves itself with a single-use ticket (never the bearer in the
+  // URL); a guest connects anonymously — possession of the thread id is its
+  // authorization.
+  void (async () => {
+    let q = "";
+    if (opts.asHost) {
+      const ticket = await fetchWsTicket();
+      if (curThread !== threadId) return; // superseded while fetching
+      if (ticket) q = `?ticket=${encodeURIComponent(ticket)}`;
+    }
+    open(threadId, q);
+  })();
+}
+
+function open(threadId: string, q: string): void {
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  const q = token ? `?token=${encodeURIComponent(token)}` : "";
   const ws = new WebSocket(`${proto}://${window.location.host}/api/guest-ws/${threadId}${q}`);
   sock = ws;
   ws.onmessage = (e) => {

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import get_current_admin, get_current_user
+from app.deps import get_current_admin, get_current_user, require_enrolled
 from app.models import User
 from app.schemas import AppConfigOut, AppConfigUpdate
 from app.services.app_settings import (
@@ -27,7 +27,7 @@ async def get_config(
     )
 
 
-@router.put("", response_model=AppConfigOut)
+@router.put("", response_model=AppConfigOut, dependencies=[Depends(require_enrolled)])
 async def update_config(
     body: AppConfigUpdate,
     _: User = Depends(get_current_admin),
