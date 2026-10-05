@@ -1,4 +1,4 @@
-import { EditorContent, useEditor, type Editor } from "@tiptap/react";
+import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
@@ -27,8 +27,8 @@ export default function RichNoteEditor({
       attributes: { class: "kv-md kv-rte outline-none min-h-full pb-10" },
     },
     onUpdate: ({ editor }) => {
-      const md = (editor.storage.markdown as { getMarkdown: () => string }).getMarkdown();
-      onChange(md);
+      const storage = editor.storage as unknown as { markdown: { getMarkdown: () => string } };
+      onChange(storage.markdown.getMarkdown());
     },
   });
 
@@ -43,6 +43,19 @@ export default function RichNoteEditor({
 }
 
 function Toolbar({ editor }: { editor: Editor }) {
+  // The editor no longer re-renders React on every transaction; subscribe to
+  // just the active-mark flags so the buttons track the selection.
+  const active = useEditorState({
+    editor,
+    selector: ({ editor: e }) => ({
+      bold: e.isActive("bold"),
+      italic: e.isActive("italic"),
+      heading: e.isActive("heading", { level: 2 }),
+      bulletList: e.isActive("bulletList"),
+      orderedList: e.isActive("orderedList"),
+      taskList: e.isActive("taskList"),
+    }),
+  });
   // preventDefault so tapping a button doesn't blur the editor / lose selection.
   const run = (fn: () => void) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -62,28 +75,28 @@ function Toolbar({ editor }: { editor: Editor }) {
   return (
     <div className="mb-1 flex gap-1 border-b border-gray-100 pb-2">
       <button
-        className={`${cls(editor.isActive("bold"))} font-bold`}
+        className={`${cls(active.bold)} font-bold`}
         onMouseDown={run(() => editor.chain().focus().toggleBold().run())}
         aria-label="Bold"
       >
         B
       </button>
       <button
-        className={`${cls(editor.isActive("italic"))} font-serif italic`}
+        className={`${cls(active.italic)} font-serif italic`}
         onMouseDown={run(() => editor.chain().focus().toggleItalic().run())}
         aria-label="Italic"
       >
         I
       </button>
       <button
-        className={`${cls(editor.isActive("heading", { level: 2 }))} font-semibold`}
+        className={`${cls(active.heading)} font-semibold`}
         onMouseDown={run(() => editor.chain().focus().toggleHeading({ level: 2 }).run())}
         aria-label="Heading"
       >
         H
       </button>
       <button
-        className={cls(editor.isActive("bulletList"))}
+        className={cls(active.bulletList)}
         onMouseDown={run(() => editor.chain().focus().toggleBulletList().run())}
         aria-label="Bulleted list"
       >
@@ -97,7 +110,7 @@ function Toolbar({ editor }: { editor: Editor }) {
         </svg>
       </button>
       <button
-        className={cls(editor.isActive("orderedList"))}
+        className={cls(active.orderedList)}
         onMouseDown={run(() => editor.chain().focus().toggleOrderedList().run())}
         aria-label="Numbered list"
       >
@@ -109,7 +122,7 @@ function Toolbar({ editor }: { editor: Editor }) {
         </svg>
       </button>
       <button
-        className={cls(editor.isActive("taskList"))}
+        className={cls(active.taskList)}
         onMouseDown={run(() => editor.chain().focus().toggleTaskList().run())}
         aria-label="Checklist"
       >

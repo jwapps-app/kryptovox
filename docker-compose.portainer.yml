@@ -137,15 +137,30 @@ services:
       - sh
       - -c
       - |
+        set -o pipefail
         while true; do
           ts=$$(date +%Y%m%d_%H%M%S)
-          pg_dump -h postgres -U "$${POSTGRES_USER}" "$${POSTGRES_DB}" \
-            | gzip > "/backup/kryptovox_$${ts}.sql.gz" \
-            && echo "db backup written: kryptovox_$${ts}.sql.gz" \
-            || echo "db backup FAILED at $${ts}"
-          tar czf "/backup/media_$${ts}.tar.gz" -C /media . \
-            && echo "media backup written: media_$${ts}.tar.gz" \
-            || echo "media backup FAILED at $${ts}"
+          # pg_dump compresses in-process (-Z) and writes to a temp name that is
+          # only renamed into place when the dump exited cleanly and is non-empty,
+          # so a failed dump can never be mistaken for a good backup, and the
+          # retention sweep below won't be left with an empty file as "newest".
+          tmp="/backup/.kryptovox_$${ts}.sql.gz.partial"
+          if pg_dump -h postgres -U "$${POSTGRES_USER}" "$${POSTGRES_DB}" -Z 6 -f "$$tmp" \
+             && [ -s "$$tmp" ]; then
+            mv "$$tmp" "/backup/kryptovox_$${ts}.sql.gz" \
+              && echo "db backup written: kryptovox_$${ts}.sql.gz"
+          else
+            rm -f "$$tmp"
+            echo "db backup FAILED at $${ts}"
+          fi
+          tmp="/backup/.media_$${ts}.tar.gz.partial"
+          if tar czf "$$tmp" -C /media . && [ -s "$$tmp" ]; then
+            mv "$$tmp" "/backup/media_$${ts}.tar.gz" \
+              && echo "media backup written: media_$${ts}.tar.gz"
+          else
+            rm -f "$$tmp"
+            echo "media backup FAILED at $${ts}"
+          fi
           cp /vapid/vapid_private.pem /backup/vapid_private.pem 2>/dev/null \
             && echo "vapid key copied" || echo "vapid key not found (yet)"
           find /backup -name 'kryptovox_*.sql.gz' -mtime +$${BACKUP_RETENTION_DAYS} -delete

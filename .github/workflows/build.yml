@@ -44,6 +44,10 @@ jobs:
         run: pip install -r backend/requirements-dev.txt
       - name: Lint (ruff)
         run: ruff check backend/app backend/tests
+      - name: Dependency advisories (pip-audit)
+        # Production dependencies only. A new advisory fails the gate so the
+        # image can't be built on a known-vulnerable pin; bump the pin to clear.
+        run: pip install pip-audit && pip-audit -r backend/requirements.txt --desc off
       - name: Unit tests (pytest)
         working-directory: backend
         run: pytest
@@ -63,6 +67,11 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
+      - name: Dependency advisories (npm audit)
+        # Runtime (bundled) dependencies, high and above. Same policy as the
+        # backend gate: bump the dependency to clear it.
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
       - name: Typecheck + build
         working-directory: frontend
         run: npm run build
