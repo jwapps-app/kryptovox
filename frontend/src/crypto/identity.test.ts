@@ -66,3 +66,13 @@ describe("recovery key", () => {
     expect(normalizeRecoveryKey("ab12-cd34 ef56")).toBe("AB12CD34EF56");
   });
 });
+
+describe("auth secret derivation", () => {
+  it("matches the shared cross-client vector and is case-insensitive in the username", async () => {
+    const { deriveAuthSecret } = await import("./identity");
+    const expected = "tITuiaFfTHZI0_Q-eXgKc-iB7wwPec8uyUubzRitO4k";
+    expect(await deriveAuthSecret("alice", "correct horse battery staple")).toBe(expected);
+    expect(await deriveAuthSecret("  Alice ", "correct horse battery staple")).toBe(expected);
+    expect(await deriveAuthSecret("bob", "correct horse battery staple")).not.toBe(expected);
+  });
+});

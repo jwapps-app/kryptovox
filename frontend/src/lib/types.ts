@@ -8,6 +8,9 @@ export interface User {
   has_avatar?: boolean;
   twofa_enabled?: boolean;
   has_recovery?: boolean;
+  // 2 = password-confirming calls take the derived auth secret; 1 = this
+  // account hasn't been upgraded yet and still takes the raw password.
+  auth_version?: number;
 }
 
 export interface AdminUser {

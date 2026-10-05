@@ -1,7 +1,7 @@
 import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
 from jwt import InvalidTokenError
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from app.deps import CurrentIdentity, get_current_identity
 from app.models import ApnsToken, AuthToken, Device, User, WebauthnCredential
 from app.ratelimit import limiter
 from app.schemas import (
+    LoginParamsOut,
     LoginRequest,
     LoginResponse,
     PasskeyLoginOptionsIn,
@@ -157,6 +158,7 @@ async def register(
         username=body.username,
         display_name=body.display_name or body.username,
         password_hash=await hash_password(body.password),
+        auth_version=2,  # clients send the derived auth secret
         is_admin=True,  # first user bootstraps as admin
         identity_public_key=body.identity_public_key,
         encrypted_private_key=body.encrypted_private_key.model_dump(),
@@ -188,6 +190,20 @@ async def _login_device(db: AsyncSession, response: Response, user: User, name: 
     return await _issue_tokens(db, response, user, device)
 
 
+@router.get("/login-params", response_model=LoginParamsOut)
+@limiter.limit("30/minute")
+async def login_params(
+    request: Request,
+    username: str = Query(min_length=1, max_length=32),
+    db: AsyncSession = Depends(get_db),
+) -> LoginParamsOut:
+    """Which credential form the account takes (see LoginRequest). Reports the
+    current form (2) for unknown usernames so this can't enumerate accounts
+    beyond the one-time legacy transition."""
+    version = await db.scalar(select(User.auth_version).where(User.username == username))
+    return LoginParamsOut(auth_version=int(version or 2))
+
+
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit("10/minute")
 async def login(
@@ -197,13 +213,27 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     user = await db.scalar(select(User).where(User.username == body.username))
+    # Which secret the stored hash was made from: for a legacy account the raw
+    # password (sent as legacy_password by a current client, or as `password`
+    # by a client that predates derivation); otherwise the derived secret.
+    if user is not None and user.auth_version < 2:
+        presented = body.legacy_password or body.password
+    else:
+        presented = body.password
     # Verify against a dummy hash for unknown usernames too, so response
     # timing can't be used to enumerate accounts.
     password_ok = await verify_password(
-        body.password, user.password_hash if user else DUMMY_PASSWORD_HASH
+        presented, user.password_hash if user else DUMMY_PASSWORD_HASH
     )
     if user is None or not password_ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+    if user.auth_version < 2 and body.legacy_password:
+        # Legacy hash proven by a current client: re-hash the derived secret
+        # so the raw password is never sent again. Bumping token_version is
+        # unnecessary (same user, same sessions) — only the stored hash changes.
+        user.password_hash = await hash_password(body.password)
+        user.auth_version = 2
+        await db.flush()
 
     # 2FA enrolled → don't issue a session yet; require the second factor.
     if user.twofa_enabled:

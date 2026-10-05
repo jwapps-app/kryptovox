@@ -52,6 +52,7 @@ async def create_user(
         username=body.username,
         display_name=body.display_name or body.username,
         password_hash=await hash_password(body.password),
+        auth_version=2,  # the admin client derives the secret for this username
         is_admin=body.is_admin,
     )
     db.add(user)
@@ -80,6 +81,7 @@ async def update_user(
         user.is_admin = body.is_admin
     if body.password is not None:
         user.password_hash = await hash_password(body.password)
+        user.auth_version = 2
         user.token_version += 1  # also invalidates every outstanding access token
         # An administrative reset must also end the account's existing sessions.
         # NOTE: the user's E2EE identity stays wrapped under their OLD password —

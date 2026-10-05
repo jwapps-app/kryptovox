@@ -27,6 +27,12 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # 1: password_hash is bcrypt(raw password) — legacy, upgraded on next login.
+    # 2: password_hash is bcrypt(client-derived auth secret); the server never
+    #    sees the password that also unwraps the identity key.
+    auth_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1", default=2
+    )
     # Server administrator: can provision new users and grant/revoke admin.
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Embedded in every access token (`tv`); bumping it invalidates all of them
