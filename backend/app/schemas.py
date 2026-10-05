@@ -4,6 +4,16 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+def _bcrypt_fits(v: str) -> str:
+    # bcrypt only hashes the first 72 BYTES; anything past that silently never
+    # counts toward authentication. Reject at password-SET time so two passwords
+    # differing only after byte 72 can't both authenticate. (Login is not
+    # checked here so existing long passwords keep working.)
+    if len(v.encode("utf-8")) > 72:
+        raise ValueError("password must be at most 72 bytes")
+    return v
+
+
 # ---------- Auth ----------
 class EncryptedKeyBlob(BaseModel):
     # Password-wrapped private key: AES-GCM(ciphertext) under PBKDF2(salt, iter).
@@ -18,6 +28,7 @@ class RegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str = Field(min_length=3, max_length=32)
     password: str = Field(min_length=8, max_length=128)
+    _pw = field_validator("password")(_bcrypt_fits)
     display_name: str | None = Field(default=None, max_length=64)
     device_name: str | None = Field(default=None, max_length=64)
     identity_public_key: str = Field(min_length=16, max_length=128)  # base64url X25519
@@ -66,6 +77,7 @@ class RecoverFinishIn(BaseModel):
     recovery_verifier: str = Field(min_length=16, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
     encrypted_private_key: EncryptedKeyBlob  # re-wrapped under the new password
+    _pw = field_validator("new_password")(_bcrypt_fits)
 
 
 # ---------- Self-service account control ----------
@@ -73,6 +85,7 @@ class PasswordChangeIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
+    _pw = field_validator("new_password")(_bcrypt_fits)
     # Identity private key re-wrapped under the new password (the server can't do
     # this — it never has the plaintext key).
     encrypted_private_key: EncryptedKeyBlob
@@ -204,6 +217,7 @@ class AdminUserCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str = Field(min_length=3, max_length=32)
     password: str = Field(min_length=8, max_length=128)
+    _pw = field_validator("password")(_bcrypt_fits)
     display_name: str | None = Field(default=None, max_length=64)
     is_admin: bool = False
 
@@ -212,6 +226,11 @@ class AdminUserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     is_admin: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def _pw(cls, v: str | None) -> str | None:
+        return v if v is None else _bcrypt_fits(v)
 
 
 class AdminUserOut(BaseModel):
@@ -467,6 +486,9 @@ class MessageOut(BaseModel):
     conversation_id: uuid.UUID
     sender_id: uuid.UUID | None
     sender_device_id: uuid.UUID | None
+    # Sender's identity key at send time — lets recipients decrypt even after the
+    # sender's account is deleted (sender_id becomes null).
+    sender_public_key: str | None = None
     ciphertext: str
     iv: str
     encrypted_keys: dict[str, str]

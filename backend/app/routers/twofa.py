@@ -164,7 +164,7 @@ async def passkey_register_verify(
     db: AsyncSession = Depends(get_db),
 ) -> BackupCodesOut:
     rp_id, origin = rp_and_origin(request)
-    user_id, challenge_b64 = decode_challenge_token(body.challenge_token)
+    user_id, challenge_b64, _ = decode_challenge_token(body.challenge_token)
     if user_id != current.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Bad challenge")
     try:

@@ -1,5 +1,8 @@
+import ipaddress
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -17,9 +20,28 @@ class PushKeys(BaseModel):
 
 class PushSubscription(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    endpoint: str
+    endpoint: str = Field(max_length=2048)
     keys: PushKeys
     expirationTime: float | None = None
+
+    @field_validator("endpoint")
+    @classmethod
+    def _public_https_endpoint(cls, v: str) -> str:
+        # The server POSTs to this URL. Without this check a user could point it
+        # at loopback / RFC1918 / link-local and turn web push into SSRF.
+        u = urlparse(v)
+        host = (u.hostname or "").lower()
+        if u.scheme != "https" or not host:
+            raise ValueError("push endpoint must be an https URL")
+        if host in ("localhost",) or host.endswith(".local") or host.endswith(".internal"):
+            raise ValueError("push endpoint host not allowed")
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            return v  # a hostname, not an IP literal — allowed
+        if not ip.is_global:
+            raise ValueError("push endpoint host not allowed")
+        return v
 
 
 @router.get("/vapid-public-key")

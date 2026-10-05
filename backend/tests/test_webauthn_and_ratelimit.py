@@ -26,9 +26,17 @@ def _request(headers: dict, client_host: str | None = "203.0.113.9") -> Request:
 def test_challenge_token_roundtrip():
     uid = uuid.uuid4()
     tok = create_challenge_token(uid, "Y2hhbGxlbmdl")
-    got_uid, ch = decode_challenge_token(tok)
+    got_uid, ch, pj = decode_challenge_token(tok)
     assert got_uid == uid
     assert ch == "Y2hhbGxlbmdl"
+    assert pj is None  # registration challenges aren't bound to a pending login
+
+
+def test_challenge_token_binds_pending_login():
+    uid = uuid.uuid4()
+    tok = create_challenge_token(uid, "Y2hhbGxlbmdl", pending_jti="abc123")
+    _, _, pj = decode_challenge_token(tok)
+    assert pj == "abc123"
 
 
 def test_non_challenge_token_rejected():

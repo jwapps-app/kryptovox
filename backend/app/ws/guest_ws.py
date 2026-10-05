@@ -24,7 +24,7 @@ from jwt import PyJWTError as JWTError
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import GuestThread
+from app.models import Device, GuestThread
 from app.redis_client import redis
 from app.security import decode_access_token
 from app.services.fanout import fanout_user
@@ -85,9 +85,17 @@ async def _is_host(token: str, creator_id: uuid.UUID) -> bool:
         return False
     try:
         claims = decode_access_token(token)
-        return uuid.UUID(claims["sub"]) == creator_id
+        user_id = uuid.UUID(claims["sub"])
+        device_id = uuid.UUID(claims["did"])
     except (JWTError, KeyError, ValueError):
         return False
+    if user_id != creator_id:
+        return False
+    # Same rule as REST / the main socket: a revoked device's unexpired token
+    # must not identify as the host.
+    async with SessionLocal() as db:
+        device = await db.get(Device, device_id)
+        return device is not None and device.user_id == creator_id
 
 
 async def _ring_allowed(thread_id: uuid.UUID) -> bool:
@@ -199,6 +207,16 @@ async def guest_ws(websocket: WebSocket, thread_id: uuid.UUID, token: str = "") 
             # Only the host may answer; a non-host answer is dropped.
             if event_type == "call.answer" and not is_host:
                 continue
+            # Once a guest is paired, only THAT guest's connection may send the
+            # call's non-offer frames (ICE/hangup/decline/busy) — another holder
+            # of the link id can't inject into or tear down the call.
+            if (
+                not is_host
+                and event_type != "call.offer"
+                and guest_src
+                and src != guest_src
+            ):
+                continue
 
             # Target the paired peer where known, so a third link holder never
             # receives the media negotiation (ICE/answer) and can't inject.
@@ -240,8 +258,10 @@ async def guest_ws(websocket: WebSocket, thread_id: uuid.UUID, token: str = "") 
         pass
     finally:
         hub.unregister_thread(websocket, tid)
-        # If the guest drops mid-call, tell the host so their UI resets.
-        if not is_host:
+        # If the PAIRED guest drops mid-call, tell the host so their UI resets.
+        # (An unpaired observer disconnecting must not tear down someone's call.)
+        state = json.loads(await _rget(call_key) or "{}")
+        if not is_host and state.get("guest") == src:
             await _rdel(offer_key, call_key)
             try:
                 await hub.publish_thread(tid, envelope("call.hangup", {}))

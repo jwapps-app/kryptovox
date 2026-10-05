@@ -68,6 +68,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
             return
 
     await websocket.accept()
+    websocket._kv_device = str(device_id)  # type: ignore[attr-defined]  # for revocation
     hub.register(websocket, str(user_id))
     await mark_online(device_id)
     await _touch_last_seen(device_id)

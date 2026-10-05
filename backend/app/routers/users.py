@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -118,10 +118,18 @@ async def set_my_identity(
     """Establish the user's identity if not already set. Idempotent: if another
     device set it first, returns the existing one (the client should use that)."""
     if current.identity_public_key is None:
-        current.identity_public_key = body.identity_public_key
-        current.encrypted_private_key = body.encrypted_private_key.model_dump()
-        db.add(current)
-        await db.flush()
+        # Atomic compare-and-set: two devices doing their first login at once
+        # would otherwise both read NULL and the later write would silently
+        # overwrite the first identity. Only the row still NULL takes the write.
+        await db.execute(
+            update(User)
+            .where(User.id == current.id, User.identity_public_key.is_(None))
+            .values(
+                identity_public_key=body.identity_public_key,
+                encrypted_private_key=body.encrypted_private_key.model_dump(),
+            )
+        )
+        await db.refresh(current)  # return the winning identity, ours or theirs
     return IdentityOut(
         identity_public_key=current.identity_public_key,
         encrypted_private_key=current.encrypted_private_key,

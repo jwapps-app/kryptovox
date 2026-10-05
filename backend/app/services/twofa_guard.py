@@ -81,9 +81,15 @@ async def assert_pending_unused(jti: str) -> None:
 
 
 async def consume_pending(jti: str) -> None:
+    """Atomically claim the pending-login token (SET NX). Raises _REPLAYED if it
+    was already claimed — two concurrent completions can't both mint a session —
+    and fails CLOSED if Redis is unavailable (can't prove single-use)."""
     if not jti:
         return
     try:
-        await redis.set(_USED_PREFIX + jti, "1", ex=_USED_TTL)
+        claimed = await redis.set(_USED_PREFIX + jti, "1", ex=_USED_TTL, nx=True)
     except Exception as exc:  # noqa: BLE001
-        log.warning("pending-2FA consume skipped (Redis): %s", exc)
+        log.warning("pending-2FA consume unavailable (Redis): %s", exc)
+        raise _UNAVAILABLE from exc
+    if not claimed:
+        raise _REPLAYED

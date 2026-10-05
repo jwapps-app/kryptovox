@@ -34,7 +34,12 @@ def rp_and_origin(request: Request) -> tuple[str, str]:
     return rp_id, origin
 
 
-def create_challenge_token(user_id: uuid.UUID, challenge_b64: str) -> str:
+def create_challenge_token(
+    user_id: uuid.UUID, challenge_b64: str, pending_jti: str | None = None
+) -> str:
+    """Stateless challenge. For LOGIN ceremonies `pending_jti` binds the
+    challenge to one specific pending-login token, so a captured assertion can't
+    be replayed against a different pending token for the same user."""
     now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
@@ -43,11 +48,13 @@ def create_challenge_token(user_id: uuid.UUID, challenge_b64: str) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=5),
     }
+    if pending_jti:
+        payload["pj"] = pending_jti
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
-def decode_challenge_token(token: str) -> tuple[uuid.UUID, str]:
+def decode_challenge_token(token: str) -> tuple[uuid.UUID, str, str | None]:
     claims = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
     if claims.get("type") != "webauthn_challenge":
         raise InvalidTokenError("not a challenge token")
-    return uuid.UUID(claims["sub"]), claims["ch"]
+    return uuid.UUID(claims["sub"]), claims["ch"], claims.get("pj")
