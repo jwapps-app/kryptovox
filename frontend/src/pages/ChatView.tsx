@@ -154,6 +154,16 @@ export default function ChatView() {
       .catch(() => navigate("/"));
   }, [id, loadMessages, navigate]);
 
+  // Keep the roster current: the store's conversation list is refreshed on
+  // every conversation.updated event (members added/removed), so follow it
+  // rather than sending to the membership fetched when the page opened.
+  const storeConv = useChat((s) => s.conversations.find((c) => c.id === id));
+  useEffect(() => {
+    if (!storeConv) return;
+    cacheUserKeys(storeConv.members);
+    setConv((prev) => (prev ? { ...prev, members: storeConv.members } : prev));
+  }, [storeConv]);
+
   // New conversation → start pinned to the latest message.
   useEffect(() => {
     stickToBottom.current = true;
@@ -179,11 +189,13 @@ export default function ChatView() {
     return () => ro.disconnect();
   }, []);
 
-  // Mark the newest non-own message read (unless read receipts are disabled).
+  // Mark the newest non-own message read. With read receipts off we still
+  // record the read (so unread counts and the badge clear on every device) but
+  // ask the server not to tell the other members.
   useEffect(() => {
     const last = messages[messages.length - 1];
-    if (last && last.sender_id !== user.id && getPrefs().readReceipts) {
-      void markRead(id, last.id);
+    if (last && last.sender_id !== user.id) {
+      void markRead(id, last.id, { silent: !getPrefs().readReceipts });
     }
   }, [messages, id, user.id, markRead]);
 
@@ -253,7 +265,8 @@ export default function ChatView() {
       const readMsg = messages.find((x) => x.id === mid);
       return readMsg ? readMsg.created_at >= m.created_at : false;
     });
-    return readByOther ? "read" : "delivered";
+    // No delivery tracking exists, so the only states are sent and read.
+    return readByOther ? "read" : "sent";
   };
 
   // Coalesce scroll work to one frame so the layout reads (scrollHeight) don't

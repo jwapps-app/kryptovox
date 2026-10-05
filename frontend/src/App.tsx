@@ -28,8 +28,16 @@ const NotesList = lazy(() => import("./pages/NotesList"));
 
 // Deep-link targets must be in-app paths; reject absolute / protocol-relative
 // URLs so a hostile push payload can't redirect the app off-site.
-const internalPath = (u: unknown): u is string =>
-  typeof u === "string" && u.startsWith("/") && !u.startsWith("//");
+const internalPath = (u: unknown): u is string => {
+  if (typeof u !== "string" || !u.startsWith("/")) return false;
+  try {
+    // Resolve and compare origins — catches backslash and other spellings a
+    // plain "//" prefix check misses.
+    return new URL(u, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+};
 
 export default function App() {
   const status = useAuth((s) => s.status);

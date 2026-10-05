@@ -14,6 +14,14 @@ export function getDraft(conversationId: string): string {
   return all()[conversationId] ?? "";
 }
 
+export function clearDrafts(): void {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function setDraft(conversationId: string, text: string): void {
   const drafts = all();
   if (text) drafts[conversationId] = text;

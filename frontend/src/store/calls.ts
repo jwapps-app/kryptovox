@@ -215,6 +215,20 @@ export const useCalls = create<CallState>((set, get) => ({
 
   onSignal: async (event) => {
     const p = (event.payload || {}) as Record<string, unknown>;
+    // On the main socket the server stamps `from`; once we're paired with a
+    // peer, only that peer may drive the call (answer/ICE/hangup/decline/busy).
+    // Thread-socket frames carry no `from` (the server targets them) and skip
+    // this check. A fresh offer is handled by the busy branch below.
+    const { peerId } = get();
+    if (
+      event.type !== "call.offer" &&
+      event.type !== "call.incoming" &&
+      peerId &&
+      typeof p.from === "string" &&
+      p.from !== peerId
+    ) {
+      return;
+    }
     switch (event.type) {
       case "call.incoming": {
         // Doorbell over the main socket: a guest is calling on a secret link and

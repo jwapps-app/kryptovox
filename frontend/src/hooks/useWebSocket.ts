@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { getAccessToken } from "../lib/api";
+import { getAccessToken, refreshToken } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { useCalls } from "../store/calls";
@@ -20,7 +20,14 @@ export function useWebSocket(): void {
     if (status !== "authed") return;
     closedRef.current = false;
 
-    const connect = () => {
+    const connect = async () => {
+      const reconnecting = attemptRef.current > 0;
+      if (reconnecting) {
+        // The access token may have expired while we were disconnected; a
+        // stale one would just be rejected at the handshake and loop.
+        await refreshToken().catch(() => false);
+      }
+      if (closedRef.current) return;
       const token = getAccessToken();
       if (!token) return;
       const proto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -30,6 +37,9 @@ export function useWebSocket(): void {
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       ws.onopen = () => {
         attemptRef.current = 0;
+        // Anything that happened while the socket was down was never
+        // delivered — pull the current state rather than trusting the cache.
+        if (reconnecting) void useChat.getState().resync();
         // Heartbeat keeps presence "online" — but only while the app is
         // foreground, so a hidden tab is treated as offline and gets pushed.
         heartbeat = setInterval(() => {
@@ -68,12 +78,12 @@ export function useWebSocket(): void {
         if (closedRef.current) return;
         const delay = Math.min(1000 * 2 ** attemptRef.current, 30000);
         attemptRef.current += 1;
-        setTimeout(connect, delay);
+        setTimeout(() => void connect(), delay);
       };
       ws.onerror = () => ws.close();
     };
 
-    connect();
+    void connect();
 
     // Tell the server when we background/foreground so push targets a hidden
     // tab (the socket stays connected, so disconnect alone wouldn't catch it).

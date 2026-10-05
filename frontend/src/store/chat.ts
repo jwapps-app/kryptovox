@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
-import { cacheUserKeys, gatherRecipients, getUserPublicKey } from "../lib/keys";
+import { cacheUserKeys, clearKeyCache, gatherRecipients, getUserPublicKey } from "../lib/keys";
 import { syncBadge } from "../lib/badge";
-import { syncAvatarKeys } from "../lib/avatars";
+import { clearAvatarCache, syncAvatarKeys } from "../lib/avatars";
+import { clearDrafts } from "../lib/drafts";
 import { decryptMessage, encryptMessage } from "../crypto/messaging";
 import {
   decryptFileBlob,
@@ -17,6 +18,7 @@ import type { Conversation, Message, MessagePage, WsEvent } from "../lib/types";
 
 interface ChatState {
   conversations: Conversation[];
+  lastLoadedConv: string | null; // most recently opened conversation (for resync)
   messagesByConv: Record<string, Message[]>;
   textByMessage: Record<string, string>;
   thumbByMessage: Record<string, string>; // messageId -> decrypted thumbnail object URL
@@ -58,8 +60,17 @@ interface ChatState {
     memberIds: string[]
   ) => Promise<void>;
   unsend: (messageId: string, conversationId: string) => Promise<void>;
-  markRead: (conversationId: string, messageId: string) => Promise<void>;
+  markRead: (
+    conversationId: string,
+    messageId: string,
+    opts?: { silent?: boolean }
+  ) => Promise<void>;
   markUnread: (conversationId: string) => Promise<void>;
+  // Re-fetch the conversation list and the open conversation after the live
+  // socket reconnects, since events sent while it was down are gone.
+  resync: () => Promise<void>;
+  // Forget everything (sign-out / account switch) and release object URLs.
+  reset: () => void;
   toggleReaction: (
     conversationId: string,
     messageId: string,
@@ -69,13 +80,36 @@ interface ChatState {
   handleWsEvent: (event: WsEvent) => Promise<void>;
 }
 
+// The sender's identity key: the live directory entry when we can get it,
+// otherwise the key the server pinned on the message at send time (so history
+// from a deleted account still decrypts).
+async function senderKeyFor(msg: Message): Promise<string | null> {
+  if (msg.sender_id) {
+    try {
+      const live = await getUserPublicKey(msg.sender_id);
+      if (live) return live;
+    } catch {
+      /* account gone — fall through to the pinned key */
+    }
+  }
+  return msg.sender_public_key ?? null;
+}
+
+// Release the object URLs behind a set of thumbnails we're about to forget.
+function revokeThumbs(thumbs: Record<string, string>, ids: Iterable<string>): void {
+  for (const id of ids) {
+    const u = thumbs[id];
+    if (u) URL.revokeObjectURL(u);
+  }
+}
+
 async function decryptThumbForMe(msg: Message): Promise<string | null> {
   if (msg.type !== "image" || !msg.media || msg.deleted_at) return null;
   const { identity, user } = useAuth.getState();
-  if (!identity || !user || !msg.sender_id) return null;
+  if (!identity || !user) return null;
   const wrapped = msg.encrypted_keys[user.id];
   if (!wrapped) return null;
-  const senderPub = await getUserPublicKey(msg.sender_id);
+  const senderPub = await senderKeyFor(msg);
   if (!senderPub) return null;
   try {
     const blob = await decryptThumb(msg.media, wrapped, senderPub, identity.privateKey);
@@ -91,8 +125,7 @@ async function decryptForMe(msg: Message): Promise<string> {
   if (!identity || !user) return "🔒";
   const wrapped = msg.encrypted_keys[user.id];
   if (!wrapped) return "[not encrypted for you]";
-  if (!msg.sender_id) return "[unknown sender]";
-  const senderPub = await getUserPublicKey(msg.sender_id);
+  const senderPub = await senderKeyFor(msg);
   if (!senderPub) return "[unknown sender key]";
   try {
     return await decryptMessage(
@@ -121,6 +154,11 @@ function appendSent(
   set((s) => {
     const existing = s.messagesByConv[conversationId] ?? [];
     const already = existing.some((m) => m.id === msg.id);
+    // The echo won the race and already holds a thumbnail — don't leak ours.
+    if (already && local.thumbUrl && s.thumbByMessage[msg.id]) {
+      URL.revokeObjectURL(local.thumbUrl);
+      local = { text: local.text };
+    }
     return {
       messagesByConv: {
         ...s.messagesByConv,
@@ -138,6 +176,7 @@ function appendSent(
 
 export const useChat = create<ChatState>((set, get) => ({
   conversations: [],
+  lastLoadedConv: null,
   messagesByConv: {},
   textByMessage: {},
   thumbByMessage: {},
@@ -174,6 +213,10 @@ export const useChat = create<ChatState>((set, get) => ({
     await api(`/conversations/${conversationId}/leave`, { method: "POST" });
     set((s) => {
       const messagesByConv = { ...s.messagesByConv };
+      revokeThumbs(
+        s.thumbByMessage,
+        (messagesByConv[conversationId] ?? []).map((m) => m.id)
+      );
       delete messagesByConv[conversationId];
       return {
         conversations: s.conversations.filter((c) => c.id !== conversationId),
@@ -197,13 +240,20 @@ export const useChat = create<ChatState>((set, get) => ({
 
   clearHistory: async (conversationId) => {
     await api(`/conversations/${conversationId}/clear`, { method: "POST" });
-    set((s) => ({
-      messagesByConv: { ...s.messagesByConv, [conversationId]: [] },
-      cursorByConv: { ...s.cursorByConv, [conversationId]: null },
-    }));
+    set((s) => {
+      revokeThumbs(
+        s.thumbByMessage,
+        (s.messagesByConv[conversationId] ?? []).map((m) => m.id)
+      );
+      return {
+        messagesByConv: { ...s.messagesByConv, [conversationId]: [] },
+        cursorByConv: { ...s.cursorByConv, [conversationId]: null },
+      };
+    });
   },
 
   loadMessages: async (conversationId) => {
+    set({ lastLoadedConv: conversationId });
     const page = await api<MessagePage>(`/conversations/${conversationId}/messages`);
     const texts: Record<string, string> = {};
     const thumbs: Record<string, string> = {};
@@ -214,12 +264,22 @@ export const useChat = create<ChatState>((set, get) => ({
         if (t) thumbs[m.id] = t;
       })
     );
-    set((s) => ({
-      messagesByConv: { ...s.messagesByConv, [conversationId]: page.messages },
-      cursorByConv: { ...s.cursorByConv, [conversationId]: page.next_cursor },
-      textByMessage: { ...s.textByMessage, ...texts },
-      thumbByMessage: { ...s.thumbByMessage, ...thumbs },
-    }));
+    set((s) => {
+      // Thumbnails for messages we're replacing (or that fell off the page)
+      // would otherwise be orphaned object URLs.
+      const keep = new Set(page.messages.map((m) => m.id));
+      revokeThumbs(
+        s.thumbByMessage,
+        (s.messagesByConv[conversationId] ?? []).map((m) => m.id).filter((id) => !keep.has(id))
+      );
+      revokeThumbs(s.thumbByMessage, Object.keys(thumbs));
+      return {
+        messagesByConv: { ...s.messagesByConv, [conversationId]: page.messages },
+        cursorByConv: { ...s.cursorByConv, [conversationId]: page.next_cursor },
+        textByMessage: { ...s.textByMessage, ...texts },
+        thumbByMessage: { ...s.thumbByMessage, ...thumbs },
+      };
+    });
   },
 
   loadOlder: async (conversationId) => {
@@ -303,7 +363,7 @@ export const useChat = create<ChatState>((set, get) => ({
       throw new Error("Cannot load file");
     }
     const wrapped = message.encrypted_keys[user.id];
-    const senderPub = await getUserPublicKey(message.sender_id);
+    const senderPub = await senderKeyFor(message);
     if (!wrapped || !senderPub) throw new Error("No key for this file");
     const cipher = await fetchMedia(message.media.id);
     const blob = await decryptFileBlob(message.media, cipher, wrapped, senderPub, identity.privateKey);
@@ -329,7 +389,7 @@ export const useChat = create<ChatState>((set, get) => ({
       throw new Error("Cannot load image");
     }
     const wrapped = message.encrypted_keys[user.id];
-    const senderPub = await getUserPublicKey(message.sender_id);
+    const senderPub = await senderKeyFor(message);
     if (!wrapped || !senderPub) throw new Error("No key for this image");
     const cipher = await fetchMedia(message.media.id);
     const blob = await decryptFull(message.media, cipher, wrapped, senderPub, identity.privateKey);
@@ -404,9 +464,10 @@ export const useChat = create<ChatState>((set, get) => ({
     }
   },
 
-  markRead: async (conversationId, messageId) => {
+  markRead: async (conversationId, messageId, opts) => {
     try {
-      await api(`/conversations/${conversationId}/read/${messageId}`, { method: "POST" });
+      const q = opts?.silent ? "?silent=true" : "";
+      await api(`/conversations/${conversationId}/read/${messageId}${q}`, { method: "POST" });
       set((s) => ({
         conversations: s.conversations.map((c) =>
           c.id === conversationId ? { ...c, unread_count: 0 } : c
@@ -428,6 +489,36 @@ export const useChat = create<ChatState>((set, get) => ({
     syncBadge(get().conversations, get().guestUnread);
   },
 
+  resync: async () => {
+    const conv = get().lastLoadedConv;
+    await Promise.all([
+      get().loadConversations().catch(() => {}),
+      get().loadGuestUnread(),
+      conv ? get().loadMessages(conv).catch(() => {}) : Promise.resolve(),
+    ]);
+  },
+
+  reset: () => {
+    const s = get();
+    revokeThumbs(s.thumbByMessage, Object.keys(s.thumbByMessage));
+    set({
+      conversations: [],
+      lastLoadedConv: null,
+      messagesByConv: {},
+      textByMessage: {},
+      thumbByMessage: {},
+      cursorByConv: {},
+      typingByConv: {},
+      readByConv: {},
+      guestReplyTick: 0,
+      guestUnread: 0,
+    });
+    clearKeyCache();
+    clearAvatarCache();
+    clearDrafts();
+    syncBadge([], 0);
+  },
+
   handleWsEvent: async (event) => {
     const p = event.payload as Record<string, unknown>;
     switch (event.type) {
@@ -441,6 +532,7 @@ export const useChat = create<ChatState>((set, get) => ({
         set((s) => {
           const existing = s.messagesByConv[msg.conversation_id] ?? [];
           if (existing.some((m) => m.id === msg.id)) {
+            if (thumb) URL.revokeObjectURL(thumb); // our own send already shows it
             return { textByMessage: { ...s.textByMessage, [msg.id]: text } };
           }
           return {
@@ -588,3 +680,10 @@ export const useChat = create<ChatState>((set, get) => ({
     }
   },
 }));
+
+// Whenever the session ends — explicit sign-out, a lost refresh token, or
+// account deletion — drop everything decrypted for that account so the next
+// sign-in on this device starts clean.
+useAuth.subscribe((s, prev) => {
+  if (prev.status === "authed" && s.status !== "authed") useChat.getState().reset();
+});

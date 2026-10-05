@@ -17,14 +17,19 @@ export default function NewMessageSheet({ onClose }: { onClose: () => void }) {
       setResults([]);
       return;
     }
+    let alive = true; // ignore a slow response for a query we've since replaced
     const t = setTimeout(async () => {
       try {
-        setResults(await api<User[]>(`/users/search?q=${encodeURIComponent(q.trim())}`));
+        const users = await api<User[]>(`/users/search?q=${encodeURIComponent(q.trim())}`);
+        if (alive) setResults(users);
       } catch {
-        setResults([]);
+        if (alive) setResults([]);
       }
     }, 200);
-    return () => clearTimeout(t);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
   }, [q]);
 
   const startChat = async (user: User) => {

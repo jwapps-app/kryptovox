@@ -140,6 +140,18 @@ export const useAuth = create<AuthState>((set, get) => ({
         set({ status: "anon", needsReauth: true });
         return;
       }
+      if (
+        tok.user.identity_public_key &&
+        identity.publicKeyB64 !== tok.user.identity_public_key
+      ) {
+        // The key on this device belongs to a different account than the
+        // session (e.g. another user signed in here). Don't pair them.
+        await clearIdentity();
+        setAccessToken(null);
+        setRefreshToken(null);
+        set({ status: "anon", identity: null, needsReauth: true });
+        return;
+      }
       set({
         status: "authed",
         user: tok.user,
@@ -261,7 +273,12 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
-      await api("/auth/logout", { method: "POST" });
+      // Send the stored refresh token so the server can revoke this session
+      // even when the cookie copy wasn't kept (installed PWA cold starts).
+      await api("/auth/logout", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: getRefreshToken() }),
+      });
     } catch {
       /* ignore */
     }

@@ -48,6 +48,14 @@ export function avatarUrl(userId: string): Promise<string | null> {
   return p;
 }
 
+// Drop every cached avatar and release its object URL (sign-out).
+export function clearAvatarCache(): void {
+  for (const p of cache.values()) {
+    p.then((u) => u && URL.revokeObjectURL(u)).catch(() => {});
+  }
+  cache.clear();
+}
+
 // Drop a cached avatar (e.g. after the owner changes their photo).
 export function invalidateAvatar(userId: string): void {
   const p = cache.get(userId);

@@ -25,7 +25,7 @@ export default function NoteEditor() {
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [loaded, setLoaded] = useState(false);
   const [attachments, setAttachmentsState] = useState<NoteAttachment[]>([]);
   const [names, setNames] = useState<Record<string, string>>({}); // media_id -> filename
@@ -37,6 +37,9 @@ export default function NoteEditor() {
   const attachRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef<NoteAttachment[]>([]); // mirror, for save() closures
   const dirtyRef = useRef(false);
+  // Saves run one at a time: a create racing a second create would make two
+  // notes, and two PATCHes could land out of order.
+  const saveChain = useRef<Promise<boolean>>(Promise.resolve(true));
 
   const setAttachments = (next: NoteAttachment[]) => {
     attachmentsRef.current = next;
@@ -46,6 +49,19 @@ export default function NoteEditor() {
   // Load (or mint a key for) the note.
   useEffect(() => {
     let alive = true;
+    // Navigating between notes reuses this component: start from a blank slate
+    // so the previous note's key or id can never be applied to this one.
+    keyRef.current = null;
+    rawRef.current = null;
+    noteIdRef.current = id === "new" ? null : id;
+    dirtyRef.current = false;
+    attachmentsRef.current = [];
+    setLoaded(false);
+    setTitle("");
+    setBody("");
+    setAttachmentsState([]);
+    setNames({});
+    setStatus("idle");
     (async () => {
       if (!identity || !user.identity_public_key) return;
       if (id === "new") {
@@ -123,35 +139,48 @@ export default function NoteEditor() {
     return created.id;
   }, [title, body, identity, user.identity_public_key]);
 
-  const save = useCallback(async () => {
-    const key = keyRef.current;
-    if (!key || !identity || !user.identity_public_key) return;
-    if (!noteIdRef.current && !title.trim() && !body.trim() && attachmentsRef.current.length === 0) {
-      return; // nothing to create
-    }
-    setStatus("saving");
-    try {
-      if (!noteIdRef.current) {
-        await ensureNote();
-      } else {
-        const t = await encryptWithKey(key, title);
-        const b = await encryptWithKey(key, body);
-        await api(`/notes/${noteIdRef.current}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            title_ciphertext: t.ciphertext,
-            title_iv: t.iv,
-            body_ciphertext: b.ciphertext,
-            body_iv: b.iv,
-            attachments: attachmentsRef.current,
-          }),
-        });
+  // Resolves true when the note is persisted (or there was nothing to save).
+  const save = useCallback((): Promise<boolean> => {
+    const run = async (): Promise<boolean> => {
+      const key = keyRef.current;
+      if (!key || !identity || !user.identity_public_key) return false;
+      if (
+        !noteIdRef.current &&
+        !title.trim() &&
+        !body.trim() &&
+        attachmentsRef.current.length === 0
+      ) {
+        return true; // nothing to create
       }
-      dirtyRef.current = false;
-      setStatus("saved");
-    } catch {
-      setStatus("idle");
-    }
+      setStatus("saving");
+      try {
+        if (!noteIdRef.current) {
+          await ensureNote();
+        } else {
+          const t = await encryptWithKey(key, title);
+          const b = await encryptWithKey(key, body);
+          await api(`/notes/${noteIdRef.current}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              title_ciphertext: t.ciphertext,
+              title_iv: t.iv,
+              body_ciphertext: b.ciphertext,
+              body_iv: b.iv,
+              attachments: attachmentsRef.current,
+            }),
+          });
+        }
+        dirtyRef.current = false;
+        setStatus("saved");
+        return true;
+      } catch {
+        setStatus("error");
+        return false;
+      }
+    };
+    const next = saveChain.current.then(run, run);
+    saveChain.current = next;
+    return next;
   }, [title, body, identity, user.identity_public_key, ensureNote]);
 
   const addAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -231,7 +260,9 @@ export default function NoteEditor() {
   }, []);
 
   const back = async () => {
-    if (dirtyRef.current) await save();
+    // Don't leave unsaved edits behind: if the save fails, stay on the note
+    // with the error shown instead of silently dropping the changes.
+    if (dirtyRef.current && !(await save())) return;
     navigate("/notes");
   };
 
@@ -246,7 +277,13 @@ export default function NoteEditor() {
       <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
         <BackButton onClick={() => void back()} />
         <span className="flex-1 text-sm text-gray-400">
-          {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
+          {status === "saving"
+            ? "Saving…"
+            : status === "saved"
+              ? "Saved"
+              : status === "error"
+                ? "Couldn't save — check your connection"
+                : ""}
         </span>
         <button
           className="text-red-500 active:opacity-60"
