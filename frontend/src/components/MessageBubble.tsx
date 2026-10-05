@@ -269,7 +269,7 @@ function MessageBubble({
         <div
           onMouseDown={keepKeyboard}
           onClick={() => setOpen((v) => !v)}
-          className="max-w-[75%] cursor-default whitespace-pre-wrap break-words px-3 py-2 text-[17px] leading-snug"
+          className="max-w-[75%] cursor-default whitespace-pre-wrap wrap-break-word px-3 py-2 text-[17px] leading-snug"
           style={{
             background: isMine ? "#007AFF" : "var(--bubble-in-bg)",
             color: isMine ? "#ffffff" : "var(--bubble-in-text)",
@@ -345,7 +345,7 @@ function MessageBubble({
             <div
               ref={menuRef}
               onMouseDown={keepKeyboard}
-              className="mt-1 inline-flex flex-col gap-1.5 rounded-2xl bg-white px-2.5 py-2 shadow"
+              className="mt-1 inline-flex flex-col gap-1.5 rounded-2xl bg-white px-2.5 py-2 shadow-sm"
             >
               <div className="flex items-center justify-center gap-2">
                 {TAPBACKS.map((emoji) => (

@@ -54,12 +54,16 @@ export default function CommandPalette() {
       onClick={() => setOpen(false)}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Jump to conversation"
         className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <input
+          aria-label="Jump to conversation"
           ref={inputRef}
-          className="w-full border-b border-gray-100 px-4 py-3 text-[17px] outline-none"
+          className="w-full border-b border-gray-100 px-4 py-3 text-[17px] outline-hidden"
           placeholder="Jump to conversation…"
           value={q}
           onChange={(e) => {

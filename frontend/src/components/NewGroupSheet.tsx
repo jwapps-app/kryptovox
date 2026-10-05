@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { userLabel } from "../lib/format";
 import Avatar from "./Avatar";
 import { useChat } from "../store/chat";
 import type { Conversation, User } from "../lib/types";
+import { useDialog } from "../hooks/useDialog";
 
 export default function NewGroupSheet({ onClose }: { onClose: () => void }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDialog(rootRef, onClose);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<User[]>([]);
   const [selected, setSelected] = useState<User[]>([]);
@@ -46,7 +49,13 @@ export default function NewGroupSheet({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex flex-col bg-white">
+    <div
+      ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="New group"
+      className="fixed inset-0 z-20 flex flex-col bg-white"
+    >
       <header className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
         <button className="text-imsg-blue" onClick={onClose}>
           Cancel
@@ -63,7 +72,8 @@ export default function NewGroupSheet({ onClose }: { onClose: () => void }) {
 
       <div className="px-4 py-3">
         <input
-          className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-2 text-[17px] outline-none focus:border-imsg-blue"
+          className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-2 text-[17px] outline-hidden focus:border-imsg-blue"
+          aria-label="Group name"
           placeholder="Group name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -82,7 +92,8 @@ export default function NewGroupSheet({ onClose }: { onClose: () => void }) {
           </div>
         )}
         <input
-          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[17px] outline-none"
+          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[17px] outline-hidden"
+          aria-label="Search to add people"
           placeholder="Search to add people"
           autoCapitalize="none"
           value={q}

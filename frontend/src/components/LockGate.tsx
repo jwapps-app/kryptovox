@@ -46,7 +46,7 @@ export default function LockGate({ onUnlock }: { onUnlock: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-white px-8 text-center"
+      className="fixed inset-0 z-100 flex flex-col items-center justify-center gap-6 bg-white px-8 text-center"
       style={{ height: "var(--vh, 100dvh)" }}
     >
       <svg
@@ -82,7 +82,7 @@ export default function LockGate({ onUnlock }: { onUnlock: () => void }) {
               if (e.key === "Enter" && pin.length >= 4) void submitPin(pin);
             }}
             placeholder="••••"
-            className={`w-full rounded-xl border px-4 py-3 text-center text-2xl tracking-[0.5em] outline-none ${
+            className={`w-full rounded-xl border px-4 py-3 text-center text-2xl tracking-[0.5em] outline-hidden ${
               error ? "border-red-400" : "border-gray-300 focus:border-imsg-blue"
             }`}
           />

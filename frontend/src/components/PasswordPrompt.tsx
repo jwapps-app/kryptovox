@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { authCredential } from "../store/auth";
+import { useDialog } from "../hooks/useDialog";
 
 // Step-up confirmation: security-factor changes (turning off two-factor,
 // adding a passkey, replacing the recovery key, …) take the current password
@@ -49,27 +50,17 @@ function PasswordPrompt({
 }) {
   const [password, setPassword] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const previouslyFocused = useRef<Element | null>(null);
-
-  useEffect(() => {
-    previouslyFocused.current = document.activeElement;
-    inputRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onSubmit(null);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      (previouslyFocused.current as HTMLElement | null)?.focus?.();
-    };
-  }, [onSubmit]);
+  const formRef = useRef<HTMLFormElement>(null);
+  const cancel = useCallback(() => onSubmit(null), [onSubmit]);
+  useDialog(formRef, cancel);
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 px-4 pb-6 sm:items-center"
+      className="fixed inset-0 z-110 flex items-end justify-center bg-black/40 px-4 pb-6 sm:items-center"
       onClick={() => onSubmit(null)}
     >
       <form
+        ref={formRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="pw-prompt-title"
@@ -92,7 +83,8 @@ function PasswordPrompt({
             ref={inputRef}
             type="password"
             autoComplete="current-password"
-            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-[17px] outline-none focus:border-imsg-blue"
+            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-[17px] outline-hidden focus:border-imsg-blue"
+            aria-label="Password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

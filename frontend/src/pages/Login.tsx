@@ -155,14 +155,15 @@ export default function Login() {
       <div className="flex h-full items-center justify-center bg-gray-50 px-6">
         <form
           onSubmit={submitRecovery}
-          className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm"
+          className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-xs"
         >
           <h1 className="mb-1 text-center text-2xl font-semibold">Recover account</h1>
           <p className="mb-6 text-center text-sm text-gray-500">
             Enter your recovery key and choose a new password.
           </p>
           <input
-            className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-none focus:border-imsg-blue"
+            className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-hidden focus:border-imsg-blue"
+            aria-label="Username"
             placeholder="Username"
             autoCapitalize="none"
             autoCorrect="off"
@@ -171,7 +172,8 @@ export default function Login() {
             required
           />
           <input
-            className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 font-mono text-[15px] outline-none focus:border-imsg-blue"
+            className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 font-mono text-[15px] outline-hidden focus:border-imsg-blue"
+            aria-label="Recovery key"
             placeholder="Recovery key"
             autoCapitalize="characters"
             autoCorrect="off"
@@ -180,7 +182,8 @@ export default function Login() {
             required
           />
           <input
-            className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-none focus:border-imsg-blue"
+            className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-hidden focus:border-imsg-blue"
+            aria-label="New password"
             placeholder="New password"
             type="password"
             value={newPassword}
@@ -241,7 +244,7 @@ export default function Login() {
   if (pendingToken) {
     return (
       <div className="flex h-full items-center justify-center bg-gray-50 px-6">
-        <form onSubmit={submit2fa} className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm">
+        <form onSubmit={submit2fa} className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-xs">
           <h1 className="mb-1 text-center text-2xl font-semibold">Two-factor</h1>
           <p className="mb-6 text-center text-sm text-gray-500">
             {methods.includes("passkey") && methods.includes("totp")
@@ -263,7 +266,8 @@ export default function Login() {
           {twofaErr && <p className="mb-3 text-sm text-red-500">{twofaErr}</p>}
           <input
             autoFocus
-            className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-center text-[17px] tracking-widest outline-none focus:border-imsg-blue"
+            className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-center text-[17px] tracking-widest outline-hidden focus:border-imsg-blue"
+            aria-label="Verification code"
             placeholder="123456"
             autoCapitalize="none"
             autoComplete="one-time-code"
@@ -298,7 +302,7 @@ export default function Login() {
     <div className="flex h-full items-center justify-center bg-gray-50 px-6">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm"
+        className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-xs"
       >
         <h1 className="mb-1 text-center text-2xl font-semibold">Kryptovox</h1>
         <p className="mb-6 text-center text-sm text-gray-500">
@@ -310,7 +314,8 @@ export default function Login() {
         </p>
 
         <input
-          className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-none focus:border-imsg-blue"
+          className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-hidden focus:border-imsg-blue"
+          aria-label="Username"
           placeholder="Username"
           autoCapitalize="none"
           autoCorrect="off"
@@ -320,14 +325,16 @@ export default function Login() {
         />
         {needsSetup && (
           <input
-            className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-none focus:border-imsg-blue"
+            className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-hidden focus:border-imsg-blue"
+            aria-label="Display name"
             placeholder="Display name (optional)"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
           />
         )}
         <input
-          className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-none focus:border-imsg-blue"
+          className="mb-3 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-hidden focus:border-imsg-blue"
+          aria-label="Password"
           placeholder="Password"
           type="password"
           value={password}
@@ -336,7 +343,8 @@ export default function Login() {
           minLength={8}
         />
         <input
-          className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-none focus:border-imsg-blue"
+          className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-[17px] outline-hidden focus:border-imsg-blue"
+          aria-label="Device name"
           placeholder="Device name"
           value={deviceName}
           onChange={(e) => setDeviceName(e.target.value)}

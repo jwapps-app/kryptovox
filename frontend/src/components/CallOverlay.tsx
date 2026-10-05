@@ -42,7 +42,7 @@ export default function CallOverlay() {
   const initial = (peerName || "•").trim().charAt(0).toUpperCase();
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-between bg-gray-900 text-white">
+    <div className="fixed inset-0 z-100 flex flex-col items-center justify-between bg-gray-900 text-white">
       {/* Remote video plays the audio too; for audio calls it stays black and the
           avatar below covers it. */}
       <video
@@ -72,7 +72,7 @@ export default function CallOverlay() {
             {initial}
           </div>
         )}
-        <p className="text-lg font-medium drop-shadow">{label}</p>
+        <p className="text-lg font-medium drop-shadow-sm">{label}</p>
       </div>
 
       {/* Controls */}

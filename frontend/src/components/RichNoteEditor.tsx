@@ -24,7 +24,7 @@ export default function RichNoteEditor({
     ],
     content: initial,
     editorProps: {
-      attributes: { class: "kv-md kv-rte outline-none min-h-full pb-10" },
+      attributes: { class: "kv-md kv-rte outline-hidden min-h-full pb-10" },
     },
     onUpdate: ({ editor }) => {
       const storage = editor.storage as unknown as { markdown: { getMarkdown: () => string } };

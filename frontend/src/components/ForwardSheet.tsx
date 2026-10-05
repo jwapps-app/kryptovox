@@ -1,8 +1,10 @@
+import { useRef } from "react";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { conversationTitle } from "../lib/format";
 import Avatar from "./Avatar";
 import type { Conversation } from "../lib/types";
+import { useDialog } from "../hooks/useDialog";
 
 interface Props {
   onClose: () => void;
@@ -11,6 +13,8 @@ interface Props {
 
 // Pick a conversation to forward a message into.
 export default function ForwardSheet({ onClose, onPick }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDialog(rootRef, onClose);
   const user = useAuth((s) => s.user)!;
   const conversations = useChat((s) => s.conversations);
 
@@ -21,6 +25,10 @@ export default function ForwardSheet({ onClose, onPick }: Props) {
       onClick={onClose}
     >
       <div
+        ref={rootRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Forward to"
         className="max-h-full w-full overflow-y-auto rounded-t-2xl bg-white"
         onClick={(e) => e.stopPropagation()}
       >

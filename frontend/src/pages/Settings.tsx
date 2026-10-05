@@ -409,7 +409,7 @@ export default function Settings() {
           <label className="block text-sm text-gray-500">Display name</label>
           <div className="mt-1 flex gap-2">
             <input
-              className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-[17px] outline-none focus:border-imsg-blue"
+              className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-[17px] outline-hidden focus:border-imsg-blue"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
             />
@@ -739,17 +739,19 @@ export default function Settings() {
             <div className="space-y-2">
               <input
                 type="password"
+                aria-label="Current password"
                 placeholder="Current password"
                 autoComplete="current-password"
-                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-none focus:border-imsg-blue"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-hidden focus:border-imsg-blue"
                 value={curPw}
                 onChange={(e) => setCurPw(e.target.value)}
               />
               <input
                 type="password"
+                aria-label="New password"
                 placeholder="New password (at least 8 characters)"
                 autoComplete="new-password"
-                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-none focus:border-imsg-blue"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-hidden focus:border-imsg-blue"
                 value={newPw}
                 onChange={(e) => setNewPw(e.target.value)}
               />
@@ -797,9 +799,10 @@ export default function Settings() {
               </p>
               <input
                 type="password"
+                aria-label="Confirm your password"
                 placeholder="Confirm your password"
                 autoComplete="current-password"
-                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-none focus:border-imsg-blue"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-hidden focus:border-imsg-blue"
                 value={delPw}
                 onChange={(e) => setDelPw(e.target.value)}
               />
@@ -846,7 +849,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="mb-6">
       <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">{title}</h2>
-      <div className="rounded-2xl bg-white p-4 shadow-sm">{children}</div>
+      <div className="rounded-2xl bg-white p-4 shadow-xs">{children}</div>
     </div>
   );
 }
@@ -871,7 +874,7 @@ function Toggle({
         }`}
         style={{ background: on ? "#34C759" : "#E9E9EB" }}
       >
-        <span className="h-6 w-6 rounded-full shadow" style={{ background: "#fff" }} />
+        <span className="h-6 w-6 rounded-full shadow-sm" style={{ background: "#fff" }} />
       </button>
     </div>
   );

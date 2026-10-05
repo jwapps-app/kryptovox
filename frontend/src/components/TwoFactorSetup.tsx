@@ -161,7 +161,8 @@ export default function TwoFactorSetup({
           <span className="sr-only">Authenticator code</span>
           <input
             autoFocus
-            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-center text-[17px] tracking-widest outline-none focus:border-imsg-blue"
+            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-center text-[17px] tracking-widest outline-hidden focus:border-imsg-blue"
+            aria-label="Verification code"
             placeholder="123456"
             inputMode="numeric"
             autoComplete="one-time-code"
