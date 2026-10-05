@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,7 +114,7 @@ async def upload_note_media(
 ) -> dict[str, str]:
     await _own_note(db, note_id, current.id)
     blob = await read_capped_body(request)
-    return {"id": media_store.save(blob)}
+    return {"id": await media_store.save(blob)}
 
 
 @router.get("/{note_id}/media/{media_id}")
@@ -126,11 +127,12 @@ async def get_note_media(
     note = await _own_note(db, note_id, current.id)
     if media_id not in _media_ids(note.attachments):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    data = media_store.load(media_id)
-    if data is None:
+    path = media_store.path_for(media_id)
+    if path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    return Response(
-        content=data,
+    # Streamed off the event loop like the other media routes (blob up to 25 MB).
+    return FileResponse(
+        path,
         media_type="application/octet-stream",
         headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )
