@@ -101,7 +101,7 @@ export default function Admin() {
         <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">
           Default message retention
         </h2>
-        <div className="mb-6 rounded-2xl bg-white p-2 shadow-sm">
+        <div className="mb-6 rounded-2xl bg-white p-2 shadow-xs">
           {[
             { days: 0, label: "Forever" },
             { days: 7, label: "7 days" },
@@ -129,9 +129,10 @@ export default function Admin() {
         <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">
           Create user
         </h2>
-        <form onSubmit={createUser} className="mb-6 rounded-2xl bg-white p-4 shadow-sm">
+        <form onSubmit={createUser} className="mb-6 rounded-2xl bg-white p-4 shadow-xs">
           <input
-            className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-none focus:border-imsg-blue"
+            className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-hidden focus:border-imsg-blue"
+            aria-label="Username"
             placeholder="Username"
             autoCapitalize="none"
             value={username}
@@ -139,13 +140,15 @@ export default function Admin() {
             required
           />
           <input
-            className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-none focus:border-imsg-blue"
+            className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-hidden focus:border-imsg-blue"
+            aria-label="Display name"
             placeholder="Display name (optional)"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
           />
           <input
-            className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-none focus:border-imsg-blue"
+            className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[15px] outline-hidden focus:border-imsg-blue"
+            aria-label="Initial password"
             placeholder="Initial password (min 8 chars)"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -177,7 +180,7 @@ export default function Admin() {
         <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">
           {users.length} users
         </h2>
-        <div className="rounded-2xl bg-white p-2 shadow-sm">
+        <div className="rounded-2xl bg-white p-2 shadow-xs">
           {users.map((u) => (
             <div
               key={u.id}
@@ -188,7 +191,7 @@ export default function Admin() {
                 <div className="text-[15px]">
                   {u.display_name || u.username}
                   {u.is_admin && (
-                    <span className="ml-2 rounded bg-blue-50 px-1.5 text-xs text-imsg-blue">
+                    <span className="ml-2 rounded-sm bg-blue-50 px-1.5 text-xs text-imsg-blue">
                       admin
                     </span>
                   )}

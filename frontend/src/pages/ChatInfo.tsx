@@ -172,7 +172,7 @@ export default function ChatInfo() {
         <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">
           {isGroup ? `${conv.members.length} members` : "Members"}
         </h2>
-        <div className="rounded-2xl bg-white p-2 shadow-sm">
+        <div className="rounded-2xl bg-white p-2 shadow-xs">
           {conv.members.map((m: User) => (
             <div
               key={m.id}
@@ -210,7 +210,7 @@ export default function ChatInfo() {
         <h2 className="mb-2 mt-6 text-xs font-semibold uppercase text-gray-400">
           Conversation
         </h2>
-        <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <div className="rounded-2xl bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between py-1">
             <span className="text-[15px]">Pin to top</span>
             <Switch on={conv.pinned} onClick={() => void togglePref("pinned")} />
@@ -231,7 +231,7 @@ export default function ChatInfo() {
         <h2 className="mb-2 mt-6 text-xs font-semibold uppercase text-gray-400">
           Disappearing messages
         </h2>
-        <div className="rounded-2xl bg-white p-2 shadow-sm">
+        <div className="rounded-2xl bg-white p-2 shadow-xs">
           {DISAPPEAR_OPTIONS.map((opt) => (
             <button
               key={opt.secs}
@@ -275,7 +275,7 @@ export default function ChatInfo() {
             </button>
           </div>
         )}
-        <div className="rounded-2xl bg-white p-4 font-mono text-sm tracking-wide shadow-sm">
+        <div className="rounded-2xl bg-white p-4 font-mono text-sm tracking-wide shadow-xs">
           {safety ?? "…"}
         </div>
         <p className="mt-2 text-xs text-gray-400">
@@ -286,7 +286,7 @@ export default function ChatInfo() {
         <h2 className="mb-2 mt-6 text-xs font-semibold uppercase text-gray-400">
           Keep history
         </h2>
-        <div className="rounded-2xl bg-white p-2 shadow-sm">
+        <div className="rounded-2xl bg-white p-2 shadow-xs">
           {RETENTION_OPTIONS.map((opt) => (
             <button
               key={opt.days ?? "default"}
@@ -349,7 +349,7 @@ function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
       }`}
       style={{ background: on ? "#34C759" : "#E9E9EB" }}
     >
-      <span className="h-6 w-6 rounded-full shadow" style={{ background: "#fff" }} />
+      <span className="h-6 w-6 rounded-full shadow-sm" style={{ background: "#fff" }} />
     </button>
   );
 }
@@ -395,7 +395,8 @@ function AddMemberSheet({
       <div className="px-4 py-3">
         <input
           autoFocus
-          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[17px] outline-none"
+          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[17px] outline-hidden"
+          aria-label="Search by username"
           placeholder="Search by username"
           autoCapitalize="none"
           value={q}

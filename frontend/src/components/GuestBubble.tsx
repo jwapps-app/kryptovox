@@ -124,7 +124,7 @@ export default function GuestBubble({
         </a>
       ) : (
         <div
-          className="max-w-[75%] whitespace-pre-wrap break-words px-3 py-2 text-[17px] leading-snug"
+          className="max-w-[75%] whitespace-pre-wrap wrap-break-word px-3 py-2 text-[17px] leading-snug"
           style={{ background: bg, color, borderRadius: radius }}
         >
           {msg.text}

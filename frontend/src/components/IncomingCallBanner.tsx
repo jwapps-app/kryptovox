@@ -13,7 +13,7 @@ export default function IncomingCallBanner() {
   if (!linkRing || status !== "idle") return null;
 
   return (
-    <div className="fixed inset-x-0 top-0 z-[90] flex justify-center px-3 pt-3">
+    <div className="fixed inset-x-0 top-0 z-90 flex justify-center px-3 pt-3">
       <div className="flex w-full max-w-md items-center gap-3 rounded-2xl bg-gray-900 px-4 py-3 text-white shadow-lg">
         <span className="text-xl">📞</span>
         <div className="min-w-0 flex-1">

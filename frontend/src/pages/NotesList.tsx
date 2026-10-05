@@ -84,7 +84,8 @@ export default function NotesList() {
 
       <div className="px-3 py-2">
         <input
-          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[15px] outline-none"
+          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[15px] outline-hidden"
+          aria-label="Search"
           placeholder="Search"
           autoCapitalize="none"
           value={query}

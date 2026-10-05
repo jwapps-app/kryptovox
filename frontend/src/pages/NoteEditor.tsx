@@ -312,7 +312,8 @@ export default function NoteEditor() {
 
       <div className="flex flex-1 flex-col overflow-hidden px-4 pt-3">
         <input
-          className="mb-2 w-full bg-transparent text-xl font-semibold outline-none"
+          className="mb-2 w-full bg-transparent text-xl font-semibold outline-hidden"
+          aria-label="Title"
           placeholder="Title"
           value={title}
           onChange={(e) => onTitle(e.target.value)}

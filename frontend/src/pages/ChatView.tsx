@@ -424,7 +424,7 @@ export default function ChatView() {
           }`}
           style={{ background: disappearSecs > 0 ? "#34C759" : "#E9E9EB" }}
         >
-          <span className="h-5 w-5 rounded-full shadow" style={{ background: "#fff" }} />
+          <span className="h-5 w-5 rounded-full shadow-sm" style={{ background: "#fff" }} />
         </button>
       </div>
 
@@ -460,7 +460,8 @@ export default function ChatView() {
         <div className="border-b border-gray-100 px-3 py-2">
           <input
             autoFocus
-            className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[15px] outline-none"
+            className="w-full rounded-xl bg-gray-100 px-4 py-2 text-[15px] outline-hidden"
+            aria-label="Search this conversation"
             placeholder="Search this conversation"
             autoCapitalize="none"
             value={chatQuery}

@@ -7,10 +7,10 @@ export default function ForceTwoFactor({ onDone }: { onDone: () => void }) {
   const logout = useAuth((s) => s.logout);
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-50 px-6"
+      className="fixed inset-0 z-100 flex items-center justify-center bg-gray-50 px-6"
       style={{ height: "var(--vh, 100dvh)" }}
     >
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-xs">
         <h1 className="mb-1 text-center text-xl font-semibold">Two-factor required</h1>
         <p className="mb-5 text-center text-sm text-gray-500">
           Your administrator requires two-factor authentication. Set it up to continue.

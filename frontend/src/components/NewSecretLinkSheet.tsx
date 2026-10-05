@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { encryptWithKey, generateThreadKey, wrapKeyForSelf } from "../crypto/guest";
 import type { GuestThreadDetail } from "../lib/types";
+import { useDialog } from "../hooks/useDialog";
 
 const EXPIRY = [
   { key: "burn", label: "Burn · 10 min after open" },
@@ -13,6 +14,8 @@ const EXPIRY = [
 ];
 
 export default function NewSecretLinkSheet({ onClose }: { onClose: () => void }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDialog(rootRef, onClose);
   const identity = useAuth((s) => s.identity);
   const user = useAuth((s) => s.user)!;
   const [label, setLabel] = useState("");
@@ -74,6 +77,10 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
       onClick={onClose}
     >
       <div
+        ref={rootRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="New secret link"
         className="max-h-full w-full overflow-y-auto rounded-t-2xl bg-white p-4"
         style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
         onClick={(e) => e.stopPropagation()}
@@ -92,14 +99,14 @@ export default function NewSecretLinkSheet({ onClose }: { onClose: () => void })
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="Label (e.g. “Sarah”) — only you see it"
-              className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[16px] outline-none focus:border-imsg-blue"
+              className="mb-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-[16px] outline-hidden focus:border-imsg-blue"
             />
             <textarea
               rows={4}
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Write an encrypted message…"
-              className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-[16px] outline-none focus:border-imsg-blue"
+              className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-[16px] outline-hidden focus:border-imsg-blue"
             />
             <div className="mt-3 text-xs font-semibold uppercase text-gray-400">Expires</div>
             <div className="mt-1 flex flex-wrap gap-2">

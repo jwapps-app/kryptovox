@@ -252,7 +252,8 @@ export default function InputBar({
         spellCheck={true}
         enterKeyHint="send"
         inputMode="text"
-        className="no-scrollbar max-h-[120px] flex-1 resize-none rounded-2xl border border-gray-200 px-4 py-2 text-[17px] outline-none focus:border-imsg-blue"
+        className="no-scrollbar max-h-[120px] flex-1 resize-none rounded-2xl border border-gray-200 px-4 py-2 text-[17px] outline-hidden focus:border-imsg-blue"
+        aria-label="Message"
         placeholder="Message"
         value={text}
         onChange={(e) => {
