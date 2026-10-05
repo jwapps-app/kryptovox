@@ -18,7 +18,6 @@ import { fetchThreadMediaHost, uploadThreadMediaHost } from "../lib/media";
 import BackButton from "../components/BackButton";
 import ExpiryBadge from "../components/ExpiryBadge";
 import GuestBubble from "../components/GuestBubble";
-import { getAccessToken } from "../lib/api";
 import { useCalls } from "../store/calls";
 import { CALLS_ENABLED } from "../lib/features";
 import {
@@ -27,6 +26,14 @@ import {
   disconnectThreadSocket,
 } from "../lib/threadSocket";
 import type { Decoded, GuestThreadDetail } from "../lib/types";
+
+// Append newly fetched messages, skipping any we already hold.
+function mergeDecoded(prev: Decoded[], next: Decoded[]): Decoded[] {
+  if (!next.length) return prev;
+  const seen = new Set(prev.map((m) => m.id));
+  const fresh = next.filter((m) => !seen.has(m.id));
+  return fresh.length ? [...prev, ...fresh] : prev;
+}
 
 export default function SecretLinkThread() {
   const { id = "" } = useParams();
@@ -43,6 +50,7 @@ export default function SecretLinkThread() {
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
   const [msgs, setMsgs] = useState<Decoded[]>([]);
+  const lastIdRef = useRef<string | null>(null);
   const [label, setLabel] = useState("Secret link");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [burnMinutes, setBurnMinutes] = useState<number | null>(null);
@@ -52,7 +60,8 @@ export default function SecretLinkThread() {
 
   const load = useCallback(async () => {
     if (!identity || !user.identity_public_key) return;
-    const detail = await api<GuestThreadDetail>(`/links/${id}`).catch(() => null);
+    const after = lastIdRef.current ? `?after=${encodeURIComponent(lastIdRef.current)}` : "";
+    const detail = await api<GuestThreadDetail>(`/links/${id}${after}`).catch(() => null);
     if (!detail) {
       navigate("/");
       return;
@@ -109,7 +118,8 @@ export default function SecretLinkThread() {
         };
       })
     );
-    setMsgs(out);
+    if (out.length) lastIdRef.current = out[out.length - 1].id;
+    setMsgs((prev) => (after ? mergeDecoded(prev, out) : out));
     setThumbs({ ...thumbsRef.current });
   }, [id, identity, user.identity_public_key, navigate]);
 
@@ -119,6 +129,7 @@ export default function SecretLinkThread() {
   useEffect(() => {
     return () => {
       keyRef.current = null;
+      lastIdRef.current = null;
       for (const u of Object.values(thumbsRef.current)) URL.revokeObjectURL(u);
       thumbsRef.current = {};
       setThumbs({});
@@ -141,7 +152,7 @@ export default function SecretLinkThread() {
   // and any call invite buffered while we were away is delivered on connect.
   useEffect(() => {
     if (!CALLS_ENABLED || !id) return;
-    connectThreadSocket(id, getAccessToken() ?? undefined);
+    connectThreadSocket(id, { asHost: true });
     return () => disconnectThreadSocket();
   }, [id]);
 

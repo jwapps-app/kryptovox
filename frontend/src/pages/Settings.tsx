@@ -30,6 +30,7 @@ import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
 import TwoFactorSetup from "../components/TwoFactorSetup";
 import RecoveryKeySetup from "../components/RecoveryKeySetup";
+import { usePasswordPrompt } from "../components/PasswordPrompt";
 import {
   attestPasskey,
   preloadPasskeyRegisterOptions,
@@ -105,20 +106,58 @@ export default function Settings() {
   const [adminRequire2fa, setAdminRequire2fa] = useState(false);
   const [recoverySetup, setRecoverySetup] = useState(false);
 
+  // Security-factor changes are step-up actions: each takes the current
+  // password (the server verifies it), so an open or stolen session can't
+  // weaken the account by itself.
+  const { ask: askPassword, element: passwordPrompt } = usePasswordPrompt();
+  const [securityErr, setSecurityErr] = useState<string | null>(null);
+
   const removeRecovery = async () => {
-    if (!confirm("Remove your recovery key? You won't be able to recover a lost password.")) return;
-    await api("/recovery/setup", { method: "DELETE" }).catch(() => {});
-    useAuth.setState({ user: { ...user, has_recovery: false } });
+    const password = await askPassword(
+      "Remove recovery key?",
+      "You won't be able to recover a lost password. Confirm with your password."
+    );
+    if (!password) return;
+    setSecurityErr(null);
+    try {
+      await api("/recovery/setup", { method: "DELETE", body: JSON.stringify({ password }) });
+      useAuth.setState({ user: { ...user, has_recovery: false } });
+    } catch (e) {
+      setSecurityErr((e as Error).message);
+    }
   };
 
   const disable2fa = async () => {
-    if (!confirm("Turn off two-factor authentication (including passkeys)?")) return;
-    await api("/2fa", { method: "DELETE" }).catch(() => {});
-    useAuth.setState({ user: { ...user, twofa_enabled: false } });
-    setRegenCodes(null);
+    const password = await askPassword(
+      "Turn off two-factor?",
+      "This removes your authenticator and every passkey. Confirm with your password."
+    );
+    if (!password) return;
+    setSecurityErr(null);
+    try {
+      await api("/2fa", { method: "DELETE", body: JSON.stringify({ password }) });
+      useAuth.setState({ user: { ...user, twofa_enabled: false } });
+      setRegenCodes(null);
+    } catch (e) {
+      setSecurityErr((e as Error).message);
+    }
   };
 
+  // Passkey enrolment is two taps: confirm the password + fetch options, then
+  // run the WebAuthn ceremony from a fresh tap (iOS Safari drops the gesture
+  // across an awaited request).
   const [pkRegOpts, setPkRegOpts] = useState<PasskeyOptions | null>(null);
+
+  const preparePasskey = async () => {
+    const password = await askPassword("Confirm your password", "Adding a passkey.");
+    if (!password) return;
+    setSecurityErr(null);
+    try {
+      setPkRegOpts(await preloadPasskeyRegisterOptions(password));
+    } catch (e) {
+      setSecurityErr((e as Error).message);
+    }
+  };
 
   const addPasskey = async () => {
     if (!pkRegOpts) return;
@@ -126,27 +165,36 @@ export default function Settings() {
     try {
       credential = await attestPasskey(pkRegOpts.options); // must be first await
     } catch {
-      alert("Couldn't add a passkey. Your device may not support it, or it was cancelled.");
+      setSecurityErr("Couldn't add a passkey. Your device may not support it, or it was cancelled.");
+      setPkRegOpts(null);
       return;
     }
     try {
       await verifyPasskeyRegister(pkRegOpts.challenge_token, credential, "Passkey");
-      alert("Passkey added.");
+      setSecurityErr(null);
     } catch {
-      alert("Passkey registration failed.");
+      setSecurityErr("Passkey registration failed.");
     } finally {
-      // Refresh options for a possible next add, and the method count.
-      preloadPasskeyRegisterOptions().then(setPkRegOpts).catch(() => {});
+      setPkRegOpts(null);
       void loadTwofaStatus();
     }
   };
 
   const regenBackup = async () => {
+    const password = await askPassword(
+      "New backup codes",
+      "Your current codes stop working. Confirm with your password."
+    );
+    if (!password) return;
+    setSecurityErr(null);
     try {
-      const r = await api<{ codes: string[] }>("/2fa/backup/regenerate", { method: "POST" });
+      const r = await api<{ codes: string[] }>("/2fa/backup/regenerate", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      });
       setRegenCodes(r.codes);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setSecurityErr((e as Error).message);
     }
   };
 
@@ -201,10 +249,7 @@ export default function Settings() {
         .then((c) => setAdminRequire2fa(c.require_2fa))
         .catch(() => {});
     }
-    if (user.twofa_enabled) {
-      preloadPasskeyRegisterOptions().then(setPkRegOpts).catch(() => {});
-      void loadTwofaStatus();
-    }
+    if (user.twofa_enabled) void loadTwofaStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.is_admin, user.twofa_enabled]);
 
@@ -314,6 +359,7 @@ export default function Settings() {
 
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
+      {passwordPrompt}
       <header className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
         <BackButton onClick={() => navigate("/")} />
         <span className="font-semibold">Settings</span>
@@ -511,9 +557,23 @@ export default function Settings() {
                     Add authenticator app
                   </button>
                 )}
-                <button className="block text-sm text-imsg-blue" onClick={() => void addPasskey()}>
-                  Add a passkey
-                </button>
+                {pkRegOpts ? (
+                  <button
+                    className="block rounded-lg bg-imsg-blue px-3 py-1.5 text-sm font-medium text-white"
+                    onClick={() => void addPasskey()}
+                  >
+                    Create passkey now
+                  </button>
+                ) : (
+                  <button className="block text-sm text-imsg-blue" onClick={() => void preparePasskey()}>
+                    Add a passkey
+                  </button>
+                )}
+                {securityErr && (
+                  <p className="text-sm text-red-500" role="alert">
+                    {securityErr}
+                  </p>
+                )}
                 <button className="block text-sm text-imsg-blue" onClick={() => void regenBackup()}>
                   Show new backup codes
                 </button>

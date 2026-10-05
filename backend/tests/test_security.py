@@ -82,3 +82,9 @@ def test_access_token_not_accepted_as_pending_and_vice_versa():
         decode_pending_2fa_token(access)
     with pytest.raises(InvalidTokenError):
         decode_access_token(create_pending_2fa_token(uid))
+
+
+def test_access_token_carries_token_version():
+    uid, did = uuid.uuid4(), uuid.uuid4()
+    assert decode_access_token(create_access_token(uid, did))["tv"] == 0
+    assert decode_access_token(create_access_token(uid, did, 3))["tv"] == 3

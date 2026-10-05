@@ -20,13 +20,12 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from jwt import PyJWTError as JWTError
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Device, GuestThread
 from app.redis_client import redis
-from app.security import decode_access_token
+from app.services import ws_ticket
 from app.services.fanout import fanout_user
 from app.services.push import notify_user
 from app.ws.events import envelope
@@ -80,15 +79,15 @@ async def _still_active(thread_id: uuid.UUID) -> bool:
     return await _thread(thread_id) is not None
 
 
-async def _is_host(token: str, creator_id: uuid.UUID) -> bool:
-    if not token:
+async def _is_host(ticket: str, creator_id: uuid.UUID) -> bool:
+    """The thread's creator proves itself with a single-use socket ticket
+    (POST /auth/ws-ticket), the same way the main socket authenticates."""
+    if not ticket:
         return False
-    try:
-        claims = decode_access_token(token)
-        user_id = uuid.UUID(claims["sub"])
-        device_id = uuid.UUID(claims["did"])
-    except (JWTError, KeyError, ValueError):
+    redeemed = await ws_ticket.redeem(ticket)
+    if redeemed is None:
         return False
+    user_id, device_id = redeemed
     if user_id != creator_id:
         return False
     # Same rule as REST / the main socket: a revoked device's unexpired token
@@ -151,7 +150,7 @@ async def _rdel(*keys: str) -> None:
 
 
 @router.websocket("/guest-ws/{thread_id}")
-async def guest_ws(websocket: WebSocket, thread_id: uuid.UUID, token: str = "") -> None:
+async def guest_ws(websocket: WebSocket, thread_id: uuid.UUID, ticket: str = "") -> None:
     if not _origin_ok(websocket):
         await websocket.close(code=4403)
         return
@@ -159,7 +158,7 @@ async def guest_ws(websocket: WebSocket, thread_id: uuid.UUID, token: str = "") 
     if thread is None:
         await websocket.close(code=4404)
         return
-    is_host = await _is_host(token, thread.creator_id)
+    is_host = await _is_host(ticket, thread.creator_id)
 
     await websocket.accept()
     src = uuid.uuid4().hex

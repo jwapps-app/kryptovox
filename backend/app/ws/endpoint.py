@@ -3,12 +3,11 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from jwt import PyJWTError as JWTError
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Device, User
-from app.security import decode_access_token
+from app.services import ws_ticket
 from app.services.app_settings import get_require_2fa
 from app.services.fanout import conversation_member_ids, fanout_conversation
 from app.services.presence import mark_offline, mark_online
@@ -34,22 +33,22 @@ async def _touch_last_seen(device_id: uuid.UUID) -> None:
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
+async def websocket_endpoint(websocket: WebSocket, ticket: str = "") -> None:
     # Reject cross-site socket opens (CSWSH). A missing Origin = non-browser
-    # client (native app); a present one must be allow-listed. The token check
+    # client (native app); a present one must be allow-listed. The ticket check
     # below is the primary defense, but this closes the ambient-open vector.
     origin = websocket.headers.get("origin")
     if origin is not None and origin not in settings.cors_origins:
         await websocket.close(code=4403)
         return
-    # Authenticate before accepting.
-    try:
-        claims = decode_access_token(token)
-        user_id = uuid.UUID(claims["sub"])
-        device_id = uuid.UUID(claims["did"])
-    except (JWTError, KeyError, ValueError):
+    # Authenticate before accepting — with a single-use ticket from
+    # POST /auth/ws-ticket, never the bearer itself (it would be logged in the
+    # URL by every proxy on the path).
+    redeemed = await ws_ticket.redeem(ticket)
+    if redeemed is None:
         await websocket.close(code=4401)
         return
+    user_id, device_id = redeemed
 
     # Same enrolment gate the content routers enforce: if the admin requires 2FA
     # and this account hasn't set it up, don't open the live message stream.

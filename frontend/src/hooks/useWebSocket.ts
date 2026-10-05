@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { getAccessToken, refreshToken } from "../lib/api";
+import { fetchWsTicket } from "../lib/wsTicket";
 import { useAuth } from "../store/auth";
 import { useChat } from "../store/chat";
 import { useCalls } from "../store/calls";
@@ -27,11 +28,21 @@ export function useWebSocket(): void {
         // stale one would just be rejected at the handshake and loop.
         await refreshToken().catch(() => false);
       }
+      if (closedRef.current || !getAccessToken()) return;
+      // Single-use ticket instead of the bearer in the URL (see lib/wsTicket).
+      const ticket = await fetchWsTicket();
       if (closedRef.current) return;
-      const token = getAccessToken();
-      if (!token) return;
+      if (!ticket) {
+        // Server or network unavailable: back off and try again.
+        const delay = Math.min(1000 * 2 ** attemptRef.current, 30000);
+        attemptRef.current += 1;
+        setTimeout(() => void connect(), delay);
+        return;
+      }
       const proto = window.location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${proto}://${window.location.host}/api/ws?token=${token}`);
+      const ws = new WebSocket(
+        `${proto}://${window.location.host}/api/ws?ticket=${encodeURIComponent(ticket)}`
+      );
       activeSocket = ws;
 
       let heartbeat: ReturnType<typeof setInterval> | undefined;

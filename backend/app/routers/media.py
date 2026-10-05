@@ -7,7 +7,7 @@ from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity
 from app.http_util import read_capped_body
 from app.models import ConversationMember, Message
-from app.services import media_owner, media_store
+from app.services import media_owner, media_store, quota
 
 router = APIRouter(prefix="/media", tags=["media"])
 
@@ -19,9 +19,11 @@ async def upload_media(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Store an encrypted blob (raw ciphertext body) and return its id."""
-    body = await read_capped_body(request)
-    media_id = await media_store.save(body)
-    await media_owner.record(db, media_id, owner_id=identity.user.id)
+    async with quota.upload_slot(str(identity.user.id)):
+        body = await read_capped_body(request)
+        await quota.assert_within_quota(db, identity.user.id, len(body))
+        media_id = await media_store.save(body)
+    await media_owner.record(db, media_id, owner_id=identity.user.id, size_bytes=len(body))
     return {"id": media_id}
 
 

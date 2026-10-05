@@ -23,8 +23,11 @@ async def record(
     *,
     owner_id: uuid.UUID | None = None,
     thread_id: uuid.UUID | None = None,
+    size_bytes: int = 0,
 ) -> None:
-    db.add(MediaBlob(id=media_id, owner_id=owner_id, thread_id=thread_id))
+    db.add(
+        MediaBlob(id=media_id, owner_id=owner_id, thread_id=thread_id, size_bytes=size_bytes)
+    )
     await db.flush()
 
 

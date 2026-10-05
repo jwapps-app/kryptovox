@@ -11,7 +11,7 @@ from app.deps import get_current_user
 from app.http_util import read_capped_body
 from app.models import Note, User
 from app.schemas import NoteCreate, NoteListItem, NoteOut, NoteUpdate
-from app.services import media_owner, media_store
+from app.services import media_owner, media_store, quota
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -132,9 +132,11 @@ async def upload_note_media(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     await _own_note(db, note_id, current.id)
-    blob = await read_capped_body(request)
-    media_id = await media_store.save(blob)
-    await media_owner.record(db, media_id, owner_id=current.id)
+    async with quota.upload_slot(str(current.id)):
+        blob = await read_capped_body(request)
+        await quota.assert_within_quota(db, current.id, len(blob))
+        media_id = await media_store.save(blob)
+    await media_owner.record(db, media_id, owner_id=current.id, size_bytes=len(blob))
     return {"id": media_id}
 
 

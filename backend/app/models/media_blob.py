@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +25,10 @@ class MediaBlob(Base):
         ForeignKey("guest_threads.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
+    )
+    # Ciphertext size, for the per-account storage quota.
+    size_bytes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default="0", default=0
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

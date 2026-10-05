@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # Encrypted media (image) blob store.
     media_dir: str = "media"
     max_media_bytes: int = 25 * 1024 * 1024  # 25 MB ciphertext cap
+    # Aggregate ciphertext an account may hold (messages, notes, its secret
+    # links' uploads). 0 = unlimited.
+    media_quota_bytes_per_user: int = 2 * 1024 * 1024 * 1024  # 2 GiB
+    # Parallel uploads one principal may have in flight. 0 = unlimited.
+    max_concurrent_uploads_per_user: int = 4
 
     # CORS — comma-separated list of allowed origins
     allowed_origins: str = "https://localhost:5173"

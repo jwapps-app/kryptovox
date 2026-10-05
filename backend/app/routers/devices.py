@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -6,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentIdentity, get_current_identity, get_current_user
-from app.models import ApnsToken, Device, User
+from app.models import ApnsToken, AuthToken, Device, User
 from app.services.sessions import close_device_sockets
 from app.schemas import ApnsTokenIn, DeviceOut
 
@@ -25,6 +26,23 @@ async def register_apns_token(
     existing = await db.scalar(
         select(ApnsToken).where(ApnsToken.apns_token == body.apns_token)
     )
+    if existing is not None and existing.user_id != identity.user.id:
+        # Reassigning another account's token is legitimate only when that
+        # account is no longer signed in on the device (the app deletes its
+        # token row on logout; this covers an uninstall without one). While the
+        # previous owner still holds a live session, refuse — otherwise anyone
+        # who learned a token string could redirect that account's pushes.
+        live = await db.scalar(
+            select(AuthToken.id).where(
+                AuthToken.device_id == existing.device_id,
+                AuthToken.revoked.is_(False),
+                AuthToken.expires_at > datetime.now(UTC),
+            ).limit(1)
+        ) if existing.device_id is not None else None
+        if live is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "Push token is registered to another active account"
+            )
     if existing is not None:
         existing.user_id = identity.user.id
         existing.device_id = identity.device.id

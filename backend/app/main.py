@@ -113,13 +113,14 @@ async def health() -> dict[str, object]:
 
 # Content routers are gated by require_enrolled: when the admin requires 2FA,
 # an un-enrolled session is blocked here until it sets up a second factor (the
-# /2fa, /auth, /users, /recovery, /config routers stay open so enrolment works).
+# /2fa, /auth, /users, /recovery, /config routers stay open so enrolment works;
+# the admin router and the policy-changing PUT /config are gated too).
 _enrolled = [Depends(require_enrolled)]
 
 api.include_router(auth.router)
 api.include_router(twofa.router)
 api.include_router(recovery.router)
-api.include_router(admin.router)
+api.include_router(admin.router, dependencies=_enrolled)
 api.include_router(users.router)
 api.include_router(devices.router)
 api.include_router(conversations.router, dependencies=_enrolled)

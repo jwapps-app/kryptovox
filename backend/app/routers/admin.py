@@ -80,6 +80,7 @@ async def update_user(
         user.is_admin = body.is_admin
     if body.password is not None:
         user.password_hash = await hash_password(body.password)
+        user.token_version += 1  # also invalidates every outstanding access token
         # An administrative reset must also end the account's existing sessions.
         # NOTE: the user's E2EE identity stays wrapped under their OLD password —
         # an admin cannot re-wrap it. The user needs their recovery key (or a new

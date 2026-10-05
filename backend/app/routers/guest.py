@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +11,7 @@ from app.http_util import read_capped_body
 from app.models import GuestMessage, GuestThread
 from app.ratelimit import limiter
 from app.schemas import GuestMessageIn, GuestMessageOut, PublicThreadOut
-from app.services import media_owner, media_store
+from app.services import media_owner, media_store, quota
 from app.services.fanout import fanout_user
 from app.services.push import notify_user, user_badge_total
 from app.ws.events import GUEST_REPLY, envelope
@@ -39,14 +39,23 @@ async def _active_thread(db: AsyncSession, thread_id: uuid.UUID) -> GuestThread:
 
 @router.get("/{thread_id}", response_model=PublicThreadOut)
 async def get_thread(
-    thread_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    thread_id: uuid.UUID,
+    after: uuid.UUID | None = Query(
+        default=None,
+        description="Only messages newer than this message id (incremental poll).",
+    ),
+    db: AsyncSession = Depends(get_db),
 ) -> PublicThreadOut:
     thread = await _active_thread(db, thread_id)
-    rows = await db.execute(
-        select(GuestMessage)
-        .where(GuestMessage.thread_id == thread_id)
-        .order_by(GuestMessage.created_at)
-    )
+    q = select(GuestMessage).where(GuestMessage.thread_id == thread_id)
+    if after is not None:
+        # The guest page polls; returning only the tail keeps a long thread from
+        # being re-sent and re-decrypted in full every interval.
+        anchor = select(GuestMessage.created_at).where(
+            GuestMessage.id == after, GuestMessage.thread_id == thread_id
+        ).scalar_subquery()
+        q = q.where(GuestMessage.created_at > anchor)
+    rows = await db.execute(q.order_by(GuestMessage.created_at))
     msgs = [GuestMessageOut.model_validate(m) for m in rows.scalars().all()]
     return PublicThreadOut(
         id=thread.id,
@@ -107,10 +116,14 @@ async def guest_upload_media(
     thread_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    await _active_thread(db, thread_id)
-    body = await read_capped_body(request)
-    media_id = await media_store.save(body)
-    await media_owner.record(db, media_id, thread_id=thread_id)
+    thread = await _active_thread(db, thread_id)
+    # A guest's uploads count against the link creator's quota and share the
+    # thread's concurrency budget (the guest is anonymous).
+    async with quota.upload_slot(f"thread:{thread_id}"):
+        body = await read_capped_body(request)
+        await quota.assert_within_quota(db, thread.creator_id, len(body))
+        media_id = await media_store.save(body)
+    await media_owner.record(db, media_id, thread_id=thread_id, size_bytes=len(body))
     return {"id": media_id}
 
 

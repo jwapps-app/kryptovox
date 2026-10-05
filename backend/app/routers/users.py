@@ -78,7 +78,11 @@ async def change_password(
     current.encrypted_private_key = body.encrypted_private_key.model_dump()
     # Evict every other session — a changed password must lock out anyone who
     # had one (a stolen refresh token otherwise survives the change). Keep this
-    # device's own session so the caller isn't logged out.
+    # device's own session so the caller isn't logged out: its refresh token
+    # stays valid, and the token_version bump below only forces it to refresh
+    # (which the clients do transparently on the next 401) while every access
+    # token held elsewhere dies immediately.
+    current.token_version += 1
     await revoke_sessions(db, current.id, except_device_id=identity.device.id)
 
 

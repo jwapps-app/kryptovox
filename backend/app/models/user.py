@@ -29,6 +29,11 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     # Server administrator: can provision new users and grant/revoke admin.
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Embedded in every access token (`tv`); bumping it invalidates all of them
+    # at once (password change, recovery, admin reset) without a blocklist.
+    token_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
     # One X25519 identity per user, shared across that user's devices.
     # The public key is base64url(raw 32 bytes). The private key is stored only
     # as ciphertext: AES-GCM encrypted under a key derived from the user's

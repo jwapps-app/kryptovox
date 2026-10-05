@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
+import { usePasswordPrompt } from "./PasswordPrompt";
 import {
   generateRecoveryKey,
   normalizeRecoveryKey,
@@ -21,9 +22,13 @@ export default function RecoveryKeySetup({
   const [key] = useState(() => generateRecoveryKey());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const { ask, element: passwordPrompt } = usePasswordPrompt();
 
   const save = async () => {
     if (!identity) return;
+    // Replacing recovery material is a step-up action: it takes the password.
+    const password = await ask("Confirm your password", "Setting a recovery key replaces any existing one.");
+    if (!password) return;
     setBusy(true);
     setErr(null);
     try {
@@ -32,7 +37,7 @@ export default function RecoveryKeySetup({
       const verifier = await recoveryVerifier(key);
       await api("/recovery/setup", {
         method: "POST",
-        body: JSON.stringify({ recovery_key_blob: blob, recovery_verifier: verifier }),
+        body: JSON.stringify({ recovery_key_blob: blob, recovery_verifier: verifier, password }),
       });
       const u = useAuth.getState().user;
       if (u) useAuth.setState({ user: { ...u, has_recovery: true } });
@@ -46,6 +51,7 @@ export default function RecoveryKeySetup({
 
   return (
     <div className="space-y-3">
+      {passwordPrompt}
       <p className="text-sm text-gray-500">
         Save this recovery key somewhere safe (e.g. your password manager). If you
         forget your password, it’s the only way to regain access without losing

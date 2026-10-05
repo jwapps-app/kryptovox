@@ -50,3 +50,16 @@ def test_public_user_out_hides_security_posture():
     assert hidden.isdisjoint(PublicUserOut.model_fields)
     # The full self-view still exposes them.
     assert hidden.issubset(UserOut.model_fields)
+
+
+def test_step_up_password_required_for_factor_changes():
+    from pydantic import ValidationError
+
+    from app.schemas import RecoverySetupIn, StepUpIn
+
+    with pytest.raises(ValidationError):
+        StepUpIn()  # type: ignore[call-arg]
+    assert StepUpIn(password="hunter22").password == "hunter22"
+    blob = {"salt": "s", "iv": "i", "ciphertext": "c", "iterations": 600000}
+    with pytest.raises(ValidationError):
+        RecoverySetupIn(recovery_key_blob=blob, recovery_verifier="v" * 20)  # type: ignore[call-arg]
