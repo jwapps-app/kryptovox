@@ -269,7 +269,9 @@ class DeviceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     device_name: str | None = None
-    public_key: str
+    # Legacy per-device key; NULL for devices created before the user identity
+    # existed (admin-provisioned accounts). Nullable here to match the column.
+    public_key: str | None = None
     last_seen: datetime | None = None
     created_at: datetime
 
@@ -359,7 +361,8 @@ class NoteCreate(BaseModel):
     title_iv: str = Field(default="", max_length=64)
     body_ciphertext: str = Field(default="", max_length=_NOTE_MAX)
     body_iv: str = Field(default="", max_length=64)
-    attachments: list[NoteAttachment] = []
+    # None = leave attachments untouched; [] = explicitly remove all.
+    attachments: list[NoteAttachment] | None = None
 
 
 class NoteUpdate(BaseModel):

@@ -47,7 +47,17 @@ def _load_or_create_private_key() -> ec.EllipticCurvePrivateKey:
         serialization.PrivateFormat.PKCS8,
         serialization.NoEncryption(),
     )
-    with open(path, "wb") as f:
+    # Exclusive create (O_EXCL) with owner-only permissions: with several gunicorn
+    # workers booting on a fresh volume, exactly ONE wins the create; the others
+    # hit FileExistsError and load the winner's key, so every worker signs with
+    # the same key the browser subscribed to. A plain open("wb") let each worker
+    # generate and cache a different key while clobbering the file.
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        with open(path, "rb") as f:
+            return serialization.load_pem_private_key(f.read(), password=None)
+    with os.fdopen(fd, "wb") as f:
         f.write(pem)
     log.info("Generated new VAPID key at %s", path)
     return key

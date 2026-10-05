@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from jwt import InvalidTokenError
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from webauthn import (
     generate_authentication_options,
@@ -408,18 +408,19 @@ async def logout(
     body: RefreshRequest | None = None,
     kv_refresh: str | None = Cookie(default=None),
 ) -> Response:
-    # Revoke whichever token the client presents — body (localStorage) or cookie.
-    # Clients that authenticate via the body token have no cookie, so revoking
-    # only the cookie would leave their DB token live.
-    presented = (body.refresh_token if body else None) or kv_refresh
-    if presented:
-        token_hash = hash_refresh_token(presented)
-        record = await db.scalar(
-            select(AuthToken).where(AuthToken.refresh_token_hash == token_hash)
-        )
-        if record:
-            record.revoked = True
-    # Drop this session's APNs token so the logged-out phone stops receiving push.
+    # Revoke EVERY refresh token for this device, not just one the client happens
+    # to present — a client that sends neither body token nor cookie (or whose
+    # token lives only in localStorage) must still end up fully signed out.
+    await db.execute(
+        update(AuthToken)
+        .where(AuthToken.device_id == identity.device.id, AuthToken.revoked.is_(False))
+        .values(revoked=True)
+    )
+    # Stop push to the logged-out device: native APNs token and web subscription.
     await db.execute(delete(ApnsToken).where(ApnsToken.device_id == identity.device.id))
+    identity.device.push_subscription = None
+    # Return the injected response so the cookie deletion header is actually sent
+    # (a freshly constructed Response would drop it).
     response.delete_cookie(REFRESH_COOKIE, path=COOKIE_PATH)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response

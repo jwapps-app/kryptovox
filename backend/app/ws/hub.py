@@ -36,7 +36,24 @@ class Hub:
         self._redis = aioredis.from_url(
             settings.redis_url, encoding="utf-8", decode_responses=True
         )
-        self._listener = asyncio.create_task(self._listen())
+        self._listener = asyncio.create_task(self._supervise())
+
+    async def _supervise(self) -> None:
+        """Keep the Redis listener alive. If Redis is down at boot (or the stream
+        breaks later) the listener used to die silently and never come back — the
+        process would serve HTTP fine while delivering no realtime events. Retry
+        with backoff until cancelled."""
+        delay = 1.0
+        while True:
+            try:
+                await self._listen()
+                delay = 1.0
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Hub listener failed (%s); retrying in %.0fs", exc, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
 
     async def stop(self) -> None:
         if self._listener:
@@ -75,16 +92,39 @@ class Hub:
         # holder of the secret link.
         src = envelope.get("_src")
         to = envelope.get("_to")
+        sends = []
         for ws in targets:
             ws_src = getattr(ws, "_kv_src", None)
             if src is not None and ws_src == src:
                 continue
             if to is not None and ws_src != to:
                 continue
-            try:
-                await ws.send_json(envelope)
-            except Exception:  # noqa: BLE001 — drop dead sockets silently
-                pass
+            sends.append(self._send_one(ws, envelope))
+        # Deliver to all local sockets concurrently with a per-send deadline, so
+        # one stalled client can't block the single Redis listener and starve
+        # every other connection on this worker.
+        if sends:
+            await asyncio.gather(*sends, return_exceptions=True)
+
+    _SEND_TIMEOUT = 5.0
+
+    async def _send_one(self, ws: WebSocket, envelope: dict[str, Any]) -> None:
+        try:
+            await asyncio.wait_for(ws.send_json(envelope), timeout=self._SEND_TIMEOUT)
+        except Exception:  # noqa: BLE001 — dead or stalled socket: drop it
+            self._drop(ws)
+
+    def _drop(self, ws: WebSocket) -> None:
+        """Remove a dead/stalled socket from every subscription set and close it.
+        Its endpoint handler's finally-block also unregisters; this just makes the
+        hub stop trying to deliver to it immediately."""
+        for subs in (self._user_subs, self._thread_subs):
+            for key in [k for k, v in subs.items() if ws in v]:
+                self._discard(subs, key, ws)
+        try:
+            asyncio.create_task(ws.close())
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---- connection registration ----
     def register(self, ws: WebSocket, user_id: str) -> None:

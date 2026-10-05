@@ -31,3 +31,4 @@ pgdata/
 
 # VAPID / secrets
 *.pem
+kryptovox-code-audit.md

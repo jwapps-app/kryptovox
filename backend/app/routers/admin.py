@@ -9,6 +9,7 @@ from app.deps import get_current_admin
 from app.models import User
 from app.schemas import AdminUserCreate, AdminUserOut, AdminUserUpdate
 from app.security import hash_password
+from app.services.sessions import revoke_sessions
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -79,6 +80,11 @@ async def update_user(
         user.is_admin = body.is_admin
     if body.password is not None:
         user.password_hash = await hash_password(body.password)
+        # An administrative reset must also end the account's existing sessions.
+        # NOTE: the user's E2EE identity stays wrapped under their OLD password —
+        # an admin cannot re-wrap it. The user needs their recovery key (or a new
+        # identity) to decrypt history on a new device; the UI should say so.
+        await revoke_sessions(db, user.id)
 
     db.add(user)
     await db.flush()

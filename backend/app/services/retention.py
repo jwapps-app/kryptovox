@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
 from app.models import (
+    AuthToken,
     Conversation,
     ConversationMember,
     GuestMessage,
@@ -139,26 +140,36 @@ async def sweep_once(db: AsyncSession) -> int:
         )
         removed += result.rowcount or 0
 
-    if removed:
-        await db.commit()
+    # L-11: prune spent credentials — revoked or long-expired refresh tokens
+    # accumulate forever otherwise (one row per login).
+    stale_tokens = await db.execute(
+        delete(AuthToken).where(
+            or_(
+                AuthToken.revoked.is_(True),
+                AuthToken.expires_at < now - timedelta(days=30),
+            )
+        )
+    )
+    removed += stale_tokens.rowcount or 0
     return removed
 
 
 async def retention_loop() -> None:
-    """Background task: sweep on an interval until cancelled. A Postgres advisory
-    lock (held on the same connection as the sweep) keeps multiple workers from
-    sweeping concurrently."""
+    """Background task: sweep on an interval until cancelled. A transaction-scoped
+    Postgres advisory lock keeps multiple workers from sweeping concurrently."""
     while True:
         try:
             async with SessionLocal() as db:
-                got = await db.scalar(select(func.pg_try_advisory_lock(_LOCK_KEY)))
+                # Transaction-scoped lock: it is released by the single commit
+                # below, so lock + sweep + release are guaranteed to run on the
+                # same connection. (A session-level lock across an internal commit
+                # could be released on a different pooled connection and leak.)
+                got = await db.scalar(select(func.pg_try_advisory_xact_lock(_LOCK_KEY)))
                 if got:
-                    try:
-                        removed = await sweep_once(db)
-                        if removed:
-                            log.info("retention sweep removed %d message(s)", removed)
-                    finally:
-                        await db.scalar(select(func.pg_advisory_unlock(_LOCK_KEY)))
+                    removed = await sweep_once(db)
+                    await db.commit()
+                    if removed:
+                        log.info("retention sweep removed %d row(s)", removed)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — never let the loop die
