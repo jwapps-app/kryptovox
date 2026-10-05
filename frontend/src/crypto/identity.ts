@@ -146,6 +146,33 @@ async function deriveWrapKey(
   );
 }
 
+// ---------- authentication secret ----------
+// The password unwraps the identity key (above), so it must never reach the
+// server. What the server authenticates is a one-way derivation of it —
+// HKDF-SHA256 bound to the username — which it then bcrypts like any
+// password. A server (or anyone reading its traffic or database) learns
+// nothing that unwraps the identity blob. Must match the native client
+// byte-for-byte: salt "kryptovox-auth-v1", info = lower-cased username.
+const AUTH_SALT = "kryptovox-auth-v1";
+
+export async function deriveAuthSecret(username: string, password: string): Promise<string> {
+  assertSecureContext();
+  const ikm = await crypto.subtle.importKey("raw", utf8Encode(password), "HKDF", false, [
+    "deriveBits",
+  ]);
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: utf8Encode(AUTH_SALT),
+      info: utf8Encode(username.trim().toLowerCase()),
+    },
+    ikm,
+    256
+  );
+  return bytesToBase64url(new Uint8Array(bits));
+}
+
 // ---------- account recovery key ----------
 // A human-friendly, high-entropy key (120 bits) the user saves out-of-band.
 export function generateRecoveryKey(): string {

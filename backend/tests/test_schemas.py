@@ -63,3 +63,12 @@ def test_step_up_password_required_for_factor_changes():
     blob = {"salt": "s", "iv": "i", "ciphertext": "c", "iterations": 600000}
     with pytest.raises(ValidationError):
         RecoverySetupIn(recovery_key_blob=blob, recovery_verifier="v" * 20)  # type: ignore[call-arg]
+
+
+def test_login_request_accepts_legacy_password_for_upgrade():
+    from app.schemas import LoginRequest, UserOut
+
+    body = LoginRequest(username="alice", password="derived-secret", legacy_password="raw pw")
+    assert body.legacy_password == "raw pw"
+    assert LoginRequest(username="alice", password="derived-secret").legacy_password is None
+    assert UserOut.model_fields["auth_version"].default == 1

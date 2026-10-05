@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { deriveAuthSecret } from "../crypto/identity";
 import { useAuth } from "../store/auth";
 import Avatar from "../components/Avatar";
 import BackButton from "../components/BackButton";
@@ -54,7 +55,9 @@ export default function Admin() {
         method: "POST",
         body: JSON.stringify({
           username: username.trim(),
-          password,
+          // The server only ever sees the derived secret for this username;
+          // the new user signs in with the password you hand them.
+          password: await deriveAuthSecret(username.trim(), password),
           display_name: displayName.trim() || null,
           is_admin: makeAdmin,
         }),

@@ -75,6 +75,7 @@ async def change_password(
     if not await verify_password(body.current_password, current.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
     current.password_hash = await hash_password(body.new_password)
+    current.auth_version = 2  # new_password is always the derived secret
     current.encrypted_private_key = body.encrypted_private_key.model_dump()
     # Evict every other session — a changed password must lock out anyone who
     # had one (a stolen refresh token otherwise survives the change). Keep this

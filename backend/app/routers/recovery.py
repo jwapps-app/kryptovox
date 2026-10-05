@@ -105,6 +105,7 @@ async def finish_recovery(
     user = await db.scalar(select(User).where(User.username == body.username))
     user = _verify(user, body.recovery_verifier)
     user.password_hash = await hash_password(body.new_password)
+    user.auth_version = 2  # new_password is the derived secret
     user.encrypted_private_key = body.encrypted_private_key.model_dump()
     # A recovery reset must evict every existing session (the account may be
     # compromised — that's why recovery is being used). Bumping token_version

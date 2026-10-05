@@ -38,8 +38,21 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str
+    # The client-derived auth secret (see GET /auth/login-params). A legacy
+    # client that predates derivation sends the raw password here instead,
+    # which only works while the account is still auth_version 1.
     password: str = Field(max_length=128)
+    # Sent once, by a current client, when login-params reports auth_version 1:
+    # the raw password proves the legacy hash, after which the account is
+    # upgraded to the derived secret and never needs the raw password again.
+    legacy_password: str | None = Field(default=None, max_length=128)
     device_name: str | None = Field(default=None, max_length=64)
+
+
+class LoginParamsOut(BaseModel):
+    # 1 = account still authenticates with the raw password (send both fields);
+    # 2 = send the derived secret only. Unknown usernames report 2.
+    auth_version: int
 
 
 class IdentityOut(BaseModel):
@@ -211,6 +224,10 @@ class UserOut(BaseModel):
     has_avatar: bool = False  # true when an encrypted profile photo is set
     twofa_enabled: bool = False
     has_recovery: bool = False  # account recovery key is set up
+    # Tells the client whether password-confirming calls (change password,
+    # delete account, step-up) take the derived auth secret (2) or, for an
+    # account not yet upgraded, the raw password (1).
+    auth_version: int = 1
 
 
 class PublicUserOut(BaseModel):

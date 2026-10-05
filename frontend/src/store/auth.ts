@@ -4,6 +4,7 @@ import { getRefreshToken, setRefreshToken } from "../lib/session";
 import {
   clearIdentity,
   createIdentity,
+  deriveAuthSecret,
   loadIdentity,
   recoverIdentity,
   wrapPrivateKey,
@@ -54,6 +55,17 @@ interface AuthState {
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
   logout: () => Promise<void>;
+}
+
+/** The credential to send wherever the server confirms "your password":
+ *  the derived auth secret for an upgraded account, the raw password for one
+ *  the server still holds a legacy hash for. The raw password itself only
+ *  ever leaves this device in that legacy case. */
+export async function authCredential(rawPassword: string): Promise<string> {
+  const user = useAuth.getState().user;
+  if (!user) throw new Error("Not signed in");
+  if ((user.auth_version ?? 1) >= 2) return deriveAuthSecret(user.username, rawPassword);
+  return rawPassword;
 }
 
 // Recover the user's shared identity, or establish it on first sign-in.
@@ -171,7 +183,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         method: "POST",
         body: JSON.stringify({
           username,
-          password,
+          password: await deriveAuthSecret(username, password),
           display_name: displayName || null,
           device_name: deviceName || null,
           identity_public_key: identity.publicKeyB64,
@@ -196,9 +208,21 @@ export const useAuth = create<AuthState>((set, get) => ({
   login: async (username, password, deviceName) => {
     set({ error: null });
     try {
+      // The server authenticates a derivation of the password, never the
+      // password itself. An account that still holds a legacy hash is proven
+      // with the raw password this one time and upgraded on the server.
+      const params = await api<{ auth_version: number }>(
+        `/auth/login-params?username=${encodeURIComponent(username)}`
+      );
+      const secret = await deriveAuthSecret(username, password);
       const res = await api<LoginResponse>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ username, password, device_name: deviceName || null }),
+        body: JSON.stringify({
+          username,
+          password: secret,
+          ...(params.auth_version < 2 ? { legacy_password: password } : {}),
+          device_name: deviceName || null,
+        }),
       });
       if (res.twofa_required && res.pending_token) {
         return {
@@ -250,20 +274,22 @@ export const useAuth = create<AuthState>((set, get) => ({
     // Re-wrap the identity key under the new password client-side; the server
     // never sees the plaintext key.
     const blob = await wrapPrivateKey(identity.privateKey, newPassword);
+    const user = get().user!;
     await api("/users/me/password", {
       method: "POST",
       body: JSON.stringify({
-        current_password: currentPassword,
-        new_password: newPassword,
+        current_password: await authCredential(currentPassword),
+        new_password: await deriveAuthSecret(user.username, newPassword),
         encrypted_private_key: blob,
       }),
     });
+    set({ user: { ...user, auth_version: 2 } });
   },
 
   deleteAccount: async (password) => {
     await api("/users/me", {
       method: "DELETE",
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password: await authCredential(password) }),
     });
     await clearIdentity();
     setAccessToken(null);

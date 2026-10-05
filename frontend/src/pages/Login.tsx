@@ -8,6 +8,7 @@ import {
 } from "../lib/passkey";
 import {
   type EncryptedKeyBlob,
+  deriveAuthSecret,
   normalizeRecoveryKey,
   recoverIdentity,
   recoveryVerifier,
@@ -133,7 +134,7 @@ export default function Login() {
         body: JSON.stringify({
           username: username.trim(),
           recovery_verifier: verifier,
-          new_password: newPassword,
+          new_password: await deriveAuthSecret(username.trim(), newPassword),
           encrypted_private_key: newBlob,
         }),
       });

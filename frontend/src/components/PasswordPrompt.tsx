@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { authCredential } from "../store/auth";
 
 // Step-up confirmation: security-factor changes (turning off two-factor,
 // adding a passkey, replacing the recovery key, …) take the current password
 // so a session that was left open or stolen can't weaken the account on its
-// own. usePasswordPrompt() returns an `ask()` that resolves with the password
-// (or null on cancel) plus the element to render.
+// own. usePasswordPrompt() returns an `ask()` that resolves with the
+// credential to send — the derived auth secret, never the raw password for an
+// upgraded account — or null on cancel, plus the element to render.
 
 export function usePasswordPrompt(): {
   ask: (title: string, detail?: string) => Promise<string | null>;
@@ -22,9 +24,12 @@ export function usePasswordPrompt(): {
   }, []);
 
   const finish = useCallback((value: string | null) => {
-    resolver.current?.(value);
+    const resolve = resolver.current;
     resolver.current = null;
     setState(null);
+    if (!resolve) return;
+    if (value === null) resolve(null);
+    else authCredential(value).then(resolve, () => resolve(null));
   }, []);
 
   const element = state ? (
