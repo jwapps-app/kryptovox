@@ -79,14 +79,14 @@ async def blob_gc_loop() -> None:
     while True:
         try:
             async with SessionLocal() as db:
-                got = await db.scalar(select(func.pg_try_advisory_lock(_LOCK_KEY)))
+                # Transaction-scoped lock, released by the commit on the same
+                # connection (see retention.py for why not a session-level lock).
+                got = await db.scalar(select(func.pg_try_advisory_xact_lock(_LOCK_KEY)))
                 if got:
-                    try:
-                        n = await gc_once(db)
-                        if n:
-                            log.info("blob GC reclaimed %d orphaned blob(s)", n)
-                    finally:
-                        await db.scalar(select(func.pg_advisory_unlock(_LOCK_KEY)))
+                    n = await gc_once(db)
+                    await db.commit()
+                    if n:
+                        log.info("blob GC reclaimed %d orphaned blob(s)", n)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001

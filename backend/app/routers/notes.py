@@ -31,11 +31,20 @@ def _media_ids(attachments: list) -> set[str]:
 async def list_notes(
     current: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list[Note]:
+) -> list[NoteListItem]:
+    # Project only list columns — the full row carries the (large) body ciphertext.
     rows = await db.execute(
-        select(Note).where(Note.owner_id == current.id).order_by(Note.updated_at.desc())
+        select(Note.id, Note.wrapped_key, Note.title_ciphertext, Note.title_iv, Note.updated_at)
+        .where(Note.owner_id == current.id)
+        .order_by(Note.updated_at.desc())
     )
-    return list(rows.scalars().all())
+    return [
+        NoteListItem(
+            id=r.id, wrapped_key=r.wrapped_key, title_ciphertext=r.title_ciphertext,
+            title_iv=r.title_iv, updated_at=r.updated_at,
+        )
+        for r in rows.all()
+    ]
 
 
 @router.post("", response_model=NoteOut, status_code=201)
@@ -77,15 +86,15 @@ async def update_note(
     db: AsyncSession = Depends(get_db),
 ) -> Note:
     note = await _own_note(db, note_id, current.id)
-    new_attachments = [a.model_dump() for a in body.attachments]
-    # Delete blobs for attachments that were removed.
-    for mid in _media_ids(note.attachments) - _media_ids(new_attachments):
-        media_store.delete(mid)
     note.title_ciphertext = body.title_ciphertext
     note.title_iv = body.title_iv
     note.body_ciphertext = body.body_ciphertext
     note.body_iv = body.body_iv
-    note.attachments = new_attachments
+    # attachments omitted => keep as-is (a text-only PATCH must not drop files);
+    # explicitly [] => remove all. Blob files are reclaimed by the GC sweep once
+    # unreferenced, never deleted inline from a client-supplied id.
+    if body.attachments is not None:
+        note.attachments = [a.model_dump() for a in body.attachments]
     note.updated_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(note)
@@ -99,8 +108,8 @@ async def delete_note(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     note = await _own_note(db, note_id, current.id)
-    for mid in _media_ids(note.attachments):
-        media_store.delete(mid)
+    # Attachment blobs are reclaimed by the GC sweep once unreferenced — not
+    # deleted here from ids the client controls (see media ownership notes).
     await db.delete(note)
     await db.commit()
 

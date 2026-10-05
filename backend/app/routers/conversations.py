@@ -22,7 +22,7 @@ from app.schemas import (
     RetentionUpdate,
 )
 from app.services import media_store
-from app.services.fanout import fanout_conversation
+from app.services.fanout import conversation_member_ids, fanout_conversation
 from app.ws.events import CONVERSATION_UPDATED, envelope
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -170,6 +170,7 @@ async def create_conversation(
 
     member = await _ensure_member(db, conv.id, current.id)
     out = await _to_out(db, conv, member, current)
+    await db.commit()  # publish only committed state
     await fanout_conversation(
         db, conv.id, envelope(CONVERSATION_UPDATED, {"conversation_id": str(conv.id)})
     )
@@ -357,6 +358,7 @@ async def add_member(
         )
     ).first() is not None
     await db.flush()
+    await db.commit()  # publish only committed state
     if inserted:
         await fanout_conversation(
             db,
@@ -381,6 +383,7 @@ async def rename_conversation(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin only")
     conv.name = body.name
     await db.flush()
+    await db.commit()  # publish only committed state
     await fanout_conversation(
         db,
         conversation_id,
@@ -409,6 +412,7 @@ async def set_retention(
         )
     conv.retention_days = body.retention_days
     await db.flush()
+    await db.commit()  # publish only committed state
     await fanout_conversation(
         db,
         conversation_id,
@@ -430,6 +434,7 @@ async def set_disappearing(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
     conv.disappear_seconds = body.seconds
     await db.flush()
+    await db.commit()  # publish only committed state
     await fanout_conversation(
         db,
         conversation_id,
@@ -485,15 +490,20 @@ async def remove_member(
     target = await db.get(ConversationMember, (conversation_id, user_id))
     if target is None:
         return
-    # Notify the conversation (and the removed user) before deleting.
+    # Capture the recipient set BEFORE the change (so the removed user is still
+    # told), apply + commit the change, and only then publish — a client that
+    # re-fetches on the event must see the new membership, not the old one.
+    recipients = await conversation_member_ids(db, conversation_id)
+    await db.delete(target)
+    await db.flush()
+    await _cleanup_if_empty(db, conversation_id)
+    await db.commit()
     await fanout_conversation(
         db,
         conversation_id,
         envelope(CONVERSATION_UPDATED, {"conversation_id": str(conversation_id)}),
+        member_ids=recipients,
     )
-    await db.delete(target)
-    await db.flush()
-    await _cleanup_if_empty(db, conversation_id)
 
 
 @router.post("/{conversation_id}/leave", status_code=204)
@@ -503,11 +513,14 @@ async def leave_conversation(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     member = await _ensure_member(db, conversation_id, current.id)
+    recipients = await conversation_member_ids(db, conversation_id)  # incl. self
+    await db.delete(member)
+    await db.flush()
+    await _cleanup_if_empty(db, conversation_id)
+    await db.commit()
     await fanout_conversation(
         db,
         conversation_id,
         envelope(CONVERSATION_UPDATED, {"conversation_id": str(conversation_id)}),
+        member_ids=recipients,
     )
-    await db.delete(member)
-    await db.flush()
-    await _cleanup_if_empty(db, conversation_id)

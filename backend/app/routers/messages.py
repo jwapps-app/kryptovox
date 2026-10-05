@@ -173,6 +173,7 @@ async def edit_message(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
     if msg.sender_id != identity.user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your message")
+    await _require_member(db, msg.conversation_id, identity.user.id)  # still a member
     if msg.type != "text":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only text can be edited")
     msg.ciphertext = body.ciphertext
@@ -199,6 +200,7 @@ async def unsend_message(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
     if msg.sender_id != identity.user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your message")
+    await _require_member(db, msg.conversation_id, identity.user.id)  # still a member
 
     conversation_id = msg.conversation_id
     msg.deleted_at = datetime.now(UTC)
