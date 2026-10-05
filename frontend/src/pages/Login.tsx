@@ -57,6 +57,25 @@ export default function Login() {
       .catch(() => setNeedsSetup(false));
   }, []);
 
+  // Preload passkey options so the WebAuthn call can fire immediately on tap
+  // (iOS Safari drops the user gesture across an awaited network request).
+  // Lives above the early `recovering` return so the hook order is stable, and
+  // resets whenever the pending login changes so options bound to a previous
+  // pending token are never reused.
+  useEffect(() => {
+    setPasskeyOpts(null);
+    if (!pendingToken || !methods.includes("passkey")) return;
+    let alive = true;
+    preloadPasskeyLoginOptions(pendingToken)
+      .then((o) => {
+        if (alive) setPasskeyOpts(o);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [pendingToken, methods]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -190,14 +209,6 @@ export default function Login() {
       </div>
     );
   }
-
-  // Preload passkey options so the WebAuthn call can fire immediately on tap
-  // (iOS Safari drops the user gesture across an awaited network request).
-  useEffect(() => {
-    if (pendingToken && methods.includes("passkey") && !passkeyOpts) {
-      preloadPasskeyLoginOptions(pendingToken).then(setPasskeyOpts).catch(() => {});
-    }
-  }, [pendingToken, methods, passkeyOpts]);
 
   const usePasskey = async () => {
     if (!pendingToken || !passkeyOpts) return;

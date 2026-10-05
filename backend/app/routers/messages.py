@@ -236,6 +236,11 @@ async def unsend_message(
 async def mark_read(
     conversation_id: uuid.UUID,
     message_id: uuid.UUID,
+    silent: bool = Query(
+        False,
+        description="Record the read for this user's own unread count and "
+        "devices, but don't send a read receipt to the other members.",
+    ),
     identity: CurrentIdentity = Depends(get_current_identity),
     db: AsyncSession = Depends(get_db),
 ) -> None:
@@ -290,19 +295,20 @@ async def mark_read(
             up_to_iso = read_msg.created_at.isoformat()
     await db.commit()
 
-    await fanout_conversation(
-        db,
-        conversation_id,
-        envelope(
-            RECEIPT_READ,
-            {
-                "conversation_id": str(conversation_id),
-                "message_id": str(message_id),
-                "user_id": str(identity.user.id),
-            },
-        ),
-        exclude_user_id=identity.user.id,
-    )
+    if not silent:
+        await fanout_conversation(
+            db,
+            conversation_id,
+            envelope(
+                RECEIPT_READ,
+                {
+                    "conversation_id": str(conversation_id),
+                    "message_id": str(message_id),
+                    "user_id": str(identity.user.id),
+                },
+            ),
+            exclude_user_id=identity.user.id,
+        )
     if started_at is not None:
         # Tell every device (incl. the reader's and the sender's) to start hiding
         # those messages on time.

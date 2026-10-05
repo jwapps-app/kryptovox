@@ -13,7 +13,16 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 // relative "//host" so a malformed/hostile push payload can't open-redirect via
 // clients.openWindow().
 function safePath(u) {
-  return typeof u === "string" && u.startsWith("/") && !u.startsWith("//") ? u : "/";
+  if (typeof u !== "string" || !u.startsWith("/")) return "/";
+  try {
+    // Resolve against our origin and require it to stay there — this also
+    // catches spellings the prefix check misses (e.g. backslash variants).
+    var parsed = new URL(u, self.location.origin);
+    if (parsed.origin !== self.location.origin) return "/";
+    return parsed.pathname + parsed.search + parsed.hash;
+  } catch (e) {
+    return "/";
+  }
 }
 
 function stashLastPush(url) {

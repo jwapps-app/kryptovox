@@ -113,6 +113,20 @@ export default function SecretLinkThread() {
     setThumbs({ ...thumbsRef.current });
   }, [id, identity, user.identity_public_key, navigate]);
 
+  // Switching threads reuses this component: drop the previous thread's key
+  // and thumbnails (and release their object URLs) before loading the new one.
+  // Declared before the load effect so it runs first on an id change.
+  useEffect(() => {
+    return () => {
+      keyRef.current = null;
+      for (const u of Object.values(thumbsRef.current)) URL.revokeObjectURL(u);
+      thumbsRef.current = {};
+      setThumbs({});
+      setMsgs([]);
+      setLabel("Secret link");
+    };
+  }, [id]);
+
   const loadGuestUnread = useChat((s) => s.loadGuestUnread);
   useEffect(() => {
     // Opening the thread marks it read server-side; refresh the badge.

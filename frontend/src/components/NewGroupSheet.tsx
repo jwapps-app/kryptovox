@@ -16,11 +16,19 @@ export default function NewGroupSheet({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (!q.trim()) return setResults([]);
+    let alive = true; // ignore a slow response for a query we've since replaced
     const t = setTimeout(async () => {
-      const users = await api<User[]>(`/users/search?q=${encodeURIComponent(q.trim())}`);
-      setResults(users.filter((u) => !selected.some((s) => s.id === u.id)));
+      try {
+        const users = await api<User[]>(`/users/search?q=${encodeURIComponent(q.trim())}`);
+        if (alive) setResults(users.filter((u) => !selected.some((s) => s.id === u.id)));
+      } catch {
+        if (alive) setResults([]);
+      }
     }, 200);
-    return () => clearTimeout(t);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
   }, [q, selected]);
 
   const create = async () => {

@@ -63,6 +63,9 @@ export interface Message {
   conversation_id: string;
   sender_id: string | null;
   sender_device_id: string | null;
+  // Sender's identity key at send time; lets recipients keep decrypting after
+  // the sender's account is gone.
+  sender_public_key?: string | null;
   ciphertext: string;
   iv: string;
   encrypted_keys: Record<string, string>;

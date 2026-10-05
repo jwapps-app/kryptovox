@@ -16,6 +16,11 @@ export function cacheUserKeys(users: User[]): void {
   }
 }
 
+/** Forget every cached key (sign-out / account switch). */
+export function clearKeyCache(): void {
+  keyCache.clear();
+}
+
 export async function getUserPublicKey(userId: string): Promise<string | null> {
   const cached = keyCache.get(userId);
   if (cached) return cached;
