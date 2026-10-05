@@ -8,7 +8,7 @@ import path from "node:path";
 // so there's no stale-build / stale-SW problem.
 
 // Local HTTPS via mkcert (needed for Web Crypto from a phone over the LAN IP).
-const certDir = path.resolve(__dirname, "certs");
+const certDir = path.resolve(import.meta.dirname, "certs");
 const certPath = path.join(certDir, "cert.pem");
 const keyPath = path.join(certDir, "key.pem");
 const wantsHttps = process.env.VITE_DEV_HTTPS === "true";
