@@ -18,7 +18,7 @@ router = APIRouter(prefix="/config", tags=["config"])
 @router.get("", response_model=AppConfigOut)
 async def get_config(
     _: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AppConfigOut:
     # Readable by any user so clients can show the resolved settings.
     return AppConfigOut(
@@ -31,7 +31,7 @@ async def get_config(
 async def update_config(
     body: AppConfigUpdate,
     _: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AppConfigOut:
     if body.default_retention_days is not None:
         await set_default_retention_days(db, body.default_retention_days)

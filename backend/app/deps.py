@@ -21,7 +21,7 @@ class CurrentIdentity:
 
 async def get_current_identity(
     creds: HTTPAuthorizationCredentials = Depends(bearer),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> CurrentIdentity:
     try:
         claims = decode_access_token(creds.credentials)
@@ -58,7 +58,7 @@ async def get_current_user(
 
 async def require_enrolled(
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """When the admin has turned on "require 2FA", block content access for any
     account that hasn't set up a second factor yet — enforced server-side, not

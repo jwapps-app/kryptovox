@@ -38,7 +38,7 @@ async def _assert_attachments_owned(db: AsyncSession, attachments, owner_id: uui
 @router.get("", response_model=list[NoteListItem])
 async def list_notes(
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[NoteListItem]:
     # Project only list columns — the full row carries the (large) body ciphertext.
     rows = await db.execute(
@@ -59,7 +59,7 @@ async def list_notes(
 async def create_note(
     body: NoteCreate,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Note:
     await _assert_attachments_owned(db, body.attachments, current.id)
     note = Note(
@@ -82,7 +82,7 @@ async def create_note(
 async def get_note(
     note_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Note:
     return await _own_note(db, note_id, current.id)
 
@@ -92,7 +92,7 @@ async def update_note(
     note_id: uuid.UUID,
     body: NoteUpdate,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Note:
     note = await _own_note(db, note_id, current.id)
     note.title_ciphertext = body.title_ciphertext
@@ -115,7 +115,7 @@ async def update_note(
 async def delete_note(
     note_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     note = await _own_note(db, note_id, current.id)
     # Attachment blobs are reclaimed by the GC sweep once unreferenced — not
@@ -129,7 +129,7 @@ async def upload_note_media(
     note_id: uuid.UUID,
     request: Request,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict[str, str]:
     await _own_note(db, note_id, current.id)
     async with quota.upload_slot(str(current.id)):
@@ -145,7 +145,7 @@ async def get_note_media(
     note_id: uuid.UUID,
     media_id: str,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Response:
     note = await _own_note(db, note_id, current.id)
     if media_id not in _media_ids(note.attachments):

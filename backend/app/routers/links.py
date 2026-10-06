@@ -52,7 +52,7 @@ async def create_link(
     request: Request,
     body: GuestThreadCreate,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> GuestThreadDetail:
     # Burn threads start their clock on the guest's first open (expires_at stays
     # NULL here). Time-based threads get a fixed expiry now.
@@ -92,7 +92,7 @@ async def create_link(
 @router.get("", response_model=list[GuestThreadOut])
 async def list_links(
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[GuestThreadOut]:
     threads = list(
         (
@@ -148,7 +148,7 @@ async def get_link(
         description="Only messages newer than this message id (incremental refresh).",
     ),
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> GuestThreadDetail:
     thread = await _own_thread(db, thread_id, identity.user.id)
     q = select(GuestMessage).where(GuestMessage.thread_id == thread_id)
@@ -186,7 +186,7 @@ async def host_reply(
     thread_id: uuid.UUID,
     body: GuestMessageIn,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> GuestMessageOut:
     thread = await _own_thread(db, thread_id, identity.user.id)
     msg = GuestMessage(
@@ -217,7 +217,7 @@ async def host_reply(
 async def revoke_link(
     thread_id: uuid.UUID,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     thread = await _own_thread(db, thread_id, identity.user.id)
     await delete_thread_media(db, thread.id)
@@ -231,7 +231,7 @@ async def host_upload_media(
     thread_id: uuid.UUID,
     request: Request,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict[str, str]:
     await _own_thread(db, thread_id, identity.user.id)
     async with quota.upload_slot(str(identity.user.id)):
@@ -249,7 +249,7 @@ async def host_get_media(
     thread_id: uuid.UUID,
     media_id: str,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Response:
     await _own_thread(db, thread_id, identity.user.id)
     ok = await db.scalar(

@@ -53,7 +53,7 @@ async def vapid_public_key() -> dict[str, str]:
 async def subscribe(
     sub: PushSubscription,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     identity.device.push_subscription = sub.model_dump()
     db.add(identity.device)
@@ -65,7 +65,7 @@ async def subscribe(
 async def test_push(
     request: Request,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Send a test notification to the current user's subscribed devices,
     bypassing presence — for verifying push works end-to-end."""

@@ -18,7 +18,7 @@ router = APIRouter(tags=["devices"])
 async def register_apns_token(
     body: ApnsTokenIn,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Register (or re-register) this device's APNs token. Idempotent — keyed on
     the token, so the client's liberal retries are safe. If the same token shows
@@ -66,7 +66,7 @@ async def register_apns_token(
 async def delete_apns_token(
     apns_token: str,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     row = await db.scalar(
         select(ApnsToken).where(
@@ -80,7 +80,7 @@ async def delete_apns_token(
 @router.get("/devices", response_model=list[DeviceOut])
 async def list_my_devices(
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[Device]:
     rows = await db.execute(select(Device).where(Device.user_id == current.id))
     return list(rows.scalars().all())
@@ -90,7 +90,7 @@ async def list_my_devices(
 async def revoke_device(
     device_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     device = await db.get(Device, device_id)
     if device is None or device.user_id != current.id:

@@ -77,7 +77,7 @@ async def _enabled_here(db: AsyncSession, identity: CurrentIdentity) -> None:
 
 @router.get("/status", response_model=TwoFAStatus)
 async def status_2fa(
-    current: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    current: User = Depends(get_current_user), db: AsyncSession = Depends(get_db, scope="function")
 ) -> TwoFAStatus:
     remaining = sum(1 for c in (current.backup_codes or []) if not c.get("used"))
     count = await db.scalar(
@@ -114,7 +114,7 @@ async def totp_setup(
 async def totp_verify(
     body: TotpVerifyIn,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> BackupCodesOut:
     current = identity.user
     if not current.totp_secret:
@@ -148,7 +148,7 @@ async def disable_totp(
     request: Request,
     body: StepUpIn,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     await require_password(current, body.password)
     if not current.has_passkey and await get_require_2fa(db):
@@ -165,7 +165,7 @@ async def disable_all_2fa(
     request: Request,
     body: StepUpIn,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Turn off two-factor entirely — TOTP and every passkey."""
     await require_password(current, body.password)
@@ -187,7 +187,7 @@ async def passkey_register_options(
     request: Request,
     body: PasskeyRegisterOptionsIn,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> PasskeyOptionsOut:
     await require_password(current, body.password)
     rp_id, _ = rp_and_origin(request)
@@ -213,7 +213,7 @@ async def passkey_register_verify(
     request: Request,
     body: PasskeyRegisterVerify,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> BackupCodesOut:
     current = identity.user
     rp_id, origin = rp_and_origin(request)
@@ -254,7 +254,7 @@ async def passkey_register_verify(
 
 @router.get("/passkey", response_model=list[PasskeyOut])
 async def list_passkeys(
-    current: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    current: User = Depends(get_current_user), db: AsyncSession = Depends(get_db, scope="function")
 ) -> list[WebauthnCredential]:
     return await _user_passkeys(db, current.id)
 
@@ -266,7 +266,7 @@ async def delete_passkey(
     cred_id: uuid.UUID,
     body: StepUpIn,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     await require_password(current, body.password)
     cred = await db.get(WebauthnCredential, cred_id)

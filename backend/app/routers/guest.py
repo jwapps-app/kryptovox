@@ -44,7 +44,7 @@ async def get_thread(
         default=None,
         description="Only messages newer than this message id (incremental poll).",
     ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> PublicThreadOut:
     thread = await _active_thread(db, thread_id)
     q = select(GuestMessage).where(GuestMessage.thread_id == thread_id)
@@ -71,7 +71,7 @@ async def guest_reply(
     request: Request,
     thread_id: uuid.UUID,
     body: GuestMessageIn,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> GuestMessageOut:
     thread = await _active_thread(db, thread_id)
     if body.media is not None:
@@ -115,7 +115,7 @@ async def guest_reply(
 async def guest_upload_media(
     request: Request,
     thread_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict[str, str]:
     thread = await _active_thread(db, thread_id)
     # A guest's uploads count against the link creator's quota and share the
@@ -132,7 +132,7 @@ async def guest_upload_media(
 async def guest_get_media(
     thread_id: uuid.UUID,
     media_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Response:
     await _active_thread(db, thread_id)
     ok = await db.scalar(

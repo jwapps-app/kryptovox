@@ -30,7 +30,7 @@ router = APIRouter(tags=["users"])
 async def search_users(
     q: str = Query(min_length=1, max_length=32),
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[User]:
     rows = await db.execute(
         select(User)
@@ -49,7 +49,7 @@ async def get_me(current: User = Depends(get_current_user)) -> User:
 async def update_me(
     body: UserUpdate,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User:
     if body.display_name is not None:
         current.display_name = body.display_name
@@ -65,7 +65,7 @@ async def change_password(
     request: Request,
     body: PasswordChangeIn,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Change the password while logged in. The client re-wraps the identity key
     under the new password (the server can't — it never holds the plaintext key)
@@ -93,7 +93,7 @@ async def delete_me(
     request: Request,
     body: AccountDeleteIn,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Self-service account deletion (password-confirmed). Cascades devices,
     passkeys, receipts, reactions, notes, avatar keys, and recovery data; the
@@ -118,7 +118,7 @@ async def get_my_identity(current: User = Depends(get_current_user)) -> Identity
 async def set_my_identity(
     body: IdentitySet,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> IdentityOut:
     """Establish the user's identity if not already set. Idempotent: if another
     device set it first, returns the existing one (the client should use that)."""
@@ -156,7 +156,7 @@ def _avatar_keys(owner_id: uuid.UUID, encrypted_keys: dict[str, str]) -> list[Av
 async def set_avatar(
     body: AvatarUpload,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User:
     current.avatar_ciphertext = body.ciphertext
     current.avatar_iv = body.iv
@@ -172,7 +172,7 @@ async def set_avatar(
 @router.delete("/users/me/avatar", response_model=UserOut)
 async def clear_avatar(
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User:
     current.avatar_ciphertext = None
     current.avatar_iv = None
@@ -187,7 +187,7 @@ async def clear_avatar(
 async def sync_avatar_keys(
     body: AvatarKeysUpdate,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Response:
     """Re-wrap the avatar key for the current contact set (replace-all)."""
     await db.execute(delete(AvatarKey).where(AvatarKey.owner_id == current.id))
@@ -200,7 +200,7 @@ async def sync_avatar_keys(
 async def get_avatar(
     user_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AvatarOut:
     owner = await db.get(User, user_id)
     if owner is None or owner.avatar_ciphertext is None:
@@ -229,7 +229,7 @@ async def get_avatar(
 async def get_user(
     user_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User:
     user = await db.get(User, user_id)
     if user is None:
