@@ -125,7 +125,7 @@ async def _user_count(db: AsyncSession) -> int:
 
 
 @router.get("/setup-status", response_model=SetupStatus)
-async def setup_status(db: AsyncSession = Depends(get_db)) -> SetupStatus:
+async def setup_status(db: AsyncSession = Depends(get_db, scope="function")) -> SetupStatus:
     # Bootstrap registration is open only while the server has no users.
     return SetupStatus(needs_setup=await _user_count(db) == 0)
 
@@ -136,7 +136,7 @@ async def register(
     request: Request,
     body: RegisterRequest,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TokenResponse:
     # Open registration is allowed only for the very first account, which
     # becomes the server administrator. After that, an admin must provision
@@ -195,7 +195,7 @@ async def _login_device(db: AsyncSession, response: Response, user: User, name: 
 async def login_params(
     request: Request,
     username: str = Query(min_length=1, max_length=32),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> LoginParamsOut:
     """Which credential form the account takes (see LoginRequest). Reports the
     current form (2) for unknown usernames so this can't enumerate accounts
@@ -210,7 +210,7 @@ async def login(
     request: Request,
     body: LoginRequest,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> LoginResponse:
     user = await db.scalar(select(User).where(User.username == body.username))
     # Which secret the stored hash was made from: for a legacy account the raw
@@ -258,7 +258,7 @@ async def complete_2fa(
     request: Request,
     body: TwoFAComplete,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> LoginResponse:
     try:
         user_id, jti = decode_pending_2fa_token(body.pending_token)
@@ -305,7 +305,7 @@ async def complete_2fa(
 async def passkey_login_options(
     request: Request,
     body: PasskeyLoginOptionsIn,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> PasskeyOptionsOut:
     try:
         user_id, pending_jti = decode_pending_2fa_token(body.pending_token)
@@ -341,7 +341,7 @@ async def passkey_login_verify(
     request: Request,
     body: PasskeyLoginVerify,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> LoginResponse:
     try:
         uid_a, jti = decode_pending_2fa_token(body.pending_token)
@@ -390,7 +390,7 @@ async def passkey_login_verify(
 async def refresh(
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     body: RefreshRequest | None = None,
     kv_refresh: str | None = Cookie(default=None),
 ) -> TokenResponse:
@@ -462,7 +462,7 @@ async def ws_ticket(
 async def logout(
     response: Response,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     body: RefreshRequest | None = None,
     kv_refresh: str | None = Cookie(default=None),
 ) -> Response:

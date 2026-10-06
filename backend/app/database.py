@@ -32,6 +32,14 @@ class Base(DeclarativeBase):
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Request-scoped session; commits when the handler returns.
+
+    Always depend on it as ``Depends(get_db, scope="function")``: since
+    FastAPI 0.118 a yield-dependency's exit code runs *after the response is
+    sent* by default, which made this commit land after the client already
+    had its reply — a login's device row didn't exist yet when the client's
+    next request arrived, so it got a 401. "function" scope runs the commit
+    before the response goes out (read-your-writes preserved)."""
     async with SessionLocal() as session:
         try:
             yield session

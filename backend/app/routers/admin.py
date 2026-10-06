@@ -17,7 +17,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.get("/users", response_model=list[AdminUserOut])
 async def list_users(
     _: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[User]:
     # Cap the result and project only the columns AdminUserOut renders — the full
     # row carries heavy JSONB (encrypted_private_key, backup_codes, recovery blob)
@@ -40,7 +40,7 @@ async def list_users(
 async def create_user(
     body: AdminUserCreate,
     _: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User:
     existing = await db.scalar(select(User).where(User.username == body.username))
     if existing:
@@ -66,7 +66,7 @@ async def update_user(
     user_id: uuid.UUID,
     body: AdminUserUpdate,
     admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User:
     user = await db.get(User, user_id)
     if user is None:
@@ -98,7 +98,7 @@ async def update_user(
 async def delete_user(
     user_id: uuid.UUID,
     admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     if user_id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot delete yourself")

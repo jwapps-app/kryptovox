@@ -127,7 +127,7 @@ async def _to_out(
 async def create_conversation(
     body: ConversationCreate,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> ConversationOut:
     member_ids = {current.id, *body.member_ids}
 
@@ -201,7 +201,7 @@ _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[ConversationOut]:
     """Batched to a constant handful of queries regardless of conversation count
     (was ~5 per conversation: conv fetch + members + last message + unread)."""
@@ -329,7 +329,7 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> ConversationOut:
     member = await _ensure_member(db, conversation_id, current.id)
     conv = await db.get(Conversation, conversation_id)
@@ -343,7 +343,7 @@ async def add_member(
     conversation_id: uuid.UUID,
     user_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> ConversationOut:
     member = await _ensure_member(db, conversation_id, current.id)
     conv = await db.get(Conversation, conversation_id)
@@ -381,7 +381,7 @@ async def rename_conversation(
     conversation_id: uuid.UUID,
     body: ConversationUpdate,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> ConversationOut:
     member = await _ensure_member(db, conversation_id, current.id)
     conv = await db.get(Conversation, conversation_id)
@@ -405,7 +405,7 @@ async def set_retention(
     conversation_id: uuid.UUID,
     body: RetentionUpdate,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> ConversationOut:
     # Shortening retention permanently deletes shared history on the next sweep,
     # so in a GROUP only an admin may change it (one member can't nuke everyone's
@@ -434,7 +434,7 @@ async def set_disappearing(
     conversation_id: uuid.UUID,
     body: DisappearingUpdate,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> ConversationOut:
     member = await _ensure_member(db, conversation_id, current.id)
     conv = await db.get(Conversation, conversation_id)
@@ -456,7 +456,7 @@ async def set_prefs(
     conversation_id: uuid.UUID,
     body: ConversationPrefs,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> ConversationOut:
     member = await _ensure_member(db, conversation_id, current.id)
     if body.pinned is not None:
@@ -472,7 +472,7 @@ async def set_prefs(
 async def clear_history(
     conversation_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     # Hide messages up to now for THIS member only (the other side keeps theirs).
     member = await _ensure_member(db, conversation_id, current.id)
@@ -485,7 +485,7 @@ async def remove_member(
     conversation_id: uuid.UUID,
     user_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     member = await _ensure_member(db, conversation_id, current.id)
     conv = await db.get(Conversation, conversation_id)
@@ -518,7 +518,7 @@ async def remove_member(
 async def leave_conversation(
     conversation_id: uuid.UUID,
     current: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     member = await _ensure_member(db, conversation_id, current.id)
     recipients = await conversation_member_ids(db, conversation_id)  # incl. self

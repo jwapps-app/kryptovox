@@ -86,3 +86,17 @@ def test_create_link_body_has_no_media_field():
 
     src = inspect.getsource(links.create_link)
     assert "body.media" not in src
+
+
+def test_db_dependency_commits_before_response():
+    # Every get_db dependency must use scope="function" so the commit runs
+    # before the response is sent (see get_db's docstring); a bare
+    # Depends(get_db) would reintroduce the read-your-writes race.
+    import pathlib
+
+    offenders = [
+        str(p)
+        for p in pathlib.Path(__file__).resolve().parents[1].joinpath("app").rglob("*.py")
+        if "Depends(get_db)" in p.read_text()
+    ]
+    assert offenders == []

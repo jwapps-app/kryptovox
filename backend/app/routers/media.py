@@ -16,7 +16,7 @@ router = APIRouter(prefix="/media", tags=["media"])
 async def upload_media(
     request: Request,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict[str, str]:
     """Store an encrypted blob (raw ciphertext body) and return its id."""
     async with quota.upload_slot(str(identity.user.id)):
@@ -31,7 +31,7 @@ async def upload_media(
 async def get_media(
     media_id: str,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> FileResponse:
     """Return an encrypted blob — only to a member of a conversation that
     references it (the id is also unguessable, but this enforces membership)."""

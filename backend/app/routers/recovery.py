@@ -83,7 +83,7 @@ async def clear_recovery(
 async def begin_recovery(
     request: Request,
     body: RecoverBeginIn,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> RecoverBeginOut:
     user = await db.scalar(select(User).where(User.username == body.username))
     user = _verify(user, body.recovery_verifier)
@@ -98,7 +98,7 @@ async def begin_recovery(
 async def finish_recovery(
     request: Request,
     body: RecoverFinishIn,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Reset the password and replace the password-wrapped identity blob (re-wrapped
     client-side under the new password). 2FA, if enabled, still applies at login."""

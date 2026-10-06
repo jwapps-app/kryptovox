@@ -58,7 +58,7 @@ async def get_messages(
     conversation_id: uuid.UUID,
     cursor: str | None = Query(default=None, description="ISO timestamp; fetch older"),
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> MessagePage:
     member = await _require_member(db, conversation_id, identity.user.id)
 
@@ -118,7 +118,7 @@ async def send_message(
     body: MessageCreate,
     background_tasks: BackgroundTasks,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> MessageOut:
     await _require_member(db, conversation_id, identity.user.id)
     # A message may only reference a blob the sender uploaded (ownership check).
@@ -171,7 +171,7 @@ async def edit_message(
     message_id: uuid.UUID,
     body: MessageEdit,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> MessageOut:
     msg = await db.get(Message, message_id)
     if msg is None or msg.deleted_at is not None:
@@ -198,7 +198,7 @@ async def edit_message(
 async def unsend_message(
     message_id: uuid.UUID,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> MessageOut:
     msg = await db.get(Message, message_id)
     if msg is None:
@@ -242,7 +242,7 @@ async def mark_read(
         "devices, but don't send a read receipt to the other members.",
     ),
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     member = await _require_member(db, conversation_id, identity.user.id)
 
@@ -336,7 +336,7 @@ async def mark_read(
 async def mark_unread(
     conversation_id: uuid.UUID,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     member = await _require_member(db, conversation_id, identity.user.id)
     member.marked_unread = True
@@ -353,7 +353,7 @@ async def add_reaction(
     message_id: uuid.UUID,
     body: ReactionCreate,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     msg = await db.get(Message, message_id)
     if msg is None:
@@ -388,7 +388,7 @@ async def remove_reaction(
     message_id: uuid.UUID,
     emoji: str,
     identity: CurrentIdentity = Depends(get_current_identity),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     msg = await db.get(Message, message_id)
     if msg is None:
