@@ -72,3 +72,17 @@ def test_login_request_accepts_legacy_password_for_upgrade():
     assert body.legacy_password == "raw pw"
     assert LoginRequest(username="alice", password="derived-secret").legacy_password is None
     assert UserOut.model_fields["auth_version"].default == 1
+
+
+def test_create_link_body_has_no_media_field():
+    # create_link must not touch body.media — the schema has none (a stray
+    # reference 500'd every link creation).
+    from app.schemas import GuestThreadCreate
+
+    assert "media" not in GuestThreadCreate.model_fields
+    import inspect
+
+    from app.routers import links
+
+    src = inspect.getsource(links.create_link)
+    assert "body.media" not in src
