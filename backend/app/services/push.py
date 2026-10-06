@@ -229,6 +229,42 @@ async def notify_user(
                 )
             )
         ).all()
+        tokens = (
+            (await db.execute(select(ApnsToken).where(ApnsToken.user_id == user_id)))
+            .scalars()
+            .all()
+            if apns_enabled()
+            else []
+        )
+    if not devices and not tokens:
+        return
+    # Native app: the same banner over APNs. Like the conversation fanout this
+    # doesn't skip WS-online tokens — iOS handles a foregrounded app itself and
+    # presence lag was silently dropping pushes. Routing hints only, no content.
+    if tokens:
+        custom_data = {
+            k: str(payload[k]) for k in ("url", "type", "thread_id") if payload.get(k)
+        }
+        apns_results = [
+            (
+                token.id,
+                await _send_apns(
+                    token,
+                    custom_data,
+                    title=str(payload.get("title") or "Kryptovox"),
+                    body_text=str(payload.get("body") or "New message"),
+                    badge=payload.get("badge"),
+                ),
+            )
+            for token in tokens
+        ]
+        log.info(
+            "APNs notify_user user=%s: %d token(s), %d sent",
+            user_id,
+            len(tokens),
+            sum(1 for _, r in apns_results if r.sent),
+        )
+        await _persist_push_results([], apns_results)
     if not devices:
         return
     online: set[uuid.UUID] = (
@@ -340,7 +376,7 @@ async def _relay_post(body: dict) -> httpx.Response | None:
 
 async def _post_notify(
     token: ApnsToken,
-    conversation_id: uuid.UUID,
+    custom_data: dict,
     sandbox: bool,
     title: str,
     body_text: str,
@@ -351,7 +387,9 @@ async def _post_notify(
         "device_token": token.apns_token,
         "title": title,
         "body": body_text,  # content is E2EE — never the message text
-        "custom_data": {"conversation_id": str(conversation_id)},
+        # Routing hints for the app: conversation_id for chats, thread_id/url
+        # for secret links. Never message content.
+        "custom_data": custom_data,
         "sandbox": sandbox,
     }
     if badge is not None:
@@ -372,7 +410,7 @@ class _ApnsResult:
 
 async def _send_apns(
     token: ApnsToken,
-    conversation_id: uuid.UUID,
+    custom_data: dict,
     *,
     title: str = "Kryptovox",
     body_text: str = "New message",
@@ -385,7 +423,7 @@ async def _send_apns(
     mutates it or the session."""
     prefer_sandbox = (token.environment or "").strip().lower() == "sandbox"
     resp = await _post_notify(
-        token, conversation_id, prefer_sandbox, title, body_text, badge
+        token, custom_data, prefer_sandbox, title, body_text, badge
     )
     if resp is None:
         return _ApnsResult()
@@ -399,7 +437,7 @@ async def _send_apns(
         return _ApnsResult()
     if resp.status_code == 502 and "BadDeviceToken" in resp.text:
         retry = await _post_notify(
-            token, conversation_id, not prefer_sandbox, title, body_text, badge
+            token, custom_data, not prefer_sandbox, title, body_text, badge
         )
         if retry is not None and retry.status_code == 200:
             corrected = "production" if prefer_sandbox else "sandbox"
@@ -501,7 +539,9 @@ async def notify_offline_all(
         apns_results: list[tuple[uuid.UUID, _ApnsResult]] = []
         for token in tokens:
             r = await _send_apns(
-                token, conversation_id, badge=badges.get(token.user_id, 0)
+                token,
+                {"conversation_id": str(conversation_id)},
+                badge=badges.get(token.user_id, 0),
             )
             apns_results.append((token.id, r))
         if tokens:

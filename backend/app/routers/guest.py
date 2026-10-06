@@ -103,6 +103,7 @@ async def guest_reply(
             "title": "Secret link",
             "body": "New reply",
             "url": f"/links/{thread_id}",
+            "thread_id": str(thread_id),  # native app routes on this
             "badge": badge,
         },
     )
