@@ -69,8 +69,8 @@ async def create_link(
     )
     db.add(thread)
     await db.flush()
-    if body.media is not None:
-        await media_owner.assert_in_thread(db, body.media.id, thread.id)
+    # The first message is text-only (GuestThreadCreate has no media field);
+    # attachments arrive via host_reply, which checks blob ownership.
     msg = GuestMessage(
         thread_id=thread.id, sender="host", ciphertext=body.ciphertext, iv=body.iv
     )
